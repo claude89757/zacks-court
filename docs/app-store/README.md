@@ -106,7 +106,7 @@ asc status --app 6827224757                     # 发布状态总览
 - **推广文本**随时可改，不用提交新版本；名称、副标题、关键词只能随新版本改。
 - **上线后**：在 App Store Connect 的「App 分析」里看「来源：App Store 搜索」的曝光和转化，一两周后按实际搜索词调整关键词。
 
-### 1.1 发版步骤（等正在修的问题合入 origin/main 之后）
+### 1.1 发版步骤（修复已在 2026-11-04 合入，等用户同意发版）
 
 先决条件（只能由账户持有人在网页上做）：
 - **同意新版付费 App 协议**（「商务」页）。2026-11-04 试着建 1.1 版本时，App Store Connect 拒绝了（`You cannot create a new version of the App in the current state`），版本页提示要先接受最新的付费 App 协议。App 目前还是付费的，所以建新版本前要先同意它。
@@ -115,7 +115,7 @@ asc status --app 6827224757                     # 发布状态总览
 步骤（App Store Connect 的改动不用逐步问用户，由顾问模型把关；但改价只在 1.1 过审之后做）：
 1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号仍是 `1`（`asc builds next-build-number --app 6827224757 --version 1.1` 返回 1）。
 2. 确认 `scripts/reference-chain.sh status` 是 `off`，然后 `COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，Release 归档并导出（手动签名，Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」）。解开 IPA 逐个检查：只有两个 TrackNetV3，没有 `AnalysisModels`。然后上传。
-3. 补全 `metadata/version/1.1/*.json` 的「新功能」（把「待补」那一行换成正在修的问题），建 1.1 版本（`asc versions create --app 6827224757 --version 1.1 --release-type AFTER_APPROVAL`）。推送四种语言的文字，其中 zh-Hant、en-GB 是新增的本地化，如果 `metadata apply` 不新建本地化，先用 `asc localizations create` 建。
+3. 「新功能」已写完（2026-11-04，包括 PR #6 球场跟踪和 PR #7 去掉手动标定）。建 1.1 版本（`asc versions create --app 6827224757 --version 1.1 --release-type AFTER_APPROVAL`）。推送四种语言的文字，其中 zh-Hant、en-GB 是新增的本地化，如果 `metadata apply` 不新建本地化，先用 `asc localizations create` 建。
 4. 截图：新版本会沿用 1.0 的 5 张旧截图，先删掉，再上传各语言目录里的新图。
 5. 关联构建，提交审核。
 6. **过审后再改免费**（见第 2 节第 8 项）。App 付费时在哪里都卖不了，所以 1.1 过审后自动发布也没人能下载，改成免费的那一刻用户拿到的就是 1.1。不要在过审前改价，那样会先把 1.0 放出去。
