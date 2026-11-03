@@ -17,13 +17,16 @@ public final class IndependentCourtLockLab {
         /// Camera motion check threshold in pixels (nil: off).
         public var motionPixels: Double?
         public var motionLookback: Double
+        public var shakePixels: Double, trackPixels: Double
+        public var stillTrackInterval: Double?
         public init() {
             let o = IndependentLiveCourt.Options()
             sampleInterval = o.sampleInterval; frames = o.frames; firstAttemptFrames = o.firstAttemptFrames
             retryFrames = o.retryFrames; motionPixels = o.motionPixels; motionLookback = o.motionLookback
+            shakePixels = o.shakePixels; trackPixels = o.trackPixels; stillTrackInterval = o.stillTrackInterval
         }
         public static func before20261104() -> Self {
-            var s = Self(); s.firstAttemptFrames = 9; s.retryFrames = 4; s.motionPixels = nil; return s
+            var s = Self(); s.firstAttemptFrames = 9; s.retryFrames = 4; s.motionPixels = nil; s.stillTrackInterval = nil; return s
         }
     }
 
@@ -69,6 +72,8 @@ public final class IndependentCourtLockLab {
         o.firstAttemptFrames = settings.firstAttemptFrames; o.retryFrames = settings.retryFrames
         o.simulatedLatencyScale = settings.latencyScale
         o.motionPixels = settings.motionPixels; o.motionLookback = settings.motionLookback
+        o.shakePixels = settings.shakePixels; o.trackPixels = settings.trackPixels
+        o.stillTrackInterval = settings.stillTrackInterval
         court = IndependentLiveCourt(options: o)
     }
 
@@ -136,5 +141,27 @@ public final class IndependentCourtMedianSolver {
     public func add(_ pixels: CVPixelBuffer) { if let s = IndependentLiveCourt.sample(pixels) { samples.append(s) } }
     public func solve() throws -> IndependentCourtCalibration {
         IndependentCourtCalibrator.calibrate(try IndependentLiveCourt.median(samples))
+    }
+}
+
+extension IndependentCourtLockLab {
+    /// One frame checked against a camera, as the live court's `fits` does on a median.
+    public struct FrameFit: Codable, Sendable {
+        public let fits: Bool, lines: Int, nearTransverse: Int, rms: Double?, movedPixels: Double?, seconds: Double
+        public var refined: IndependentPinholeCamera? = nil
+    }
+
+    public static func fit(_ pixels: CVPixelBuffer, camera: IndependentPinholeCamera, movedPixels: Double) -> FrameFit? {
+        let began = ProcessInfo.processInfo.systemUptime
+        guard let sample = IndependentLiveCourt.sample(pixels), let image = try? IndependentLiveCourt.median([sample]) else { return nil }
+        guard let refined = IndependentCourtCalibrator.refine(image, start: [camera.f] + camera.rvec + camera.tvec) else {
+            return FrameFit(fits: false, lines: 0, nearTransverse: 0, rms: nil, movedPixels: nil, seconds: ProcessInfo.processInfo.systemUptime - began)
+        }
+        let used = refined.linesUsed
+        let rms = used.isEmpty ? nil : (used.compactMap { refined.perLineRMS[$0.rawValue] }.map { $0 * $0 }.reduce(0, +) / Double(used.count)).squareRoot()
+        let fits = IndependentLiveCourt.fits(camera, image, movedPixels: movedPixels)
+        return FrameFit(fits: fits, lines: used.count, nearTransverse: used.filter(\.isNearTransverse).count, rms: rms,
+                        movedPixels: IndependentLiveCourt.distance(refined.camera, camera), seconds: ProcessInfo.processInfo.systemUptime - began,
+                        refined: refined.camera)
     }
 }
