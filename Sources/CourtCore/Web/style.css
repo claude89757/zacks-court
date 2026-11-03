@@ -1,0 +1,248 @@
+/* Mirrors CourtStyle (docs/design-system.md): the app is dark-only, so is this page.
+   Red (--recording) is only for REC; errors, warnings and the end button use --warning orange. */
+:root {
+  color-scheme: dark;
+  --bg: #090e0c;
+  --panel: #131a16;
+  --green: #c2f059;
+  --text: #eef3ef;
+  --muted: #99ab9e;
+  --border: rgba(255, 255, 255, 0.09);
+  --raised: rgba(255, 255, 255, 0.05);
+  --inset: rgba(0, 0, 0, 0.2);
+  --warning: #ff9f0a;
+  --recording: #ff453a;
+  --radius-panel: 22px;
+  --radius-card: 16px;
+  --radius-control: 13px;
+  --forehand: #3987e5; --backhand: #d95926; --serve: #199e70; --volley: #c98500;
+  --overhead: #d55181; --groundstroke: #9085e9; --feed: #99ab9e; --unknown: #99ab9e;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left));
+  overflow-x: hidden;
+}
+h1, h2 { margin: 2px 0 12px; font-weight: 700; }
+h2 { font-size: 1.15rem; }
+.muted { color: var(--muted); }
+.small { font-size: 0.85rem; }
+.error { color: var(--warning); min-height: 1.2em; }
+.eyebrow { color: var(--green); font-size: 0.7rem; letter-spacing: 0.12em; font-weight: 700; }
+.notice { color: var(--muted); font-size: 0.8rem; background: var(--raised); border-radius: var(--radius-control); padding: 8px 10px; margin: 10px 0 0; }
+
+button, select, input {
+  font: inherit; color: var(--text); background: var(--raised); border: 1px solid var(--border);
+  border-radius: var(--radius-control); min-height: 44px; padding: 8px 14px;
+}
+button { cursor: pointer; font-weight: 600; }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--green); color: #0b1209; border-color: transparent; }
+button.danger { color: var(--warning); }
+button.quiet { background: transparent; border-color: transparent; color: var(--muted); font-weight: 400; text-decoration: underline; }
+input { flex: 1; min-width: 0; }
+select { width: 100%; }
+
+.top { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
+.pill { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 0.85rem; color: var(--muted); }
+.pill.ok { color: var(--green); }
+.pill.bad { color: var(--warning); }
+
+.login { max-width: 420px; margin: 12vh auto 0; }
+.login form { display: flex; gap: 10px; margin: 18px 0 8px; }
+.login input { font-size: 1.4rem; letter-spacing: 0.3em; text-align: center; }
+
+.bar { margin-bottom: 14px; }
+.camera-name { color: var(--muted); font-size: 0.85rem; margin-bottom: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 0.85rem; white-space: nowrap; }
+.chip.rec { color: var(--recording); }
+.chip.warn { color: var(--warning); }
+.chip.good { color: var(--green); }
+.warnings { color: var(--warning); font-size: 0.85rem; margin-top: 6px; }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-panel); padding: 16px; margin-bottom: 14px; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; }
+.row > button { flex: 1 1 auto; }
+.row.between { justify-content: space-between; align-items: center; }
+.session-line { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.session-title { font-size: 1.15rem; font-weight: 700; overflow-wrap: anywhere; }
+.elapsed { font-size: 1.8rem; font-variant-numeric: tabular-nums; font-weight: 700; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
+@media (min-width: 900px), (orientation: landscape) and (min-width: 700px) {
+  .grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+}
+
+.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.metric { background: var(--inset); border-radius: var(--radius-card); padding: 10px; display: flex; flex-direction: column; min-width: 0; }
+.metric .label { color: var(--muted); font-size: 0.8rem; }
+.metric .value { font-size: clamp(1.6rem, 7vw, 2.6rem); font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.metric .unit { color: var(--muted); font-size: 0.75rem; }
+
+.court-wrap { max-width: 360px; margin: 0 auto; }
+#court { width: 100%; height: auto; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; font-size: 0.85rem; }
+/* The stroke mark shapes of the court map (same as the App), in the legend too. */
+.mark { display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: middle; }
+
+.shots { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.shot { background: var(--inset); border-radius: var(--radius-card); padding: 10px 12px; }
+.shot-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.shot-speed { font-size: 1.3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+/* Stroke colour only on the dot; the text stays in the body colour (design-system.md). */
+.tag { font-size: 0.9rem; font-weight: 700; color: var(--text); white-space: nowrap; }
+.tag::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--unknown)); margin-right: 6px; vertical-align: 0.05em; }
+.shot-why { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
+.shot-actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+.clip-download { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius-control); background: var(--raised); color: var(--green); font-weight: 600; text-decoration: none; }
+.shot video { width: 100%; margin-top: 8px; border-radius: var(--radius-control); background: #000; }
+
+.preview-box { background: #000; border-radius: var(--radius-card); aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 10px; position: relative; }
+.preview-box img { width: 100%; height: 100%; object-fit: contain; }
+.preview-box p { padding: 12px; text-align: center; }
+.preview-box img + p { position: absolute; bottom: 0; left: 0; right: 0; margin: 0; background: rgba(0, 0, 0, 0.55); padding: 4px 8px; }
+.hands { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.hands label { font-size: 0.85rem; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+
+.bars .item { margin-bottom: 10px; }
+.bars .track { height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.bars .fill { height: 100%; border-radius: 3px; }
+
+.history { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 8px; }
+.history button { width: 100%; text-align: left; font-weight: 400; }
+.recordings { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.recordings a { color: var(--green); }
+
+.sheet { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-panel); width: min(960px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 16px; }
+.sheet::backdrop { background: rgba(0, 0, 0, 0.7); }
+/* The calibration still takes the height the window allows; the wrapper hugs the image so the
+   marks, outline and loupe line up with it. Touches on it place or drag corners instead of scrolling. */
+/* Two lines reserved so the picture does not jump when the step text gets shorter. */
+.step { color: var(--green); font-weight: 700; margin: 6px 0 0; min-height: 2.9em; }
+.still-wrap { position: relative; width: fit-content; max-width: 100%; margin: 10px auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.still-wrap img { display: block; max-width: 100%; max-height: calc(100vh - 290px); max-height: calc(100dvh - 290px); min-height: 160px; width: auto; height: auto; border-radius: var(--radius-control); -webkit-user-drag: none; }
+#still-marks, #still-points { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.corner { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 2px solid var(--green); box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6); }
+.corner.active { border-color: #fff; }
+.corner::after { content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: var(--green); }
+.corner span { position: absolute; left: 18px; top: -18px; min-width: 20px; height: 20px; border-radius: 10px; background: var(--green); color: #0b1209; font-size: 0.75rem; font-weight: 800; line-height: 20px; text-align: center; }
+.loupe { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 2px solid var(--green); box-shadow: 0 2px 12px rgba(0, 0, 0, 0.6); background-color: #000; background-repeat: no-repeat; pointer-events: none; z-index: 2; }
+.loupe::before, .loupe::after { content: ""; position: absolute; background: var(--green); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+.loupe::before { left: 59px; top: 42px; width: 2px; height: 36px; }
+.loupe::after { left: 42px; top: 59px; width: 36px; height: 2px; }
+.sheet-footer { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+.toast { position: fixed; left: 16px; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); background: #2a1d0c; border: 1px solid var(--warning); color: var(--text); padding: 12px 14px; border-radius: var(--radius-card); z-index: 30; max-width: 560px; margin: 0 auto; }
+.toast.info { background: var(--panel); border-color: var(--border); }
+
+/* Full-screen speed board (mirrors CourtSpeedBoard): the last usable speed stays until the next one.
+   The number is sized for three digits from the readout area itself, so it fills the board and keeps
+   one size between readings (a 96 never looks larger than a 156). */
+.board { position: fixed; inset: 0; z-index: 20; background: var(--bg); display: flex; flex-direction: column;
+  padding: max(20px, env(safe-area-inset-top)) max(20px, 3.5vw) max(20px, env(safe-area-inset-bottom)); }
+.board-top { display: flex; align-items: center; gap: 14px; font-size: 1.1rem; flex-wrap: wrap; row-gap: 10px; }
+.board-live { margin-left: auto; color: var(--muted); font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+.board-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.board-dot.live { background: var(--green); }
+.board-close { width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 1.1rem; }
+.board-modes { display: flex; gap: 2px; padding: 3px; background: var(--raised); border-radius: var(--radius-control); }
+.board-modes button { min-height: 44px; border: 0; background: transparent; color: var(--muted); font-weight: 400; padding: 8px 16px; border-radius: calc(var(--radius-control) - 3px); white-space: nowrap; }
+.board-modes button[aria-checked="true"] { background: rgba(255, 255, 255, 0.14); color: var(--text); font-weight: 600; }
+.board-all, .board-serve { flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 6px; padding-top: 8px; }
+.board-readout { container-type: size; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+/* The unit sits under the number's right edge, so the digits get the whole width. */
+.board-figure { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; max-width: 100%; }
+/* line-height ≈ cap height: the line box hugs the digits, so they fill the area and stay centred.
+   Condensed where the system font has it; the width rule assumes ordinary tabular digits. */
+.board-value { font-weight: 800; font-stretch: condensed; font-variant-numeric: tabular-nums; color: var(--green);
+  line-height: 0.74; letter-spacing: -0.01em; border-radius: 16px; white-space: nowrap;
+  font-size: min(calc(96cqw / 1.9), calc((100cqh - 3.4rem) * 0.92 / 0.74)); }
+/* A wide, short area (phone landscape): the unit goes beside the number so the digits get the height. */
+@container (min-aspect-ratio: 2/1) {
+  .board-figure { flex-direction: row; align-items: baseline; gap: 0.6rem; }
+  .board-value { font-size: min(calc((96cqw - 6rem) / 1.9), calc(100cqh * 0.92 / 0.74)); }
+}
+.board-value.waiting { color: var(--muted); font-weight: 200; font-size: min(26cqw, 40cqh); line-height: 1; }
+/* A new reading: a brief glow and lift, keyed on the shot (app.js flashBoard). */
+.board-value.fresh { animation: board-fresh 0.8s ease-out; }
+@keyframes board-fresh {
+  0% { transform: scale(1.04); text-shadow: 0 0 0.12em rgba(194, 240, 89, 0.6); background: rgba(194, 240, 89, 0.10); }
+  100% { transform: scale(1); text-shadow: none; background: transparent; }
+}
+@keyframes board-fresh-still { 0% { background: rgba(194, 240, 89, 0.10); } 100% { background: transparent; } }
+/* Reduce Motion: only the short highlight, no lift. */
+@media (prefers-reduced-motion: reduce) { .board-value.fresh { animation-name: board-fresh-still; } }
+.board-unit { font-size: clamp(16px, 4.5cqh, 40px); font-weight: 500; color: rgba(255, 255, 255, 0.85); line-height: 1.2; }
+.board-unit.waiting { color: var(--muted); }
+.board-bottom { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 0.85rem; white-space: nowrap; }
+.board-bottom > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.board-lock { margin: 2px 0 0; color: var(--muted); font-size: 0.75rem; text-align: center; }
+
+/* Serve mode: statistics on one line and a thin trend strip under the number. Layout classes
+   (wide / no-chart) and the --stat-size / --trend-height sizes come from renderServeBoard(). */
+.serve-band { display: flex; flex-direction: column; gap: 6px; }
+.board-serve.wide .serve-band { flex-direction: row; align-items: center; justify-content: space-between; gap: 16px; }
+.serve-stats-line { text-align: center; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: var(--stat-size, 17px); }
+.board-serve.wide .serve-stats-line { text-align: left; }
+.serve-stats-line span { color: var(--muted); font-size: 0.6em; font-weight: 500; margin-right: 0.3em; }
+.serve-stats-line b { font-weight: 650; margin-right: 0.9em; }
+.serve-stats-line b:last-child { margin-right: 0; }
+.serve-stats-line b.none { color: var(--muted); }
+.serve-chart { margin: 0; display: flex; align-items: center; gap: 10px; height: var(--trend-height, 48px); }
+.board-serve.wide .serve-chart { width: 32%; }
+.board-serve.no-chart .serve-chart { display: none; }
+.serve-chart figcaption { display: flex; flex-direction: column; gap: 4px; font-size: 0.7rem; white-space: nowrap; }
+.serve-chart .key { color: var(--muted); display: inline-flex; align-items: center; gap: 5px; }
+.key-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.key-dash { width: 12px; border-top: 1.5px dashed var(--muted); }
+.serve-plot { flex: 1; align-self: stretch; min-width: 0; position: relative; }
+.serve-plot svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.serve-plot .empty { position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+.row.between > button { flex: 0 0 auto; }
+.more { width: 100%; margin-top: 10px; }
+
+/* Hawk-Eye line calls (mirrors HawkEyeViews): OUT red, IN green, CLOSE orange, always with the word. */
+.hawkeye-button { border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.hawkeye-button.on { background: var(--green); color: var(--bg); border-color: transparent; }
+.hawkeye-call { position: fixed; left: 16px; right: 16px; top: max(16px, env(safe-area-inset-top)); z-index: 40; margin: 0 auto;
+  max-width: 760px; display: flex; align-items: center; gap: 16px; text-align: left; padding: 14px 18px;
+  background: var(--panel); border: 2px solid var(--call, var(--recording)); border-radius: var(--radius-card);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5); }
+.hawkeye-shout { font-size: clamp(2.2rem, 9vw, 4.5rem); font-weight: 900; line-height: 1; padding: 6px 18px;
+  border-radius: var(--radius-control); background: var(--call, var(--recording)); color: var(--bg); }
+.hawkeye-call.out .hawkeye-shout { color: #fff; }
+.hawkeye-text { display: flex; flex-direction: column; gap: 2px; font-size: 1.2rem; }
+.hawkeye-sound { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); z-index: 35; border-color: var(--green); }
+.sheet.narrow { width: min(520px, calc(100vw - 24px)); }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.check input { width: 22px; height: 22px; min-height: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .hawkeye-call:not([hidden]) { animation: hawkeye-in 0.25s ease-out; }
+}
+@keyframes hawkeye-in { from { transform: translateY(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Hawk-Eye challenge replay, inside the board so it stays in full screen. */
+.challenge { position: absolute; inset: 0; z-index: 25; background: var(--bg); display: flex; flex-direction: column;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, 2vw) max(12px, env(safe-area-inset-bottom)); }
+.challenge-top { display: flex; align-items: center; gap: 8px; }
+.challenge-top .spacer { flex: 1; }
+.challenge-top button { width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: 1.2rem; }
+.challenge-stage { position: relative; flex: 1; min-height: 0; margin-top: 8px; }
+.challenge-stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--radius-card); }
+.challenge-title { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center;
+  background: rgba(19, 26, 22, 0.92); border-radius: var(--radius-card); padding: 18px 30px; }
+.challenge-word { font-size: clamp(2rem, 7vw, 3rem); font-weight: 900; letter-spacing: 0.15em; }
+.challenge-verdict { position: absolute; left: 12px; right: 12px; bottom: 12px; margin: 0 auto; max-width: 760px; display: flex;
+  align-items: center; gap: 16px; padding: 14px 18px; background: rgba(19, 26, 22, 0.94);
+  border: 2px solid var(--call, var(--recording)); border-radius: var(--radius-card); }
+.challenge-verdict.out .hawkeye-shout { color: #fff; }
+.challenge-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 8px; }
+.challenge-foot video { width: 100%; max-height: 32vh; }
+.challenge-stage { min-height: 38vh; }

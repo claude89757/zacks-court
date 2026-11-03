@@ -1,0 +1,22 @@
+.build/
+.swiftpm/
+.DS_Store
+*.xcodeproj/
+*.xcworkspace/
+build/
+.local/
+*.mp4
+*.mov
+*.jsonl
+*.p12
+*.mobileprovision
+*.key
+
+# asc review plans
+.asc/
+
+# S家 reference material stays on each developer's machine (models in .local/s-models)
+*.local.md
+assets/analysis-models/
+Sources/CourtCore/Reference/
+Tests/CourtAppTests/Reference/

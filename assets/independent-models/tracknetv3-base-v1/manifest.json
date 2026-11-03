@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "model_id": "tracknetv3-base-v1",
+  "display_name": "TrackNetV3 official base, float32 Core ML research conversion",
+  "artifact_role": "research_base_ball_detector",
+  "package_name": "TrackNetV3Base.mlpackage",
+  "license": {
+    "spdx": "MIT",
+    "file": "LICENSE",
+    "bytes": 1097,
+    "sha256": "1eeb31683deba741bce99f5f33bb813293a23b4e6c8302d6f056a587a30cd497",
+    "scope": "upstream code and pretrained model checkpoints; preserve the complete original notice"
+  },
+  "documentation": {
+    "file": "README.md",
+    "bytes": 3205,
+    "sha256": "b7911447f5d796b13759af0e6d0f099aa4404f83d21227270978a17d198c81f6"
+  },
+  "upstream": {
+    "repository": "https://github.com/qaz812345/TrackNetV3",
+    "commit": "6eda442ada1740573f200f836d93edc9a541ee86",
+    "readme_sha256": "cda4991691ca354c4cdda8b63f535b21e1fad7d0344fbf16ff409745fecd6691",
+    "source_files_sha256": {
+      "LICENSE": "1eeb31683deba741bce99f5f33bb813293a23b4e6c8302d6f056a587a30cd497",
+      "dataset.py": "c8cf51f8fd59e466f3a1916ba99b24ac8b487ff85f69362ee72758b6b1643f92",
+      "model.py": "04fd51ff88e58189474677dbf11f81e52b78df00226fb97ea0678b31ef7284e3",
+      "predict.py": "ea338db0adc8d5ff89b0313b248d82c93b43ecb96cfefcc4ef44c542f462cf88",
+      "test.py": "420511325901bf25d5a28b101b1db994c5d6e4ab00a74d30e600a2e4f8b1d204"
+    },
+    "checkpoint": {
+      "filename": "TrackNet_best.pt",
+      "bytes": 136190877,
+      "sha256": "df867641a02712b021f04548ff4b1208ddfdb47f629ab2094ceb978667e83b1a",
+      "archive_filename": "TrackNetV3_ckpts.zip",
+      "archive_bytes": 131653952,
+      "archive_sha256": "8de68d34ea2457e368e22947f1309143d60a6a7f9ddccd31cd526d4c4571bcc4",
+      "author_download_url": "https://drive.google.com/file/d/1CfzE87a0f6LhBp0kniSl1-89zaLCZ8cA/view?usp=sharing"
+    },
+    "license_url": "https://github.com/qaz812345/TrackNetV3/blob/6eda442ada1740573f200f836d93edc9a541ee86/LICENSE"
+  },
+  "conversion": {
+    "report_sha256": "6f54b8c3e7511fcf6f590119a4db312065acbedbdb30ac998e6d6f278357e1eb",
+    "completion_audit_sha256": "f3e5f84e0bc5a0b82851b1d2295c3c5a308418ea361cc35b61aa00b9afa0cb42",
+    "conversion_script_sha256": "86170fadac0ea3e76753d790515eee5723c0b4c480118b53c9e7d41724ba27a2",
+    "format": "mlprogram",
+    "specification_version": 8,
+    "compute_precision": "float32",
+    "minimum_deployment_target": {
+      "ios": "17.0",
+      "macos": "14.0"
+    },
+    "reference_pipeline": {
+      "Pillow": "11.3.0",
+      "coremltools": "9.0",
+      "numpy": "1.26.4",
+      "opencv-python-headless": "4.11.0.86",
+      "torch": "2.7.0"
+    },
+    "historical_development_pipeline": {
+      "Pillow": "13.0.0",
+      "receipt_sha256": "1e4c70e2f48bd16e4873676614391e21ca4b25fe0e3f2734da53474624f84d3a"
+    },
+    "pillow_11_3_vs_13_preprocessing_equivalence": "not_established_in_this_manifest"
+  },
+  "contract": {
+    "input": {
+      "channels": "median-background RGB, frame0 RGB, frame1 RGB, ..., frame7 RGB",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "name": "frames",
+      "range": [
+        0,
+        1
+      ],
+      "shape": [
+        1,
+        27,
+        288,
+        512
+      ]
+    },
+    "output": {
+      "activation": "sigmoid",
+      "dtype": "float32",
+      "layout": "NTHW",
+      "name": "heatmaps",
+      "range": [
+        0,
+        1
+      ],
+      "shape": [
+        1,
+        8,
+        288,
+        512
+      ]
+    },
+    "shape_policy": "static batch1; 8 frames; no padding, interpolation or InpaintNet",
+    "postprocessing": "strict >0.5 mask; OpenCV RETR_EXTERNAL/CHAIN_APPROX_SIMPLE; max boundingRect w*h, first contour wins tie; int(x+w/2), int(y+h/2)"
+  },
+  "preprocessing": {
+    "algorithm_version": "tracknetv3-rgb-native-median48-bicubic-v1",
+    "rgb_dtype": "uint8",
+    "median_space": "original-resolution RGB before crop/resize",
+    "background_frame_count": 48,
+    "background_selection": "predeclared per-window indices; for120 frames floor(i*119/47), i=0..47",
+    "median_cast": "per-pixel median then uint8",
+    "resize": "BICUBIC",
+    "resize_size_wh": [
+      512,
+      288
+    ],
+    "same_view_for_background_and_sequence": true,
+    "channel_order": "background RGB, frame0 RGB, frame1 RGB, ..., frame7 RGB",
+    "tensor_layout": "NCHW",
+    "normalization_divisor": 255,
+    "tensor_dtype": "float32",
+    "includes_future_frames": true,
+    "offline_only": true,
+    "causal_realtime_background_validated": false
+  },
+  "validation": {
+    "conversion_consistency_mac_cpu_only": true,
+    "sequences_checked": 8,
+    "heatmaps_checked": 64,
+    "max_absolute_heatmap_difference": 8.106231689453125e-06,
+    "threshold_flipped_pixels": 0,
+    "candidate_changed_frames": 0,
+    "iphone_tested": false,
+    "tennis_accuracy_accepted": false,
+    "speed_model": false,
+    "app_integrated": false,
+    "production": false,
+    "auto_publish": false
+  },
+  "package_files": [
+    {
+      "path": "Data/com.apple.CoreML/model.mlmodel",
+      "bytes": 28250,
+      "sha256": "0df1621c79bdfd68374321a8ba18698b0560871f21874a89fc541c6d3ffc4cc0"
+    },
+    {
+      "path": "Data/com.apple.CoreML/weights/weight.bin",
+      "bytes": 45350912,
+      "sha256": "e8814084d31bfc98846cb6a641d58ff666ddaf1494f9f42524f8147771c2619e"
+    },
+    {
+      "path": "Manifest.json",
+      "bytes": 617,
+      "sha256": "a4a6c808692881c9b3e67cc46b9a793e4098f087b187dfdc28f58d12dbcb5ecf"
+    }
+  ],
+  "package_bytes": 45379779,
+  "limitations": [
+    "Declared contract is hash-bound to this artifact, not a result of standard-library Core ML execution.",
+    "Badminton pretrained research ball detector; not a qualified tennis speed model.",
+    "Only isolated Mac CPU conversion consistency was tested; iPhone, accuracy and end-to-end speed acceptance remain unverified.",
+    "Offline48-frame background includes future frames; realtime adaptation requires separate evidence.",
+    "No automatic App packaging, old-model replacement, download or publication."
+  ]
+}

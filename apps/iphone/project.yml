@@ -1,0 +1,81 @@
+name: ZacksCourt
+options:
+  minimumXcodeGenVersion: 2.40.0
+  deploymentTarget:
+    iOS: '17.0'
+  developmentLanguage: zh-Hans
+packages:
+  ZacksCourt:
+    path: ../..
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    MARKETING_VERSION: '1.0'
+    CURRENT_PROJECT_VERSION: '1'
+    CODE_SIGN_STYLE: Automatic
+targets:
+  ZacksCourt:
+    type: application
+    platform: iOS
+    sources:
+      - path: ZacksCourt/ZacksCourtApp.swift
+      - path: ZacksCourt/Assets.xcassets
+      - path: ZacksCourt/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      # A folder reference preserves compiled CoreML directories byte-for-byte.
+      # scripts/generate-ios.sh prepares and verifies this ignored local asset set.
+      - path: ../../.local/AnalysisModels
+        type: folder
+        buildPhase: resources
+        optional: true
+    dependencies:
+      - package: ZacksCourt
+        product: CourtApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.claude89757.zackscourt
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: '1'
+        SUPPORTS_MACCATALYST: NO
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    info:
+      path: ZacksCourt/Info.plist
+      properties:
+        CFBundleDisplayName: Zacks Court
+        CourtModelSet: sjia
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        NSCameraUsageDescription: 在机位模式录像并分析球场画面，或扫描看板端配对码。
+        NSPhotoLibraryAddUsageDescription: 把录像或某一拍的视频片段存到相册。只添加，不读取相册里的照片。
+        NSLocalNetworkUsageDescription: 在局域网、个人热点或点对点 Wi-Fi 中，连接另一台运行 Zacks Court 的设备，或让同一网络里的浏览器打开看板，传输逐拍分析数据、低清预览与录像片段。
+        NSBonjourServices: [_zackscourt._tcp]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [zackscourt]
+  ZacksCourtUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [ZacksCourtUITests]
+    dependencies:
+      - target: ZacksCourt
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.claude89757.zackscourt.uitests
+        TEST_TARGET_NAME: ZacksCourt
+schemes:
+  ZacksCourt:
+    build:
+      targets:
+        ZacksCourt: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - name: ZacksCourtUITests
+          parallelizable: false

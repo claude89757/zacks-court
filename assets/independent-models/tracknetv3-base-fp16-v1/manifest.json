@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "model_id": "tracknetv3-base-fp16-v1",
+  "display_name": "TrackNetV3 official base, float16-compute Core ML conversion for the Neural Engine",
+  "artifact_role": "research_base_ball_detector",
+  "package_name": "TrackNetV3Base.mlpackage",
+  "license": {
+    "spdx": "MIT",
+    "file": "LICENSE",
+    "bytes": 1097,
+    "sha256": "1eeb31683deba741bce99f5f33bb813293a23b4e6c8302d6f056a587a30cd497",
+    "scope": "upstream code and pretrained model checkpoints; preserve the complete original notice"
+  },
+  "documentation": {
+    "file": "README.md",
+    "bytes": 1976,
+    "sha256": "ea0b60857cb11fe1b860298466de1a038dae506458df1888a220885f9f853c84"
+  },
+  "upstream": {
+    "repository": "https://github.com/qaz812345/TrackNetV3",
+    "commit": "6eda442ada1740573f200f836d93edc9a541ee86",
+    "readme_sha256": "cda4991691ca354c4cdda8b63f535b21e1fad7d0344fbf16ff409745fecd6691",
+    "source_files_sha256": {
+      "LICENSE": "1eeb31683deba741bce99f5f33bb813293a23b4e6c8302d6f056a587a30cd497",
+      "dataset.py": "c8cf51f8fd59e466f3a1916ba99b24ac8b487ff85f69362ee72758b6b1643f92",
+      "model.py": "04fd51ff88e58189474677dbf11f81e52b78df00226fb97ea0678b31ef7284e3",
+      "predict.py": "ea338db0adc8d5ff89b0313b248d82c93b43ecb96cfefcc4ef44c542f462cf88",
+      "test.py": "420511325901bf25d5a28b101b1db994c5d6e4ab00a74d30e600a2e4f8b1d204"
+    },
+    "checkpoint": {
+      "filename": "TrackNet_best.pt",
+      "bytes": 136190877,
+      "sha256": "df867641a02712b021f04548ff4b1208ddfdb47f629ab2094ceb978667e83b1a",
+      "archive_filename": "TrackNetV3_ckpts.zip",
+      "archive_bytes": 131653952,
+      "archive_sha256": "8de68d34ea2457e368e22947f1309143d60a6a7f9ddccd31cd526d4c4571bcc4",
+      "author_download_url": "https://drive.google.com/file/d/1CfzE87a0f6LhBp0kniSl1-89zaLCZ8cA/view?usp=sharing"
+    },
+    "license_url": "https://github.com/qaz812345/TrackNetV3/blob/6eda442ada1740573f200f836d93edc9a541ee86/LICENSE"
+  },
+  "conversion": {
+    "report_sha256": "a0bf09e31e4984c134f82220d3e235477cea49d6bf956e3317fccb6490f878de",
+    "conversion_script_sha256": "e203ae153386f4e751d1609f00a8d243168a4f0037e6653712b5122aa3b4e7df",
+    "format": "mlprogram",
+    "specification_version": 8,
+    "compute_precision": "float16",
+    "minimum_deployment_target": {
+      "ios": "17.0",
+      "macos": "14.0"
+    },
+    "reference_pipeline": {
+      "Pillow": "11.3.0",
+      "coremltools": "9.0",
+      "numpy": "1.26.4",
+      "opencv-python-headless": "4.11.0.86",
+      "torch": "2.7.0"
+    },
+    "historical_development_pipeline": {
+      "Pillow": "13.0.0",
+      "receipt_sha256": "1e4c70e2f48bd16e4873676614391e21ca4b25fe0e3f2734da53474624f84d3a"
+    },
+    "pillow_11_3_vs_13_preprocessing_equivalence": "not_established_in_this_manifest",
+    "derived_from": {
+      "model_id": "tracknetv3-base-v1",
+      "manifest_sha256": "7b5d238e50b2ac6475d69c362b97555d050e2572d1e9e6d4a2962b0b1bfc5282",
+      "torch_trace_sha256": "dc4523fe0a65a93cbea0b4905380df8738f803167be56e536b4aaa865e91d78b",
+      "equivalence": "tolerance only: max |heatmap difference| <= 0.004 on the Neural Engine and GPU, same argmax peaks, 3 test.MOV windows (24 heatmaps) on an M4 Pro"
+    }
+  },
+  "contract": {
+    "input": {
+      "channels": "median-background RGB, frame0 RGB, frame1 RGB, ..., frame7 RGB",
+      "dtype": "float32",
+      "layout": "NCHW",
+      "name": "frames",
+      "range": [
+        0,
+        1
+      ],
+      "shape": [
+        1,
+        27,
+        288,
+        512
+      ]
+    },
+    "output": {
+      "activation": "sigmoid",
+      "dtype": "float32",
+      "layout": "NTHW",
+      "name": "heatmaps",
+      "range": [
+        0,
+        1
+      ],
+      "shape": [
+        1,
+        8,
+        288,
+        512
+      ]
+    },
+    "shape_policy": "static batch1; 8 frames; no padding, interpolation or InpaintNet",
+    "postprocessing": "strict >0.5 mask; OpenCV RETR_EXTERNAL/CHAIN_APPROX_SIMPLE; max boundingRect w*h, first contour wins tie; int(x+w/2), int(y+h/2)"
+  },
+  "preprocessing": {
+    "algorithm_version": "tracknetv3-rgb-native-median48-bicubic-v1",
+    "rgb_dtype": "uint8",
+    "median_space": "original-resolution RGB before crop/resize",
+    "background_frame_count": 48,
+    "background_selection": "predeclared per-window indices; for120 frames floor(i*119/47), i=0..47",
+    "median_cast": "per-pixel median then uint8",
+    "resize": "BICUBIC",
+    "resize_size_wh": [
+      512,
+      288
+    ],
+    "same_view_for_background_and_sequence": true,
+    "channel_order": "background RGB, frame0 RGB, frame1 RGB, ..., frame7 RGB",
+    "tensor_layout": "NCHW",
+    "normalization_divisor": 255,
+    "tensor_dtype": "float32",
+    "includes_future_frames": true,
+    "offline_only": true,
+    "causal_realtime_background_validated": false
+  },
+  "validation": {
+    "conversion_consistency_mac_cpu_only": true,
+    "sequences_checked": 8,
+    "heatmaps_checked": 64,
+    "max_absolute_heatmap_difference": 8.106231689453125e-06,
+    "threshold_flipped_pixels": 0,
+    "candidate_changed_frames": 0,
+    "iphone_tested": false,
+    "tennis_accuracy_accepted": false,
+    "speed_model": false,
+    "app_integrated": false,
+    "production": false,
+    "auto_publish": false
+  },
+  "package_files": [
+    {
+      "path": "Data/com.apple.CoreML/model.mlmodel",
+      "bytes": 30018,
+      "sha256": "8d76ab90496778fcf351ae501da273ce639637258d717f7130c3049f8dc132b7"
+    },
+    {
+      "path": "Data/com.apple.CoreML/weights/weight.bin",
+      "bytes": 22676608,
+      "sha256": "ca8842fb770ea40ab6a19d9253aa37e5e23c071cf0df48f7ac0a53a4460fc834"
+    },
+    {
+      "path": "Manifest.json",
+      "bytes": 617,
+      "sha256": "e1f693bc34b7582f1e8d3fe0ba7f1ba1f150f481da810886d73e6c31f97292dc"
+    }
+  ],
+  "package_bytes": 22707243,
+  "limitations": [
+    "Research ball locator from badminton weights; not a qualified tennis or speed model.",
+    "FP16 compute: compare with the FP32 package by tolerance, never bit for bit.",
+    "Not tested on an iPhone; timing and agreement were measured on one Mac only."
+  ]
+}

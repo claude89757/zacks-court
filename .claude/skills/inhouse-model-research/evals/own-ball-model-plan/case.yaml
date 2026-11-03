@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: own-ball-model-plan
+expected_outcome: |
+  A plan grounded in the repo: it builds on the existing ball labels and training notes in docs/speed-model-
+  training.md, explains the licensing reason for retraining (MIT weights but unclear badminton training
+  data) and keeps S家 outputs (S家 App or the in-app S家 chain) out of the training labels, respects the live-lane budget (512x288 input,
+  FP16 on the Neural Engine, Phase 0 to measure on iPhone), keeps 1080 and full_match_video in the
+  development group, gets its new labels automatically (physics pseudo-labels, our own offline teacher,
+  agreement checks) with no human labelling step, and evaluates on held-out courts with the repo's scoring
+  as well as an independent reference produced without human labels.

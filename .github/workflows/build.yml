@@ -1,0 +1,33 @@
+name: Code-only native build
+
+# Manual only. The merge gate is the local pre-PR run listed in AGENTS.md
+# (Git 约定); this job is an independent recheck to start by hand, e.g.
+# before a release or after a toolchain change. macOS minutes on a private
+# repository are billed at 10x, so it does not run on every push or PR.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Compile and check code (no analysis models)
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build shared package and Mac executable without model assets
+        run: swift build
+      - name: Check protocol and pairing validation
+        run: swift run court-check
+      - name: Run the test suite
+        run: swift test
+      - name: Record validation scope
+        run: >-
+          printf '%s\n' 'Code compilation, protocol and test-suite checks only. This job does not bundle analysis models, compile the iOS app, or validate tennis inference, ball speed, landing estimates, or field accuracy.'
+          >> "$GITHUB_STEP_SUMMARY"

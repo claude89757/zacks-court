@@ -1,0 +1,308 @@
+<div align="center">
+
+<img src="docs/images/app-icon.png" width="112" alt="Zacks Court 应用图标" />
+
+# Zacks Court
+
+**把每一次上场，留下来。**
+
+一台 iPhone 架在场边录网球，在手机本机实时估计每一拍的球速、落点和动作；<br/>另一台 iPhone、Mac 或任何浏览器在场外实时看。不用账号，不上云，数据只在你自己的设备上。
+
+*Courtside tennis recording with on-device, per-shot estimates of speed, bounce and stroke — for iPhone and Mac.*
+
+![iOS 17+](https://img.shields.io/badge/iOS-17%2B-111?logo=apple)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-111?logo=apple)
+![Swift](https://img.shields.io/badge/Swift-5.9-F05138?logo=swift&logoColor=white)
+![SwiftUI](https://img.shields.io/badge/UI-SwiftUI-0A84FF)
+![Core ML](https://img.shields.io/badge/推理-本机%20Core%20ML-34C759)
+![No cloud](https://img.shields.io/badge/数据-仅存本机-C2F059)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue)
+
+[亮点](#亮点) · [使用场景](#使用场景) · [界面](#界面) · [工作原理](#工作原理) · [效果对比](#效果对比) · [路线图](#路线图) · [快速开始](#快速开始) · [参与开发](#参与开发)
+
+</div>
+
+<p align="center">
+  <img src="docs/images/mac-dashboard.jpg" width="92%" alt="Mac 看板：球速、落点分布、最近击球和记录控制" />
+  <br/><sub>Mac 看板记录中的界面。数据是虚构示例。</sub>
+</p>
+
+---
+
+## 亮点
+
+| | |
+| --- | --- |
+| 🎾 **逐拍结果** | 每一拍给出击球时刻、动作（正手、反手、发球、截击、高压）、球速估计、落点和界内外估计。 |
+| 📱 **分析就在场边手机上** | 机位以 1920×1080 / 60 帧录像，同时在本机实时分析。网络只传逐拍数据，Wi-Fi 不稳不影响分析和录像。 |
+| 🧭 **自动识别球场** | 从画面里的白线求出相机和球场，不用手动标定；识别不了时可以点四个角。 |
+| 🖥️ **三种看板** | 另一台 iPhone 或 Mac（TLS 加密），或者任何设备的浏览器（扫码即用，不用装 App）。 |
+| 🏁 **场边测速牌** | 全屏大字显示最近一拍或发球的球速，附最高、平均和趋势。 |
+| 🔒 **不用账号，不上云** | 没有服务器、统计或广告。录像和结果只存在你的设备上。 |
+| ✋ **不知道就写「—」** | 证据不够时不给数，写明原因，统计里不按 0 算。球速和落点都叫「估计」，不叫「测量」。 |
+| 🎬 **导入视频也能分析** | 不在球场时，从相册或「文件」选一段 60 帧/秒的横屏网球视频，用机位同一套模型逐拍分析，存进历史记录。 |
+| 🧪 **自研分析链** | 球检测用 MIT 许可的 TrackNetV3，击球、触地、测速、动作和球场识别都是本项目自己的 Swift 代码。上架版只用自研模型。 |
+
+## 使用场景
+
+### 场景一：一台 iPhone，自己练
+
+手机横放在底线后方的支架上，打完在手机上回看。
+
+```mermaid
+flowchart LR
+    subgraph 球场
+        P1["🎾 球员"]
+    end
+    C["📱 机位 iPhone<br/>底线后方、横放、架高<br/>1080p60 录像 + 实时分析"]
+    C -- 拍摄整片球场 --> 球场
+    C --> H["📚 历史记录<br/>逐拍回看、单拍片段、存到相册"]
+```
+
+### 场景二：机位 + App 看板（教练或队友在场外看）
+
+```mermaid
+flowchart LR
+    C["📱 机位 iPhone<br/>录像、分析<br/>会话以它为准"]
+    D["💻 Mac 或 📱 iPhone 看板<br/>实时数据、测速牌、落点图<br/>远程开始/暂停/结束"]
+    C <== "TLS 加密 · 同一 Wi-Fi / 个人热点 / 点对点 Wi-Fi" ==> D
+    C -. 记录中按需 .-> D2["单拍片段（前后几秒）"]
+    C -. 记录结束后 .-> D3["整段录像回传"]
+```
+
+断线时机位照常录像和分析，重连后自动补齐数据。看板上的操作是请求，以机位为准。
+
+### 场景三：机位 + 浏览器看板（安卓、平板、电脑）
+
+```mermaid
+flowchart LR
+    C["📱 机位 iPhone<br/>开 HTTP + WebSocket 服务"]
+    B1["🤖 安卓手机"]
+    B2["📟 平板"]
+    B3["🖥️ 电脑浏览器"]
+    C -- 扫机位上的二维码<br/>或输入地址 + 6 位配对码 --> B1
+    C --> B2
+    C --> B3
+```
+
+浏览器看板走局域网明文 HTTP，同一网络里能抓包的人可以看到逐拍数据和预览画面，见[数据与隐私](#数据与隐私)。
+
+### 机位怎么架
+
+```mermaid
+flowchart TB
+    subgraph 场地["俯视图"]
+        direction TB
+        F["远端底线"]
+        N["—— 球网 ——"]
+        B["近端底线"]
+        F --- N --- B
+    end
+    CAM["📱 机位：近端底线后方，架高<br/>（开发视频的机高 1.5–3.3 米）<br/>横放，整片球场入画"]
+    B --- CAM
+```
+
+画面里要能看到两条底线、边线、发球线和球网。机位越高，远端越清楚。
+
+## 界面
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/app-store/screenshots/iphone-6.9/01-summary-speed.png" alt="记录详情：球速" /></td>
+    <td width="33%"><img src="docs/app-store/screenshots/iphone-6.9/02-bounce-map.png" alt="球场落点图" /></td>
+    <td width="33%"><img src="docs/app-store/screenshots/iphone-6.9/03-strokes.png" alt="动作类别" /></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>球速：每拍的估计值和趋势</sub></td>
+    <td align="center"><sub>落点：俯视球场上的触地估计</sub></td>
+    <td align="center"><sub>动作：正手、反手、发球……</sub></td>
+  </tr>
+</table>
+
+<sub>以上三张是示例画面，数据是 `court-probe demo-session` 编造的演示数据，不是实测。</sub>
+
+<p align="center">
+  <img src="docs/images/speedboard-serve-example.png" width="70%" alt="场边测速牌：发球球速" />
+  <br/><sub>场边测速牌（发球模式），数据是虚构示例。</sub>
+</p>
+
+<p align="center">
+  <img src="docs/images/iphone-camera.png" width="70%" alt="机位界面" />
+  <br/><sub>机位：横放后自动开始采集，没有看板也能单独记录。</sub>
+</p>
+
+## 工作原理
+
+```mermaid
+flowchart LR
+    CAM["相机<br/>1920×1080 · 60 fps"] --> REC["本机录像<br/>H.264 MOV"]
+    CAM --> PRE["低清预览<br/>640×360，按需"]
+    CAM --> COPY["复制需要的帧<br/>（不占相机缓冲）"]
+    COPY --> BALL["球检测<br/>TrackNetV3 FP16<br/>神经网络引擎"]
+    COPY --> PEOPLE["人员检测<br/>Apple Vision + 姿态"]
+    COPY --> COURT["球场识别<br/>白线 → 相机 → 球场坐标"]
+    BALL --> TRACK["球轨迹"]
+    TRACK --> EVENTS["击球 / 触地 / 过网"]
+    PEOPLE --> EVENTS
+    COURT --> EVENTS
+    EVENTS --> OUT["每一拍：动作、球速估计、<br/>落点、界内外估计"]
+    OUT --> SESSION["会话（机位为准）"]
+    SESSION --> VIEW["看板 / 浏览器 / 历史"]
+```
+
+- **采集不等分析**：采集回调里只做常数时间的工作。分析跟不上时丢掉积压、重置轨迹，不会拖慢录像，也不会把断开的轨迹硬拼在一起。
+- **发热时降载**：只削减预览、人员检测和分析频率，从不降低录像的帧率和分辨率。
+- **球速怎么算**：在识别出的球场坐标里，用带空气阻力的飞行模型拟合击球到触地的球点。看不到落地、点太少或拟合不过检查时不给球速。
+- 更多细节：[机位端分析](docs/camera-side-analysis.md)、[界内外](docs/hawk-eye.md)、[模型替换设计](docs/model-replacement-design.md)。
+
+## 效果对比
+
+自研分析链以 **S家**（一款商用网球分析 App）为参照来迭代。S家本身不是真值，和它接近只说明两个软件结论相近，不说明谁更准。下面的数字都只来自对照 S家 App 导出的逐拍结果，用仓库里的 `compare_rows.py` 和 `serve_score.py` 打分。
+
+**发球**（规则 v26，2026-11-03）：
+
+| 视频 | 用途 | 发球识别（F1） | 有球速的发球 | 球速与 S家相差 20% 以内 |
+| --- | --- | ---: | ---: | ---: |
+| 开发视频 A：高机位单打 | 调参 | 0.94 | 29 / 32 | 26 / 29 |
+| 开发视频 B：1.5 米低机位双打 | 调参 | 0.93 | 33 / 37 | 28 / 33 |
+| 留出视频：新球场 | 只用来检验 | 0.87 | 44 / 55 | — |
+
+- 开发视频 B 上，逐帧看球拍碰球，S家有两拍发球把击球时刻标晚了 0.2–0.3 秒，那两拍它报的球速偏快，所以这段视频上「20% 以内」的上限约为 89%。
+- 留出视频上，S家 App 链给的不是同一种球速，没有算「20% 以内」。
+
+**整体**（2026-10-29 到 11-03 的多段视频，对照 S家）：
+
+| 方面 | 自研现状 | 主要差距 |
+| --- | --- | --- |
+| 击球检出 | 约 2/3 的 S家击球能检出 | 同一次飞行被拆成几段，自研行数是 S家的 2.4–3.1 倍 |
+| 动作类别 | 两边都给了类别时约 60% 一致；近端击球点清楚时 20/25 | 广角机位上远端球员只有约 55 px 高，正反手接近抛硬币 |
+| 球速覆盖 | 对拉球约 1/5 的 S家有速拍也有球速；发球 80–90% | 触地召回约 40%，看不到落地就不给球速 |
+| 界内外 | 判出来的和 S家一致率高（近端 44/45，远端 18/20） | 只判了 S家约一半的拍，缺的是没找到落点 |
+| 新球场 | 能自动识别球场 | 换球场后比调参的视频明显变差 |
+
+> [!IMPORTANT]
+> 这些数字都不是精度。球速、落点、动作和界内外的真实误差，要在球场上用雷达、第二机位这类独立参考来测，目前还没测。不能把它们当雷达测速或正式判罚。
+
+## 路线图
+
+### 上架 1.0（iPhone，付费下载）
+- [x] 商店文字（中英）、隐私政策和技术支持页、价格（¥18 / $2.99）、全部地区销售
+- [x] 示例截图 5 张（演示数据，已标注）
+- [ ] 年龄分级、类别、隐私标签（不收集数据）、审核信息
+- [ ] 用自研模型构建 1.0 并上传，提交审核
+- [ ] 真机截图：机位对着真实球场、看板、测速牌；给审核员的演示视频
+
+### 核心功能（优先）
+
+App 的核心是三项：**发球识别与发球球速**（两端）、**近端界内外**（发球和对拉）、**录像与导出**。研究和打磨只围绕这三项。
+
+- [ ] **近端界内外覆盖**：S家判了的近端球，我们只判出约一半，缺的几乎都是没找到落点；先提高触地召回
+- [ ] **球检测**：用自动产生的标签（物理拟合的伪标签、离线老师、背景中位图负例）微调 TrackNetV3，提高触地召回和远端发球的小球
+- [ ] **下网发球**：到网时刻用量到的球停时刻约束；低机位近端发球偏快
+- [ ] **远端发球击球时刻**：抛球没切开时击球被标晚，球速偏慢
+- [ ] **独立参考**：雷达读数测发球速度、第二机位核对近端落点、击球声定时，用来评估「超越 S家」
+- [ ] iPhone 上自研实时链的长时间发热实测（3 分钟负载测量已通过：分析占用约 73%，温度正常；还缺 30 分钟以上和球场上的实测）
+
+### 其他功能（保留，不再投入）
+
+对拉的动作类别和球速、远端界内外、多报（同一次飞行拆成几拍）照现状保留，暂不安排改进。
+
+### 实机和球场
+- [ ] 个人热点互传、不在同一网络时的点对点直连
+- [ ] 一小时以上的温升和续航、来电与锁屏
+- [ ] 按[球场实测方案](docs/field-test-plan.md)做一次带参考值的实测
+
+### 不做
+计分、正式判罚、多机位融合、云端或远程观看。
+
+## 快速开始
+
+**需要**：macOS 14+、完整 Xcode、[XcodeGen](https://github.com/yonaskolb/XcodeGen)、Python 3、Git LFS。在 iPhone 上运行需要 iOS 17+ 和开发签名。
+
+```sh
+git lfs install && git lfs pull        # 取得自研球检测模型（TrackNetV3，MIT）
+
+./scripts/build-mac.sh                 # Mac App → build/Zacks Court.app
+open 'build/Zacks Court.app'
+
+./scripts/generate-ios.sh              # 生成 iPhone 工程，选自己的 Team 运行 ZacksCourt
+open apps/iphone/ZacksCourt.xcodeproj
+
+swift build && swift run court-check && swift test   # 本机检查
+```
+
+默认构建只带自研模型，这也是上架版本的构建方式。其他构建方式：
+
+| `COURT_MODEL_SET` | 打包内容 | 说明 |
+| --- | --- | --- |
+| `independent`（默认） | 自研 | 上架版本 |
+| `both` | S家 + 自研，App 内切换 | 内测对照用，需要你自己放在本地的 S家模型 |
+| `sjia` | 只有 S家 | 同上 |
+| `COURT_CODE_ONLY=1` | 不带模型 | 只检查编译，App 不做分析 |
+
+S家模型不在仓库里，也不会进 Git。有的话放在 `.local/s-models/`（已被忽略），`scripts/prepare-analysis-models.sh` 会逐文件校验后打包。完整的构建、测试和约定见 [AGENTS.md](AGENTS.md)。
+
+## 使用指南
+
+1. **架机位**：场边的 iPhone 选「机位」，允许相机和本地网络权限，横放固定，画面自动打开。按「架设机位」提示让整片球场入画。
+2. **连看板**（可选）：点侧栏顶部的「连接」。
+   - 浏览器看板：用另一台设备扫机位上的二维码；扫不了就在浏览器输入地址和 6 位配对码。可以同时连多台。
+   - App 看板：另一台 iPhone 或 Mac 选「看板」→「连接机位」显示二维码，机位点「扫描看板的二维码」。需要加密、点对点直连或整段录像回传时用这种。
+3. **球场识别**：开场约 7 秒后自动识别，记录中每分钟复查。识别不了时打开「标定球场」，按近左、近右、远右、远左点双打外框四角。
+4. **持拍手**：近端、远端默认右手，单打可以逐侧改成左手或未知。
+5. **开始记录**：在机位或看板点「开始记录」。记录中可以打「精彩」「待复核」标记，或者在看板上点某一拍的 ▶ 取那一拍前后几秒的片段。
+6. **回看**：结束后在「历史记录」里按记录或按球速、落点、动作筛选每一拍，单拍可以分享或存到相册。
+
+**不在球场？** 启动页点「导入视频分析」，从相册或「文件」选一段视频（横屏 16:9、720p 以上、60 帧/秒、3 秒到 10 分钟），App 用机位同一套自研模型逐拍分析，结果作为一条记录存进历史，回看和筛选都一样。视频越长分析越久，期间留在这一页；原视频不复制，记录里的录像是重新编码的一份。镜头像机位那样从场边或底线后方拍下整片球场时，球速和落点最容易估计出来。
+
+> [!TIP]
+> 长时间录制给机位接充电宝，开「引导式访问」防止误退出。机位退到后台、来电或手机转向时，会话会暂停。
+
+## 数据与隐私
+
+录像和分析结果只存在设备本机，没有账号、云同步或远程观众。
+
+| 内容 | iPhone | Mac |
+| --- | --- | --- |
+| 会话、录像、逐拍结果 | App 文稿 › `Zacks Court/Sessions`（「文件」App 里可见） | `~/Movies/Zacks Court/Sessions` |
+| 看板取到的单拍片段 | `Zacks Court/Sessions/Clips/会话ID/` | `~/Movies/Zacks Court/Sessions/Clips/会话ID/` |
+
+> [!WARNING]
+> 配对二维码和配对链接含本次连接的密钥，不要截图公开。
+>
+> 浏览器看板没有 TLS：浏览器在局域网地址上拿不到可信证书，只能走明文 HTTP。令牌只在二维码里、用 HMAC 证明，不在网络上传；但同一网络里能抓包的人能看到逐拍数据、预览画面和访问码。需要加密时用 App 看板，或只让自己的设备连机位的个人热点。
+
+## 参照 S家做研究
+
+迭代自研分析时，用 S家当参照，但它的模型、导出数据和研究记录都**只放在各人自己的电脑上**，不进 Git：
+
+| 本地内容 | 位置（已被 `.gitignore` 忽略） |
+| --- | --- |
+| S家模型（可选，用于 `both` / `sjia` 构建和 `court-analyze`） | `.local/s-models/` |
+| 运行 S家模型的那部分代码（同上，`scripts/reference-chain.sh` 接入） | `.local/s-chain/` |
+| S家 App 导出的逐拍参照行、你的研究笔记 | `docs/s-reference.local.md` 和 `.local/` 下的任意文件 |
+
+怎么准备这些本地文件见 [docs/s-reference.md](docs/s-reference.md)。没有它们也能开发：在自己的 Mac 上装 S家 App，分析同一段视频并导出逐拍结果，再用 `.claude/skills/inhouse-model-research/scripts/compare_rows.py` 和 `serve_score.py` 给自研输出打分。研究流程、开发视频与留出视频的分法、已经试过的方法，见 [研究 skill](.claude/skills/inhouse-model-research/SKILL.md) 和 [前沿地图](.claude/skills/inhouse-model-research/references/frontier.md)。
+
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [AGENTS.md](AGENTS.md) | 开发环境、构建和测试命令、模型准备、代码约定 |
+| [docs/unified-app.md](docs/unified-app.md) | 产品范围、角色和分析链路 |
+| [docs/camera-side-analysis.md](docs/camera-side-analysis.md) | 机位端实时分析：协议、会话所有权、降载、回传 |
+| [docs/web-display.md](docs/web-display.md) | 浏览器看板 |
+| [docs/hawk-eye.md](docs/hawk-eye.md) | 界内外估计的规则和误差范围 |
+| [docs/model-replacement-design.md](docs/model-replacement-design.md) | 自研替代 S家各部分的方案和进度 |
+| [docs/design-system.md](docs/design-system.md) | 界面令牌、组件和文案约定 |
+| [docs/verification.md](docs/verification.md) | 每一轮的验证记录 |
+| [docs/device-validation.md](docs/device-validation.md)、[docs/field-test-plan.md](docs/field-test-plan.md) | 实机和球场验收 |
+| [docs/app-store/](docs/app-store/README.md) | 上架材料 |
+
+## 参与开发
+
+欢迎提 Issue 和 PR。动手前请先读 [AGENTS.md](AGENTS.md)：仓库结构、构建与测试命令、哪些结论需要真机证据，以及改界面时要同步的 UI 测试和文档。提交前在本机跑 `swift build`、`swift run court-check`、`swift test`。
+
+## 许可证
+
+代码以 [MIT 许可证](LICENSE) 开源。第三方组件的许可见 `assets/independent-models/*/LICENSE`（TrackNetV3，MIT）和 `Sources/CourtCore/Notices/`。「Zacks Court」名称和应用图标不在许可范围内。S家模型和数据不属于本仓库，也不随仓库分发。

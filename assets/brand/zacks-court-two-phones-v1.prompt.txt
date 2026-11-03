@@ -1,0 +1,14 @@
+Generation method: built-in image_gen tool
+Reference role: prior generated image used for palette and material styling only
+
+Use case: logo-brand
+Asset type: square premium app icon for Zacks Court, a two-device tennis video capture and analysis app.
+Input image: style reference only for the dark forest-green / tennis-lime palette and refined lighting. Replace the previous court-based composition completely.
+Primary request: Design one compact, memorable app logo whose only objects are EXACTLY TWO SMARTPHONES and EXACTLY ONE TENNIS BALL. The two-phone collaboration must be immediately understandable, even at a small home-screen icon size.
+Composition: two unmistakable portrait smartphone silhouettes, one on each side, slightly tilted inward, forming a balanced embracing frame around a single bright tennis ball in the center foreground. Both phones are fully recognizable and similar in visual importance; show front screens with continuous rounded rectangular frames, dark glass and a small restrained top speaker/camera detail. The central ball overlaps only the inner lower edges of the two phones, leaving most of each handset visible. Unite all three objects into one strong compact emblem, comfortably inside the central 76% of the square with ample clear margin.
+Style: high-end sculpted app icon, simple bold forms with shallow dimensionality, beautifully precise geometry and subtle soft reflections. Luxurious matte dark-green anodized phone frames with delicate pale-green edge highlights; quiet smoky glass screens. A rich tennis-chartreuse ball with two clean ivory curved tennis seams and only a very fine short felt texture. Controlled satin highlights, no overly furry surface or toy-like glossy plastic.
+Background: full-bleed opaque near-black forest green (#09100C to #14271E), restrained tonal gradient, no separate tile, no mockup backdrop, no pre-rounded outer corners.
+Palette: deep forest green, tennis lime (#C2F057), warm ivory only.
+Lighting: restrained soft studio lighting, subtle depth and short contact shadows, precise and confident.
+Constraints: exactly two phones and one tennis ball, no other objects. No court, no ground plane, no rackets, no swoosh, no trajectory trail, no cables, no charts or detailed screen UI, no text or initials or numerals, no watermark. The screens stay simple. No busy setting, no poster or presentation grid. Keep the complete mark inside a rounded-square-safe area. Deliver a single high-resolution square app icon, preferably 2048 x 2048.
+

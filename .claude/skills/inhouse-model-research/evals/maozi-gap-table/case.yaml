@@ -1,0 +1,7 @@
+schema_version: "1.1"
+name: maozi-gap-table
+expected_outcome: |
+  Finds the existing in-house lane output and the S家 reference rows for maozi-0918, pairs them by hit time,
+  and reports a table with shots matched (about 135 of 173 S家 rows), stroke agreement on matched rows
+  (about 86 of 129), and speed overlap (about 20 shots where both give a speed, of 87 S家 speed rows, with
+  in-house about 20% higher). It says that S家 rows are a software reference, not truth.

@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: stroke-gap-research-plan
+expected_outcome: |
+  Uses the repo's existing evidence (the 1080 diagnosis in docs/verification.md and the design doc) to name
+  likely causes such as far-court hit point taken from the first ball observation, missed near hitters, and
+  the far serve window failing where the far baseline spans few pixels (1080 is wide-angle, not low). Treats
+  1080.mov as a development video that shares court and camera with full_match_video, so it scores at least
+  one held-out video (maozi-0918 or 0913-dsh) and the plan validates on other courts. The plan is a set of
+  measurable experiments with a baseline and the same scoring, and it addresses how to show results beyond
+  agreement with S家.

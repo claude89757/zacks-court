@@ -1,0 +1,9 @@
+Source artwork: docs/双眼网球手机吉祥物.png
+Visual edge cleanup: built-in image_gen tool
+Final master: assets/brand/zacks-court-mascot-master.png
+Platform export: scripts/prepare-app-icons.swift (size conversion and standard macOS icon mask)
+
+Edit the supplied image ONLY to prepare the selected app icon artwork for an iOS app icon. Preserve the exact mascot identity, pose, two ivory phone-shaped ears, two dark oval eyes, tennis-ball seam, vivid chartreuse ball, dark emerald palette, lighting and relative arrangement. Do not redesign, reinterpret, add or remove any mascot feature.
+Remove the exterior navy-blue surround and the pre-rounded tile boundary. The dark green artwork must extend seamlessly to all four edges and all four corners of a completely square opaque image. Remove the outer bevel/rim of the old rounded-square tile so there is no second inset app tile or outer border. Keep the mascot's intentionally cropped lower-right composition: the ball naturally continues beyond the bottom and right image edges, with no navy gap or dark outline at those edges. Keep both phone-ear shapes complete. Smooth clean anti-aliased edges, no fringe, no jaggies. Preserve the satin three-dimensional shading of the actual emblem.
+Deliver one square full-bleed opaque icon master, no text, no mockup, no new border, no pre-rounded outer corners. This is a faithful edge/background cleanup of the user-selected artwork, not a new logo design.
+

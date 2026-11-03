@@ -1,0 +1,71 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>离线球点标注</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#e9edf3;background:#11161d;font-size:16px}*{box-sizing:border-box}body{margin:0}header,main{max-width:1440px;margin:auto;padding:16px}h1{font-size:22px;margin:0 0 8px}p{line-height:1.5}button,input,select,textarea{font:inherit;border:1px solid #66717f;border-radius:7px;background:#1e2935;color:inherit;padding:10px;min-height:44px}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}.row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:10px 0}label{display:flex;gap:8px;align-items:center}#viewer{overflow:auto;height:min(66vh,780px);background:#080c10;border:1px solid #56606b;border-radius:8px}#stage{position:relative;width:100%;line-height:0}#frame{display:block;width:100%;height:auto;cursor:crosshair;user-select:none}#marker{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}#notes{width:100%;min-height:75px}#message{min-height:28px;color:#ffcf76;white-space:pre-wrap}#reviewState{font-weight:700}small,.muted{color:#b8c4d1}.panel{padding:12px 16px;background:#18212c;border-radius:10px;margin:12px 0}input[type=number]{width:110px}#zoom{width:180px}#sample{max-width:230px}.notice{color:#d7dfeb;margin:6px 0}#kind{color:#ffcf76}a{color:#9acbff}@media(max-width:600px){header,main{padding:12px}#viewer{height:48vh}.panel{padding:10px}label{flex-wrap:wrap}}
+</style>
+<header><h1>离线球点标注</h1><p class="notice">请在原图点击当前这颗球的中心。看不清、遮挡、画外、无球分别记录，不猜坐标。页面不显示任何预测。</p><small>人工身份仅为自报；已审不代表独立复核或物理精度通过。坐标属于本页图片像素，图片可能已缩小。</small></header>
+<main><div class="panel"><div class="row"><label>自报姓名 <input id="reviewer" placeholder="请填写姓名或代号" autocomplete="off"></label><label>标注者类别 <select id="reviewerKind"><option value="human_self_reported">人工（自报）</option><option value="agent">Agent 候选</option><option value="ui_test">UI 测试（不合格）</option></select></label><span id="kind"></span><button id="export">导出标注 JSON</button><button id="importButton">导入标注 JSON</button><input id="importFile" type="file" accept="application/json,.json" hidden></div><div id="progress"></div><small>自动保存在当前浏览器、本包专属的 localStorage。请及时导出备份；换浏览器、私密模式或清理站点数据可能丢失本机保存。</small></div>
+<div class="row"><label>样本 <select id="sample"></select></label><button id="previous">上一张待标图</button><button id="next">下一张待标图</button><label>放大 <input id="zoom" type="range" min="50" max="500" step="25" value="100"><span id="zoomValue">100%</span></label><button id="resetZoom">适应宽度</button></div>
+<div class="row"><button id="contextPrevious">前一原始邻帧（只读）</button><button id="contextNext">后一原始邻帧（只读）</button><button id="returnTarget">返回待标图</button></div><div id="position"></div><div id="viewer"><div id="stage"><img id="frame" draggable="false" alt="待人工标注的匿名视频帧"><svg id="marker" aria-hidden="true"></svg></div></div>
+<div class="panel"><div class="row"><label>状态 <select id="state"><option value="pending">未标</option><option value="visible">可见（请点球心）</option><option value="occluded">遮挡</option><option value="out_of_frame">画外</option><option value="absent">无球</option><option value="unknown">未知 / 无法判断</option></select></label><span id="coordinates">坐标 —</span><label>球心不确定半径（像素） <input id="uncertainty" type="number" min="0" step="0.5" placeholder="未知留空"></label></div>
+<div class="row"><label>同一目标球身份 <select id="identity"><option value="uncertain">不确定</option><option value="confirmed">我已确认</option></select></label><span id="reviewState"></span><button id="markReviewed">明确保存此帧为已审</button></div><label for="notes">备注</label><textarea id="notes" placeholder="例如：多颗球、模糊、反光；不要凭预测补点"></textarea><small>点击、改状态或写备注不会自动记为已审；修改已审帧会退回待审。未知、遮挡和画外不会作为无球负例。仅可见状态保存坐标。</small></div>
+<div id="message" role="status" aria-live="polite"></div><small id="packageInfo"></small></main>
+<script id="package-data" type="application/json">__PACKAGE_JSON__</script>
+<script>
+'use strict';
+const pkg=JSON.parse(document.getElementById('package-data').textContent);
+const $=id=>document.getElementById(id);
+const storageKey='ball-labels:v1:'+pkg.package_id;
+const bindings=['image_id','sample_id','frame_index','source_pts','source_time_base','image_sha256','width','height'];
+const imageMap=new Map(pkg.images.map(im=>[im.image_id,im]));
+const statuses=['pending','visible','occluded','out_of_frame','absent','unknown'];
+function blank(){return {schema_version:1,package_id:pkg.package_id,reviewer_kind:'human_self_reported',reviewer_name:'',reviewer_identity_verified:false,independent_review_verified:false,labels:pkg.images.map(im=>({...Object.fromEntries(bindings.map(k=>[k,im[k]])),status:'pending',x:null,y:null,uncertainty_px:null,target_identity:'uncertain',notes:'',reviewed:false,reviewed_at:null,reviewer_kind:'human_self_reported',origin_reviewer_kind:'human_self_reported'}))}}
+function validatePayload(p){
+ if(!p||p.schema_version!==1||p.package_id!==pkg.package_id)throw Error('标注包不匹配；当前数据保持不变');
+ if(!['human_self_reported','agent','agent_candidate','ui_test'].includes(p.reviewer_kind)||typeof p.reviewer_name!=='string')throw Error('标注者自报信息无效');
+ if(p.reviewer_identity_verified||p.independent_review_verified)throw Error('自报身份不能声明为独立验证');
+ if(!Array.isArray(p.labels)||p.labels.length!==pkg.images.length)throw Error('帧数量不匹配');
+ const seen=new Set();
+ for(const r of p.labels){
+  if(!r||!imageMap.has(r.image_id)||seen.has(r.image_id))throw Error('帧身份未知或重复');seen.add(r.image_id);
+  if(!['human_self_reported','agent','agent_candidate','ui_test'].includes(r.reviewer_kind)||!['human_self_reported','agent','agent_candidate','ui_test'].includes(r.origin_reviewer_kind))throw Error('每帧必须保留标注者类别和原始类别');
+  const im=imageMap.get(r.image_id);
+  if(bindings.some(k=>r[k]!==im[k]))throw Error('图片哈希、尺寸或源 PTS 绑定不匹配');
+  if(!statuses.includes(r.status)||!['confirmed','uncertain'].includes(r.target_identity)||typeof r.notes!=='string'||typeof r.reviewed!=='boolean')throw Error('标注字段无效');
+  if(r.reviewed){if(r.status==='pending'||typeof r.reviewed_at!=='string'||!/(Z|[+-]\d\d:\d\d)$/.test(r.reviewed_at)||!Number.isFinite(Date.parse(r.reviewed_at)))throw Error('已审记录缺少明确时间');}
+  else if(r.reviewed_at!==null)throw Error('未审记录不应含审核时间');
+  if(r.status==='visible'){
+   if(typeof r.x!=='number'||typeof r.y!=='number'||!Number.isFinite(r.x)||!Number.isFinite(r.y)||r.x<0||r.y<0||r.x>=im.width||r.y>=im.height)throw Error('球心坐标缺失、非有限或越界');
+   if(r.uncertainty_px!==null&&(typeof r.uncertainty_px!=='number'||!Number.isFinite(r.uncertainty_px)||r.uncertainty_px<0||r.uncertainty_px>Math.hypot(im.width,im.height)))throw Error('不确定半径无效');
+  }else if(r.x!==null||r.y!==null||r.uncertainty_px!==null)throw Error('非可见状态的坐标与半径必须为空');
+ }
+ return true;
+}
+let payload=blank(),at=0,contextOffset=0;
+function shownImage(){const target=pkg.images[at];return contextOffset===0?target:(pkg.context_frames||[]).find(im=>im.target_image_id===target.image_id&&im.frame_index===target.frame_index+contextOffset)}
+function message(text){$('message').textContent=text}
+function current(){return payload.labels.find(r=>r.image_id===pkg.images[at].image_id)}
+function save(){try{validatePayload(payload);localStorage.setItem(storageKey,JSON.stringify(payload));message('已保存到本机浏览器。请定期导出备份。')}catch(e){message('尚未保存：'+e.message+'。内存中的操作保留，请导出备份。')}}
+function invalidate(r){r.reviewed=false;r.reviewed_at=null}
+function marker(){const im=pkg.images[at],r=current();$('marker').setAttribute('viewBox',`0 0 ${im.width} ${im.height}`);$('marker').replaceChildren();if(contextOffset!==0||r.status!=='visible'||r.x===null)return;const ns='http://www.w3.org/2000/svg';const add=(name,attrs)=>{const n=document.createElementNS(ns,name);for(const [k,v]of Object.entries(attrs))n.setAttribute(k,v);$('marker').append(n)};add('circle',{cx:r.x,cy:r.y,r:r.uncertainty_px??7,fill:'none',stroke:'#ffdc65','stroke-width':2});add('path',{d:`M ${r.x-10} ${r.y} h 20 M ${r.x} ${r.y-10} v 20`,stroke:'#ffdc65','stroke-width':2});}
+function render(){const im=shownImage(),r=current();$('frame').src=im.image_path;$('frame').alt=`匿名 ${im.sample_id} 第 ${im.frame_index} 帧`;$('sample').value=im.sample_id;$('position').textContent=`${im.sample_id} · ${contextOffset===0?'待标图':'原始邻帧（只读）'} · 帧索引 ${im.frame_index} · 第 ${at+1} / ${pkg.images.length} 个标注目标 · ${im.width}×${im.height}`;$('previous').disabled=at===0;$('next').disabled=at===pkg.images.length-1;$('state').value=r.status;$('identity').value=r.target_identity;$('notes').value=r.notes;$('uncertainty').value=r.uncertainty_px??'';$('uncertainty').disabled=r.status!=='visible';$('coordinates').textContent=r.x===null?'坐标 —':`球心 (${r.x.toFixed(2)}, ${r.y.toFixed(2)}) px`;$('reviewState').textContent=r.reviewed?'已审（自报）':'待审';for(const id of ['state','identity','notes','markReviewed','reviewer','reviewerKind'])$(id).disabled=contextOffset!==0;$('uncertainty').disabled=contextOffset!==0||r.status!=='visible';const contextExists=offset=>offset===0||(pkg.context_frames||[]).some(c=>c.target_image_id===pkg.images[at].image_id&&c.frame_index===pkg.images[at].frame_index+offset);$('contextPrevious').disabled=!contextExists(contextOffset-1);$('contextNext').disabled=!contextExists(contextOffset+1);$('returnTarget').disabled=contextOffset===0;$('reviewer').value=payload.reviewer_name;$('reviewerKind').value=payload.reviewer_kind==='agent_candidate'?'agent':payload.reviewer_kind;$('kind').textContent=payload.reviewer_kind==='human_self_reported'?'人工身份为自报；已导入的Agent/测试帧不会转换成人工标签':'当前为Agent候选或UI测试，所有资格为false';$('progress').textContent=`已审 ${payload.labels.filter(x=>x.reviewed).length} / ${pkg.images.length}；未标 ${payload.labels.filter(x=>x.status==='pending').length}`;marker()}
+function edit(fn){if(contextOffset!==0){message('邻帧只读，请返回待标图');return}const r=current();fn(r);if(payload.reviewer_kind!=='human_self_reported'){r.reviewer_kind=payload.reviewer_kind;r.origin_reviewer_kind=payload.reviewer_kind}invalidate(r);save();render()}
+for(const id of [...new Set(pkg.images.map(im=>im.sample_id))]){const option=document.createElement('option');option.value=id;option.textContent=id;$('sample').append(option)}
+$('sample').onchange=()=>{at=pkg.images.findIndex(im=>im.sample_id===$('sample').value);contextOffset=0;render()};
+$('previous').onclick=()=>{if(at>0){at--;contextOffset=0;render()}};$('next').onclick=()=>{if(at<pkg.images.length-1){at++;contextOffset=0;render()}};
+$('contextPrevious').onclick=()=>{contextOffset--;render();message('上下文只读，不能点标注；请返回待标图。')};$('contextNext').onclick=()=>{contextOffset++;render();message('上下文只读，不能点标注；请返回待标图。')};$('returnTarget').onclick=()=>{contextOffset=0;render()};
+$('zoom').oninput=()=>{$('stage').style.width=$('zoom').value+'%';$('zoomValue').textContent=$('zoom').value+'%'};
+$('resetZoom').onclick=()=>{$('zoom').value=100;$('zoom').oninput()};
+$('frame').onclick=event=>{if(contextOffset!==0){message('邻帧只读，请返回待标图后标注');return}const box=$('frame').getBoundingClientRect(),im=pkg.images[at];const x=(event.clientX-box.left)/box.width*im.width,y=(event.clientY-box.top)/box.height*im.height;if(x<0||y<0||x>=im.width||y>=im.height)return;edit(r=>{r.status='visible';r.x=Math.min(im.width-0.001,Math.round(x*1000)/1000);r.y=Math.min(im.height-0.001,Math.round(y*1000)/1000)})};
+$('state').onchange=()=>{const status=$('state').value;if(status==='visible'&&current().x===null){render();message('请直接在图片上点击球心，再选择不确定半径。');return}edit(r=>{r.status=status;if(status!=='visible'){r.x=null;r.y=null;r.uncertainty_px=null}})};
+$('uncertainty').onchange=()=>{const text=$('uncertainty').value;const value=text===''?null:Number(text);if(value!==null&&(!Number.isFinite(value)||value<0||value>Math.hypot(pkg.images[at].width,pkg.images[at].height))){message('半径无效，未应用');render();return}edit(r=>r.uncertainty_px=value)};
+$('identity').onchange=()=>{const value=$('identity').value;edit(r=>r.target_identity=value)};
+$('notes').oninput=()=>{const r=current();r.notes=$('notes').value;invalidate(r);save();$('reviewState').textContent='待审';$('progress').textContent=`已审 ${payload.labels.filter(x=>x.reviewed).length} / ${pkg.images.length}`};
+$('reviewer').onchange=()=>{payload.reviewer_name=$('reviewer').value;for(const r of payload.labels)invalidate(r);save();render();message('自报姓名变更，全部记录退回待审；坐标保留。')};
+$('reviewerKind').onchange=()=>{payload.reviewer_kind=$('reviewerKind').value;if(payload.reviewer_kind!=='human_self_reported'){for(const r of payload.labels){r.reviewer_kind=payload.reviewer_kind;r.origin_reviewer_kind=payload.reviewer_kind;invalidate(r)}}save();render();message('类别已保存；改成自报人工不会自动转换已有Agent或测试标签。')};
+$('markReviewed').onclick=()=>{try{if(!payload.reviewer_name.trim())throw Error('请先填写自报姓名或代号');if(current().status==='pending')throw Error('请先明确标注状态');validatePayload(payload);current().reviewed=true;current().reviewed_at=new Date().toISOString();save();render()}catch(e){message(e.message)}};
+$('export').onclick=()=>{try{validatePayload(payload);const out={...payload,exported_at:new Date().toISOString()};const url=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)+'\n'],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=pkg.package_id+'-labels.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);message('已导出；人工身份只是自报，agent 候选身份保持不变。')}catch(e){message('不能导出：'+e.message)}};
+$('importButton').onclick=()=>$('importFile').click();
+$('importFile').onchange=async()=>{const file=$('importFile').files[0];if(!file)return;try{const candidate=JSON.parse(await file.text());validatePayload(candidate);payload=candidate;save();render();message('导入已核验包身份、每帧哈希/PTS和坐标；标注者类别按原样保留。')}catch(e){message('拒绝导入：'+e.message+'；原标注与本机保存保持不变。')}finally{$('importFile').value=''}};
+try{const saved=localStorage.getItem(storageKey);if(saved){const candidate=JSON.parse(saved);validatePayload(candidate);payload=candidate;message('已恢复本包本机保存。')}else message('新标注包：所有帧未标，未创建已审记录。')}catch(e){message('本机保存未通过校验，未覆盖或删除旧数据：'+e.message)}
+$('packageInfo').textContent='包身份：'+pkg.package_id;render();
+</script></html>

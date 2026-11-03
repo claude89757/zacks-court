@@ -1,0 +1,2 @@
+assets/independent-model-weights/**/*.bin filter=lfs diff=lfs merge=lfs -text
+assets/independent-model-weights/**/*.mlmodel filter=lfs diff=lfs merge=lfs -text
