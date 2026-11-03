@@ -2469,6 +2469,50 @@ S家 链报的是击球后前 5 个样本拟合的速度，和 S家 App 的端�
 - 换图标后 `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 编译成功，之后还原了 `Info.plist`。
 - 没有改 Swift 代码，所以没跑 `swift build`、`court-check`、`swift test`。
 
+没有验证：新图标在真机主屏和 App Store 上的效果；截图没有上传到 App Store Connect（1.0 已上架，要等 1.1 一起提交）。（更正：当时以为浏览器看板在手机竖屏下界内外回放的结论卡片会超出屏幕，后来查明是无界面 Chrome 的窗口最窄 500 px、截图却按 440 px 裁出来的假象，见下一节。）
+
+## 2026-11-04 浏览器看板：窄屏手机上的界内外回放
+
+原因：上一节截图时看到回放的结论卡片超出屏幕。按真实手机尺寸复查，没有溢出，那是无界面 Chrome 的窗口最窄只有 500 px、截图却按 440 px 裁造成的假象。真实的小问题在最窄的手机（320 px 宽）上：标题「界内外回放」折成两行，结论卡片占掉半个画面，盖住球印。
+
+改动（只有 `style.css`）：回放标题不折行；400 px 以下结论卡片缩小（OUT 字号、内边距、说明字号）。
+
+验证（内置浏览器的手机视口，演示数据）：375×812 和 320×568 下页面宽度等于视口，关闭按钮和结论卡片都在屏幕内；320 宽时标题一行、球印露在卡片上方。`swift build` 通过；`swift test --filter WebDisplayTests` 10 项，0 失败，1 项跳过（需显式开启的用例）。
+
+没有验证：真机 Safari 和安卓浏览器。
+
+
+## 2026-11-04 App 内换新图标、1.1 商店文字（四种语言）与免费计划
+
+改动：
+- App 首页标题和看板顶部原来的网球符号换成新图标（`CourtLogoMark`，用 SwiftUI Canvas 按 `assets/brand/zacks-court-logo.svg` 的几何画出来，读屏时隐藏）。浏览器看板左上角换成 `logo.svg`，并加了网页图标和 `apple-touch-icon.png`。
+- 1.1 的商店文字：简体、繁体、美式英文、英式英文四种语言的名称、副标题、关键词、描述和推广文本（`docs/app-store/metadata/`）。每个地区会索引两种语言，所以两套英文用了不同的关键词。没有用「鹰眼」、Hawk-Eye、电子裁判、雷达、测速仪、竞品名称或「免费」字样；球速和界内外写成估计。「新功能」留了占位，等主会话的修复合入后补。
+- 截图加了繁体和英式英文（英式与美式的大字相同），四种语言各 5 张。
+- 价格计划改成 1.1 起免费，以后再规划收费的视频剪辑订阅；还没有改 App Store Connect（见 `docs/app-store/README.md`）。审核备注去掉了待补的示例视频链接，并写明 App 免费。
+
+验证（本机 M4 Pro，Xcode 26）：
+- `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 之后，在新建的 iPhone 17 Pro Max 模拟器上编译 Release 构建：成功，之后还原了 `Info.plist`。装上后在首页截图，正常字号和最大辅助字号各一张：图标显示正确，标题区没有挤压或截断。截完删除了这个模拟器。
+- `swift build` 通过；`swift run court-check` 全部 PASS；`swift test` 执行 303 项，跳过 18 项（需要显式开启的实机、视频和对照检查），0 失败。
+- `asc metadata validate`（离线检查）：10 个文件，0 错误 0 警告。关键词逐个确认不超过 100 字符，推广文本不超过 170 字符。
+- `render-store-screens.sh` 输出 20 张，全部 1320×2868。人工看过繁体图，把一处简体的「网」改成了「網」。
+
+没有验证：
+- 文字和价格还没有推送到 App Store Connect。
+- 新图标没有在真机上看过。
+- 繁体文案是按字逐个转换和检查的，没有请母语用户读过。
+- 关键词的实际搜索效果要上线一两周后，在「App 分析」里看。
+
+## 2026-11-04 1.1 发版准备：版本号与试归档
+
+改动：`MARKETING_VERSION` 改成 1.1（构建号 1）；1.1 的「新功能」写好已知的改动（免费、导入视频、碰动后更快重新识别球场、窄屏回放、新图标），正在修的问题留一行待补；`docs/app-store/README.md` 第 6 节写了发版步骤和先决条件。
+
+验证（本机 M4 Pro，Xcode 26）：
+- `scripts/reference-chain.sh status` 为 `off`；`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 后 Release 归档、手动签名导出：成功，没有上传。IPA 约 69 MB，`Info.plist` 是 1.1 (1)；解开后只有 `IndependentModels/tracknetv3-base-v1` 和 `tracknetv3-base-fp16-v1`，没有 `AnalysisModels`。
+- `asc metadata validate`：0 错误 0 警告。
+- 在 App Store Connect 建 1.1 版本被拒（`You cannot create a new version of the App in the current state`）。版本页提示要先接受最新的付费 App 协议，需要账户持有人在「商务」页处理。
+
+没有验证：这次归档的代码还没有包含正在修的严重问题，正式上传要在修复合入后重新归档；App Store Connect 上没有做任何修改。
+
 没有验证：新图标在真机主屏和 App Store 上的效果；截图没有上传到 App Store Connect（1.0 已上架，要等 1.1 一起提交）。顺带发现浏览器看板在手机竖屏宽度（440 pt）下，界内外回放的结论卡片会超出右边、关闭按钮被挤出屏幕，这次没修。
 
 ## 2026-11-04 自动识别球场：跟踪漂移的机位

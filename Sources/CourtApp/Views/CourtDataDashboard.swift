@@ -286,7 +286,7 @@ struct CourtDesktopDashboard: View {
 
     private var header: some View {
         HStack(spacing: CourtStyle.Space.m) {
-            Image(systemName: "tennisball.fill").font(.title2).foregroundStyle(CourtStyle.green).accessibilityHidden(true)
+            CourtLogoMark(size: 30)
             Text("球场工作台").font(.title2.weight(.semibold)).lineLimit(1).accessibilityAddTraits(.isHeader)
             CourtStatus(text: connectionTitle, tone: model.isLive ? .live : .idle)
             Spacer(minLength: 0)
