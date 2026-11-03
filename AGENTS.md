@@ -144,11 +144,15 @@ python3 scripts/field-test-report.py --self-test
 
 ## 应用图标
 
-图标源自 [docs/双眼网球手机吉祥物.png](docs/双眼网球手机吉祥物.png)，满版母图为 `assets/brand/zacks-court-mascot-master.png`。iPhone/iPad 使用 `apps/iphone/ZacksCourt/Assets.xcassets` 中无透明通道的图标，Mac 使用带透明圆角边缘的 `assets/brand/ZacksCourt.icns`。修改母图后运行：
+图标是矢量的「球印压线」（2026-11-04 起，替换了 1.0 的 3D 吉祥物）：源文件 `assets/brand/zacks-court-logo.svg`，用 Chrome 渲染成 1024×1024 的满版母图 `assets/brand/zacks-court-logo-master.png`。iPhone/iPad 使用 `apps/iphone/ZacksCourt/Assets.xcassets` 中无透明通道的图标，Mac 使用带透明圆角边缘的 `assets/brand/ZacksCourt.icns`。修改 SVG 后运行：
 
 ```sh
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars --force-device-scale-factor=1 \
+  --window-size=1024,1024 --screenshot=$PWD/assets/brand/zacks-court-logo-master.png file://$PWD/assets/brand/zacks-court-logo.svg
 swift scripts/prepare-app-icons.swift
 ```
+
+商店截图（带大字说明，中英各 5 张）用 `./scripts/render-store-screens.sh` 生成，见 [docs/app-store/README.md](docs/app-store/README.md) 第 3 步。
 
 ## 文档要求
 

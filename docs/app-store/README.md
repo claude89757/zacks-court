@@ -10,7 +10,7 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 | --- | --- |
 | 构建 | 1.0 (1)，`COURT_MODEL_SET=independent`，只带两个 TrackNetV3（MIT），包内逐文件检查没有 S家模型；已关联 1.0 |
 | 文字 | 中英文名称、副标题、描述、关键词、推广文本、隐私政策与技术支持网址；描述里不提其他平台（Android/安卓已删） |
-| 截图 | 6.9 英寸（`APP_IPHONE_67`）中英各 5 张，示例数据并有标注 |
+| 截图 | 6.9 英寸（`APP_IPHONE_67`）中英各 5 张，示例数据并有标注；1.1 起换成带大字说明的新版（见第 3 步） |
 | 价格 / 销售范围 | 中国 ¥18 为基准（美国自动 $2.99），全部 175 个地区 |
 | 年龄分级 | 全部为无，4+ |
 | 类别 | 体育，次类别健康健美（因此需要声明不是受监管医疗设备，已在网页声明「否」） |
@@ -38,7 +38,18 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
    - 历史记录和单拍回看。
    合成画面或演示数据的截图要在图上注明是示例，不能让人以为是实测。
 
-   **已准备 5 张**（2026-11-03，[screenshots/iphone-6.9/](screenshots/iphone-6.9/)，1320×2868，无透明通道）：记录详情的球速、球场落点、动作类别、逐拍回看，以及历史记录。画面来自 iPhone 17 Pro Max 模拟器上的 Release 构建（自研模型），数据是 `court-probe demo-session` 编造的示例记录，顶部盖了「示例画面 · 演示数据，非实测」的标签，记录标题也写着演示数据。没有首页：模拟器上首页会显示「模拟器没有相机」，真机上不会出现。机位横屏对着真实球场、看板和测速牌这几张要等真机实拍再补。重做的步骤：建一个新模拟器，装 Release 构建，用 `court-probe demo-session` 往 App 的 `Documents/Zacks Court/Sessions` 写示例记录，再用 `TEST_RUNNER_COURT_UI_STORE_SHOTS=<目录>` 跑 `testStoreScreens`，选图后给顶部盖标签。
+   **1.0 上架用的** 是 5 张记录详情和历史页的原样截图（顶部盖「示例画面 · 演示数据，非实测」），已从仓库删除，git 历史里还有。
+
+   **1.1 起用带大字说明的 5 张**（2026-11-04，中文 [zh-Hans](screenshots/iphone-6.9/zh-Hans/)、英文 [en-US](screenshots/iphone-6.9/en-US/)，各 1320×2868）：
+   1. 一台拍，一台看：场边机位 + 看板手机 + 浏览器看板的场景示意（球场、三脚架和机位画面是矢量插画，两块看板是真实界面）；
+   2. 电子司线，喊出 Out!：浏览器看板的界内外回放（OUT）和 OUT / IN / CLOSE 三种结论的说明；
+   3. 发球球速，大字看：浏览器看板的发球测速牌；
+   4. 每一拍都能回看：App 记录详情的逐拍列表；
+   5. 不用账号，数据只在你的设备上：App 记录详情的球场落点图。
+
+   每张右下角写「画面为演示数据 / Screens show demo data」，数据全部来自 `court-probe demo-session` 编造的示例记录。文案不写「鹰眼」「Hawk-Eye」（注册商标）、「测速仪」「雷达」或任何精度承诺。App 界面只有中文，英文图的大字是英文、手机里仍是中文界面。
+
+   重做：大字在 [screenshots/source/captions.json](screenshots/source/captions.json)，版式在 `screenshots/source/frames.html`，运行 `./scripts/render-store-screens.sh`（要 Google Chrome，无界面渲染）。浏览器看板的三张原图由脚本现场渲染：把 `Sources/CourtCore/Web` 的页面拷到临时目录，用 `screenshots/source/web-demo.js` 冒充机位、喂示例记录的前 20 拍（第 20 拍是底线出界）。App 的三张原图在 `screenshots/source/raw/app-*.png`，来自 `testStoreScreens`：建一个新的 iPhone 17 Pro Max 模拟器，装 Release 构建，用 `court-probe demo-session` 往 App 的 `Documents/Zacks Court/Sessions` 写示例记录，再用 `TEST_RUNNER_COURT_UI_STORE_SHOTS=<目录>` 跑 `-configuration Release` 的 `testStoreScreens`（Release 构建不显示演示横幅）；`03-detail-0/1/3` 分别是 `app-summary`、`app-bounces`、`app-shots`。上传时中英文分别指向各自目录。
 4. **填年龄分级问卷**：所有项选「无」，结果是 4+。
 5. **出口合规**：`Info.plist` 里 `ITSAppUsesNonExemptEncryption` 是 `false`。App 只用系统自带的 TLS（Network.framework）和 HMAC 认证，属于豁免范围，6 号构建也是按「不使用非豁免加密」上传的。如果以后加了自己实现的加密算法，要改这一项。
 6. **App 隐私标签**：选「不收集数据」（Data Not Collected）。依据：App 不连开发者服务器，没有统计、广告或追踪 SDK，`PrivacyInfo.xcprivacy` 里收集的数据类型为空。

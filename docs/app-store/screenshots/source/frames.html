@@ -1,0 +1,124 @@
+<!doctype html>
+<!-- App Store screenshot template, 1320×2868 (iPhone 6.9"). Open as frames.html?frame=02-line-calls&lang=zh-Hans;
+     scripts/render-store-screens.sh renders every frame and locale. Captions live in captions.json, screens in raw/. -->
+<html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:#060d09}
+:root{--lime:#C2F057;--ink:#fff;--muted:#B5C3BA;--faint:#7D8D84;--bezel:#262b28}
+body{width:1320px;height:2868px;overflow:hidden;position:relative;color:var(--ink);
+  font-family:-apple-system,"SF Pro Display","PingFang SC",sans-serif;
+  background:radial-gradient(1300px 1000px at 50% 40%,#173a2a 0%,#0b1912 55%,#060d09 100%)}
+.cap{position:absolute;left:96px;right:96px;top:150px}
+.cap h1{font-size:112px;font-weight:800;line-height:1.14;letter-spacing:1px}
+.cap h1 em{font-style:normal;color:var(--lime)}
+.en .cap h1{font-size:104px;letter-spacing:0}
+.cap p{margin-top:34px;font-size:46px;line-height:1.48;color:var(--muted);font-weight:500}
+.cap small{display:block;margin-top:22px;font-size:30px;color:var(--faint);line-height:1.4}
+.demo{position:absolute;right:56px;bottom:40px;font-size:24px;color:var(--faint);background:#0008;padding:8px 16px;border-radius:16px;z-index:9}
+.phone{position:absolute;background:#000;border:14px solid var(--bezel);border-radius:118px;overflow:hidden;box-shadow:0 40px 90px #000c,0 0 0 2px #ffffff14 inset}
+.phone .island{position:absolute;left:50%;top:26px;width:200px;height:58px;margin-left:-100px;border-radius:30px;background:#000;z-index:3}
+.phone .screen{position:absolute;inset:0;overflow:hidden;background:#030806}
+.phone .screen img{position:absolute;left:0;width:100%}
+.land{border-radius:96px}
+.land .island{left:26px;top:50%;width:58px;height:200px;margin:-100px 0 0;}
+.land .screen img{top:0;height:100%;object-fit:cover}
+.tablet{position:absolute;background:#000;border:16px solid var(--bezel);border-radius:44px;overflow:hidden;box-shadow:0 30px 70px #000b}
+.tablet img{width:100%;height:100%;object-fit:cover;display:block}
+.label{position:absolute;font-size:34px;font-weight:700;padding:14px 28px;border-radius:40px;white-space:nowrap;z-index:5}
+.label.main{background:var(--lime);color:#0b1912}
+.label.alt{background:#1a2a22e6;color:#fff;border:2px solid #ffffff30}
+.calls{position:absolute;left:96px;right:96px;display:flex;flex-direction:column;gap:30px}
+.call{display:flex;align-items:center;gap:34px;background:#121a16;border:3px solid #ffffff1c;border-radius:36px;padding:30px 36px}
+.badge{font:900 64px/1 -apple-system,sans-serif;padding:18px 26px;border-radius:22px;min-width:250px;text-align:center;color:#fff}
+.badge.OUT{background:#E5483D}.badge.IN{background:#2F9E5B}.badge.CLOSE{background:#E08A1E;font-size:52px}
+.call b{display:block;font-size:46px}.call span{display:block;margin-top:8px;font-size:34px;color:var(--muted)}
+.voice{position:absolute;display:flex;align-items:center;gap:22px;background:var(--lime);color:#0b1912;font-weight:800;font-size:44px;padding:22px 40px;border-radius:60px;box-shadow:0 20px 50px #0009;z-index:6}
+.voice i{font-style:normal;font-size:76px;font-weight:900}
+.points{position:absolute;left:96px;right:96px;display:flex;flex-direction:column;gap:30px}
+.point{display:flex;align-items:center;gap:30px;font-size:48px;font-weight:600}
+.point::before{content:"";flex:none;width:30px;height:30px;border-radius:50%;background:var(--lime);box-shadow:0 0 0 12px #C2F05726}
+.chips{position:absolute;left:0;right:0;display:flex;justify-content:center;gap:24px;z-index:6}
+.chip{background:#0f1a15ee;border:3px solid var(--lime);color:#fff;font-size:40px;font-weight:700;padding:20px 34px;border-radius:50px;box-shadow:0 16px 40px #000a}
+svg.abs{position:absolute;left:0;top:0}
+</style></head><body>
+<script>
+const q = new URLSearchParams(location.search);
+const frameID = q.get("frame") || "01-scene", lang = q.get("lang") || "zh-Hans";
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const mark = (s) => esc(s).replace(/\[([^\]]+)\]/g, "<em>$1</em>");
+// Screens are 1320×2868 Release captures from testStoreScreens (no in-app demo banner); the
+// corner note discloses the demo data.
+const CROP = 0;
+function phone(src, x, y, w, crop = CROP) {
+  const h = Math.round(w * 2868 / 1320), s = (w - 28) / 1320, pad = Math.round(150 * s);
+  return `<div class="phone" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="island"></div>
+    <div class="screen"><img src="raw/${src}" style="top:${pad - Math.round(crop * s)}px;clip-path:inset(${crop}px 0 0 0)"></div></div>`;
+}
+function landscape(src, x, y, w) {
+  const h = Math.round(w * 1320 / 2868);
+  return `<div class="phone land" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="island"></div><div class="screen"><img src="raw/${src}"></div></div>`;
+}
+// A court seen from behind the near baseline, filling the lower part of a frame. Decoration only.
+function court(top, extra = "") {
+  return `<svg class="abs" style="top:${top}px" width="1320" height="${2868 - top}" viewBox="0 0 1320 900" preserveAspectRatio="xMidYMin slice">
+    <defs><linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E2921" stop-opacity=".2"/><stop offset=".5" stop-color="#0E2921"/></linearGradient>
+      <linearGradient id="tr2" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#C2F057" stop-opacity="0"/><stop offset="1" stop-color="#C2F057" stop-opacity=".9"/></linearGradient></defs>
+    <path d="M420 0 L900 0 L1320 700 L1320 900 L0 900 L0 700 Z" fill="url(#fade)"/>
+    <g fill="none" stroke="#ffffff40" stroke-width="5"><path d="M420 0 L0 700"/><path d="M900 0 L1320 700"/><path d="M470 0 L120 900"/><path d="M850 0 L1200 900"/>
+      <path d="M300 200 L1020 200"/><path d="M180 400 L1140 400"/><path d="M660 200 L660 400"/></g>${extra}</svg>`;
+}
+function caption(c) {
+  return `<div class="cap"><h1>${mark(c.title)}</h1><p>${esc(c.sub)}</p>${c.note ? `<small>${esc(c.note)}</small>` : ""}</div>`;
+}
+const frames = {
+  "01-scene": (c) => `${caption(c)}
+    <svg class="abs" width="1320" height="2868" viewBox="0 0 1320 2868">
+      <defs><linearGradient id="tr" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#C2F057" stop-opacity="0"/><stop offset="1" stop-color="#C2F057" stop-opacity=".85"/></linearGradient></defs>
+      <g transform="translate(0 660)">
+        <path d="M430 20 L890 20 L1250 740 L70 740 Z" fill="#0E2921"/>
+        <g fill="none" stroke="#ffffff8c" stroke-width="5"><path d="M430 20 L890 20 L1250 740 L70 740 Z"/><path d="M480 20 L190 740"/><path d="M840 20 L1130 740"/>
+          <path d="M375 250 L945 250"/><path d="M290 470 L1030 470"/><path d="M660 250 L660 470"/></g>
+        <path d="M330 330 L990 330" stroke="#ffffffcc" stroke-width="7" stroke-dasharray="16 10"/>
+        <path d="M330 330 L330 280 L990 280 L990 330" stroke="#ffffff55" stroke-width="3" fill="none"/>
+        <path d="M760 640 C 700 300, 600 120, 520 150" fill="none" stroke="url(#tr)" stroke-width="16" stroke-linecap="round"/>
+        <circle cx="515" cy="152" r="22" fill="#C2F057"/>
+      </g>
+      <g fill="none" stroke="#C2F057" stroke-width="6" stroke-dasharray="4 16" stroke-linecap="round">
+        <path d="M540 1680 C 500 1820, 420 1900, 400 2010"/><path d="M820 1650 C 880 1700, 950 1730, 1010 1760"/></g>
+      <g stroke="#56655d" stroke-width="12" stroke-linecap="round"><path d="M660 1680 L560 2010"/><path d="M660 1680 L760 2010"/><path d="M660 1680 L660 1970"/></g>
+    </svg>
+    <div class="phone land" style="left:400px;top:1420px;width:520px;height:260px;border-width:10px;border-radius:44px">
+      <svg width="500" height="240" viewBox="0 0 500 240"><rect width="500" height="240" fill="#16261d"/>
+        <path d="M190 40 L310 40 L430 230 L70 230 Z" fill="#1d4434"/><g fill="none" stroke="#ffffffaa" stroke-width="2.5"><path d="M190 40 L310 40 L430 230 L70 230 Z"/><path d="M150 103 L350 103" stroke-dasharray="6 4"/><path d="M125 150 L375 150"/><path d="M250 150 L250 230"/></g>
+        <circle cx="214" cy="70" r="7" fill="#C2F057"/><circle cx="214" cy="70" r="16" fill="none" stroke="#C2F057" stroke-width="2"/></svg>
+      <div style="position:absolute;left:16px;top:12px;font-size:22px;font-weight:600;padding:6px 14px;border-radius:20px;background:#000a"><span style="color:#ff4d4d">●</span> REC</div>
+      <div style="position:absolute;right:16px;top:12px;font-size:22px;font-weight:600;padding:6px 14px;border-radius:20px;background:#000a;color:#C2F057">1080p · 60 fps</div>
+      <div style="position:absolute;left:16px;bottom:12px;font-size:22px;font-weight:600;padding:6px 14px;border-radius:20px;background:#000a">${esc(c.cameraTag)}</div>
+    </div>
+    <div class="label main" style="left:50%;transform:translateX(-50%);top:1330px">${esc(c.camera)}</div>
+    <div class="tablet" style="left:50px;top:2030px;width:720px;height:500px"><img src="raw/web-board-alert.png"></div>
+    <div class="label alt" style="left:120px;top:2570px">${esc(c.browser)}</div>
+    ${phone("app-summary.png", 820, 1790, 450)}
+    <div class="label alt" style="left:850px;top:1700px">${esc(c.phone)}</div>
+    <div style="position:absolute;left:96px;top:2690px;font-size:30px;color:var(--faint)">${esc(c.foot)}</div>`,
+  "02-line-calls": (c) => `${caption(c)}
+    ${landscape("web-challenge.png", 40, 900, 1240)}
+    <div class="voice" style="right:70px;top:820px">🔊 ${esc(c.voice)} <i>Out!</i></div>
+    ${court(2330)}<div class="calls" style="top:1600px">${c.calls.map(([k, t, d]) => `<div class="call"><div class="badge ${k}">${k}</div><div><b>${esc(t)}</b><span>${esc(d)}</span></div></div>`).join("")}</div>`,
+  "03-serve-speed": (c) => `${caption(c)}
+    ${court(2000, `<path d="M760 880 C 720 500, 640 250, 560 300" fill="none" stroke="url(#tr2)" stroke-width="18" stroke-linecap="round"/><circle cx="556" cy="300" r="26" fill="#C2F057"/>
+      <g transform="translate(600 210)"><rect width="300" height="76" rx="38" fill="#C2F057"/><text x="150" y="51" text-anchor="middle" font-size="40" font-weight="800" fill="#0b1912" font-family="-apple-system">149 km/h</text></g>`)}
+    ${landscape("web-serve.png", 30, 760, 1260)}
+    <div class="points" style="top:1460px">${c.points.map((p) => `<div class="point">${esc(p)}</div>`).join("")}</div>`,
+  "04-replay": (c) => `${caption(c)}${phone("app-shots.png", 155, 760, 1010)}`,
+  "05-private": (c) => `${caption(c)}${phone("app-bounces.png", 155, 960, 1010)}
+    <div class="chips" style="top:800px">${c.chips.map((t) => `<div class="chip">${esc(t)}</div>`).join("")}</div>`,
+};
+fetch("captions.json").then((r) => r.json()).then((all) => {
+  const locale = all[lang], c = locale.frames[frameID];
+  if (lang.startsWith("en")) document.body.classList.add("en");
+  document.body.innerHTML = frames[frameID](c) + `<div class="demo">${esc(locale.demo)}</div>`;
+  document.title = "ready";
+});
+</script>
+</body></html>
