@@ -72,6 +72,7 @@ final class IndependentLiveCourtTests: XCTestCase {
         var options = IndependentLiveCourt.Options()
         options.sampleInterval = 0.1; options.firstAttemptFrames = 1; options.retryFrames = 1
         options.recheckInterval = 1; options.recheckFrames = 1
+        options.motionPixels = nil              // the slow path: a re-check sees the mount moved
         let court = IndependentLiveCourt(options: options)
         let a = try bgra(try CourtRenderer(camera: Self.cameraA).render())
         let b = try bgra(try CourtRenderer(camera: Self.cameraB, seed: 2).render())
@@ -104,6 +105,59 @@ final class IndependentLiveCourtTests: XCTestCase {
         feed(blank, seconds: 0.2)
         XCTAssertEqual(changes.count, 3, "searching a blank court finds nothing")
         XCTAssertFalse(court.latest?.refusals.isEmpty ?? true, "the refusal reason is kept for the camera screen")
+    }
+
+    /// A still picture is not motion and a turned mount is; while the picture moves nothing is sampled
+    /// and a found camera is dropped, then the court is found again at the new pose once still.
+    func testMovingPictureDropsTheCameraUntilStillAgain() throws {
+        // The renderer's sky clutter is drawn fixed in the image, which no real camera sees: left out here
+        // (poles off, sky above row 300 painted as court) so that the picture moves with the camera.
+        func render(_ camera: IndependentPinholeCamera) throws -> CVPixelBuffer {
+            try bgra(try CourtRenderer(camera: camera, poleSpacing: 100_000).render(masked: { _, y in y < 300 }))
+        }
+        let a = try render(Self.cameraA)
+        // turned about 1 degree (about 20 px), and about 0.06 degree (about 1 px)
+        let turned = IndependentPinholeCamera.lookingAt(SIMD3(0.27, 9, 0), from: SIMD3(0.3, -6.4, 3.2), f: 1150)
+        let nudged = IndependentPinholeCamera.lookingAt(SIMD3(0.016, 9, 0), from: SIMD3(0.3, -6.4, 3.2), f: 1150)
+        let c = try render(turned), n = try render(nudged)
+        let ta = try XCTUnwrap(IndependentLiveCourt.thumbnail(a))
+        XCTAssertLessThan(IndependentLiveCourt.motion(ta, ta), 0.01)
+        XCTAssertLessThan(IndependentLiveCourt.motion(ta, try XCTUnwrap(IndependentLiveCourt.thumbnail(n))), 4, "1 px is not motion")
+        XCTAssertGreaterThan(IndependentLiveCourt.motion(ta, try XCTUnwrap(IndependentLiveCourt.thumbnail(c))), 4, "20 px is")
+
+        var options = IndependentLiveCourt.Options()
+        options.sampleInterval = 0.1; options.firstAttemptFrames = 1; options.retryFrames = 1
+        let court = IndependentLiveCourt(options: options)
+        var pts = 100.0, changes = [IndependentLiveCourt.Change](), moving = 0
+        func feed(_ frame: CVPixelBuffer, seconds: Double) {
+            for _ in 0..<Int((seconds / 0.1).rounded()) {
+                pts += 0.1
+                if let change = court.offer(frame, pts: pts) { changes.append(change) }
+                court.drain()
+                if court.moving { moving += 1; XCTAssertTrue(court.searching) }
+            }
+        }
+        feed(a, seconds: 1.2)
+        guard case .found(let found)? = changes.first else { return XCTFail("court not found: \(court.latest?.refusals ?? [])") }
+        XCTAssertLessThan(IndependentLiveCourt.distance(found, Self.cameraA), 1.5)
+        XCTAssertEqual(moving, 0)
+        let samples = court.stats.samples
+        feed(c, seconds: 0.5)
+        XCTAssertEqual(changes.last, .lost, "the mount was turned: the old court is not kept")
+        XCTAssertEqual(court.stats.samples, samples, "nothing sampled while moving")
+        feed(c, seconds: 1.0)
+        guard case .found(let again)? = changes.last, changes.count == 3 else { return XCTFail("not found again: \(changes)") }
+        XCTAssertLessThan(IndependentLiveCourt.distance(again, turned), 1.5)
+        XCTAssertFalse(court.moving)
+
+        // full frames that stop coming for a while (dropped copies, heat): "moving" never sticks
+        let sparse = IndependentLiveCourt(options: options)
+        for frame in [a, a, a, a, a, a, c] { pts += 0.2; _ = sparse.offer(frame, pts: pts); sparse.drain() }
+        XCTAssertTrue(sparse.moving)
+        pts += 4; _ = sparse.offer(c, pts: pts); sparse.drain()
+        XCTAssertFalse(sparse.moving, "nothing recent to compare with counts as still")
+        pts += 0.2; _ = sparse.offer(c, pts: pts); sparse.drain()
+        XCTAssertLessThan(IndependentLiveCourt.distance(try XCTUnwrap(sparse.camera, "sampling resumed and found the court"), turned), 1.5)
     }
 
     func testManualCornersGiveTheCameraAndPauseTheSearch() throws {

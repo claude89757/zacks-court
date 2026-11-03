@@ -22,7 +22,7 @@
 | `…/Live/IndependentLiveTrace.swift` | 规则输入的记录与回放：`IndependentLiveTraceEvent`（球点批次、人框、相机变化、每次更新的时刻），`IndependentLiveTrace.replay` 用当前规则重放 |
 | `Sources/CourtCore/CameraSideAnalyzer.swift` | 机位分析调度：选 S家 或自研、降载、取全分辨率副本 |
 | `Sources/CourtCore/ReferenceChain.swift` | S家链的接口。实现和模型都只在本地（`.local/s-chain/`、`.local/s-models/`，不进 Git），`scripts/reference-chain.sh on` 链接进来；只在 `COURT_MODEL_SET=both` 或 `sjia` 构建里有，见 `docs/s-reference.md` |
-| `Sources/CourtAnalyze/` | 命令行：`independent-live`、`independent-replay`、`independent-shots`、`court-calibrate`、`independent-video`、`independent-full-video`，不带子命令时跑 S家链 |
+| `Sources/CourtAnalyze/` | 命令行：`independent-live`、`independent-replay`、`independent-shots`、`court-calibrate`、`court-lock`、`independent-video`、`independent-full-video`，不带子命令时跑 S家链 |
 | `scripts/speed-fullvideo/` | Python 原型链和工具：`court_auto.py`、`shots.py`、`strokes.py`、`report.py`（对 S家 App 老师打分）、`people.swift`、`pose.swift`、`far_crops.py`；README 里有最佳参数 |
 | `scripts/prepare-independent-ball-model.py`、`prepare-independent-app-models.sh`、`convert-tracknet-fp16.py` | 模型包的冻结、校验、暂存和 FP16 转换 |
 | `assets/independent-models/<id>/`、`assets/independent-model-weights/<id>/` | 自研模型的清单、许可和权重（LFS） |
@@ -76,6 +76,9 @@ $BIN independent-live VIDEO $M auto OUT.json [START [DURATION]] [--no-pose-fill]
 $BIN VIDEO .local/AnalysisModels OUT.json
 # 单独求解一张或多张中位图
 $BIN court-calibrate MEDIAN.png [MORE.png …] OUT.json
+# 自动识别球场的锁定评测：按已知相机转动晃动三脚架视频（steady/fixed/settle/bump/wobble），量锁定时间和对错；
+# --before 是 11-04 之前的找法，--anyway 在没有稳定解的视频上只看锁没锁、画面动了多少
+$BIN court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios settle,bump] [--seed N] [--before]
 # 只改规则时：用实时链记下的输入重放（不跑球模型和 Vision），输出格式同上
 $BIN independent-replay OUT.trace.json REPLAY.json
 # 打分

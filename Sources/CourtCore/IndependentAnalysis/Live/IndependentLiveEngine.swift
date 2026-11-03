@@ -334,6 +334,8 @@ public final class IndependentLiveEngine {
     public private(set) var candidates = 0
     private let court: IndependentLiveCourt?
     private var catchUpPending = false
+    /// Last frame time at which the picture was moving: candidates from before it are never caught up.
+    private var movedUntil = -Double.infinity
     /// Seconds of candidates kept while the court is unknown, analysed once it is found.
     static let pendingSeconds = 30.0
     /// Diagnostics: every batch of ball candidates (analysis queue).
@@ -397,7 +399,7 @@ public final class IndependentLiveEngine {
                         sourceWidth: Int, sourceHeight: Int) throws -> TennisAnalysisSnapshot? {
         processed += 1; lastPTS = pts
         if self.streamID != streamID {
-            self.streamID = streamID; ids.removeAll(); shots = IndependentLiveShots()
+            self.streamID = streamID; ids.removeAll(); shots = IndependentLiveShots(); movedUntil = -.infinity
             traceObserver?(.newStream)
             court?.streamChanged(pts: pts)
             if configuration.camera != nil { catchUpPending = false }
@@ -408,6 +410,10 @@ public final class IndependentLiveEngine {
             case .lost: use(nil)
             }
         }
+        if full != nil, let court, court.moving {
+            // ball positions seen while the phone moves belong to no single court: never caught up later
+            movedUntil = pts; shots.trim(keeping: 0, now: pts); traceObserver?(.discard(before: pts))
+        }
         if let full {
             let found = personsStage.detect(full, pts: pts, camera: configuration.camera)
             traceObserver?(.people(frame: found.frame, boxes: found.boxes))
@@ -417,6 +423,9 @@ public final class IndependentLiveEngine {
             candidateObserver?(batch)
             traceObserver?(.candidates(batch))
             shots.append(batch)
+            if batch.contains(where: { $0.time / 60 < movedUntil }) {        // a batch late from the moving frames
+                shots.trim(keeping: 0, now: movedUntil); traceObserver?(.discard(before: movedUntil))
+            }
         }
         if broke { shots.reset(); personsStage.reset(); traceObserver?(.reset); traceObserver?(.peopleReset) }
         guard pts - lastUpdate >= configuration.updateInterval else { return nil }
@@ -462,6 +471,10 @@ public final class IndependentLiveEngine {
     /// What the camera screen says about the court. Unknown stays unknown: no camera, no mapping.
     var courtState: TennisCourtCalibrationState {
         guard configuration.camera != nil else {
+            if court?.moving == true {
+                return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
+                                                   reason: "正在识别球场 · 画面在动，请把手机固定住")
+            }
             let refusal = court?.latest?.refusals.first?.message
             return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
                                                reason: refusal.map { "正在识别球场 · " + $0 } ?? "正在识别球场")
