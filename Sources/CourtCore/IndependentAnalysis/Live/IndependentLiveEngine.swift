@@ -356,7 +356,7 @@ public final class IndependentLiveEngine {
         set { configuration.updateInterval = max(0.05, newValue) }
     }
 
-    /// Setting a camera from outside (fixed or manual) replaces the automatic one until it is re-checked.
+    /// Setting a camera from outside (fixed) replaces the automatic one until it is re-checked.
     public var camera: IndependentPinholeCamera? {
         get { configuration.camera }
         set { court?.adopt(newValue, pts: lastPTS); use(newValue) }
@@ -369,20 +369,12 @@ public final class IndependentLiveEngine {
         if camera == nil { shots.freeze(); traceObserver?(.freeze) } else if !wasKnown { catchUpPending = true }
     }
 
-    /// Manual corners (validated by the caller): the user's camera until cleared; nil resumes the automatic
-    /// court. Repeating the current state changes nothing.
-    public func setManualCorners(_ corners: [NormalizedPoint]?) throws {
-        guard corners != manualCorners else { return }
-        if let corners {
-            let camera = try IndependentManualCourt.camera(corners: corners)
-            manualCorners = corners
-            court?.pause(with: camera); use(camera)
-        } else {
-            manualCorners = nil
-            if let court { court.resume(); use(nil) }
-        }
+    /// The framing changed (zoom): the automatic court is dropped and searched for again. Without the
+    /// automatic court (a fixed camera) nothing changes.
+    public func restartCourt() {
+        guard let court else { return }
+        court.restart(); use(nil)
     }
-    public private(set) var manualCorners: [NormalizedPoint]?
 
     /// The court solve in use (nil while searching, for a fixed camera, or with automatic court off).
     public var courtCalibration: IndependentCourtCalibration? { configuration.camera == nil ? nil : court?.latest }
@@ -479,10 +471,6 @@ public final class IndependentLiveEngine {
             let refusal = court?.latest?.refusals.first?.message
             return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
                                                reason: refusal.map { "正在识别球场 · " + $0 } ?? "正在识别球场")
-        }
-        if manualCorners != nil {
-            return TennisCourtCalibrationState(isAvailable: true, landmarkCount: 4, validationErrorMeters: nil,
-                                               reason: "用户四角标定；精度未独立验证，移动机位后需重标")
         }
         guard let solve = courtCalibration else {
             return TennisCourtCalibrationState(isAvailable: true, landmarkCount: 0, validationErrorMeters: nil, reason: "使用给定的球场位置")

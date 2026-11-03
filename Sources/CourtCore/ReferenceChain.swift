@@ -44,7 +44,7 @@ public protocol ReferenceAnalysisEngine: AnyObject {
     /// Frames whose pixels the cadence needed but the caller did not supply.
     var pixelMisses: Int { get }
     func reset()
-    func reconfigure(manualCorners: [NormalizedPoint]?, near: TennisHandedness, far: TennisHandedness) throws
+    func reconfigure(near: TennisHandedness, far: TennisHandedness) throws
     func process(_ pixelBuffer: CVPixelBuffer?, pts: Double, streamID: UUID) throws -> TennisAnalysisSnapshot?
     /// Deferred bounce work produced since the last call (only with `defersBounceLocalization`).
     func takeBounceRequests() -> [TennisBounceRequest]
@@ -62,5 +62,5 @@ protocol ReferenceLaneEngine: ReferenceAnalysisEngine {
 
 /// The separate bounce lane of the reference chain (owns its own model instance).
 protocol ReferenceBounceResolver: AnyObject {
-    func resolve(_ request: TennisBounceRequest, manualMapping: TennisCourtMapping?) throws -> (estimate: TennisBounceEstimate, mapping: TennisCourtMapping?)
+    func resolve(_ request: TennisBounceRequest) throws -> (estimate: TennisBounceEstimate, mapping: TennisCourtMapping?)
 }

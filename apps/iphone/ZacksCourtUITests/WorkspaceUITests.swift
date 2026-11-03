@@ -11,7 +11,7 @@ final class WorkspaceUITests: XCTestCase {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         app = XCUIApplication(bundleIdentifier: "com.claude89757.zackscourt")
-        if name.contains("testManualCourtCalibrationOnLiveVideo") || name.contains("testScreenTourForReview"), liveVideoOptIn { app.launchArguments = ["--pairing-file", "@documents"] }
+        if name.contains("testAutomaticCourtOnLiveVideo") || name.contains("testScreenTourForReview"), liveVideoOptIn { app.launchArguments = ["--pairing-file", "@documents"] }
         // Simulators have no camera: the demo shows a triple camera's zoom presets so their layout
         // and gestures can be checked. Nothing is captured.
         if name.contains("testCameraZoomPresets") || name.contains("testScreenTourForReview") { app.launchEnvironment["COURT_UI_ZOOM_DEMO"] = "1" }
@@ -148,7 +148,7 @@ final class WorkspaceUITests: XCTestCase {
         XCTAssertFalse(app.buttons["court.camera.section.connection"].exists, "Connecting is a button, not a page")
         let pages: [(key: String, control: XCUIElement)] = [
             ("session", app.buttons["court.camera.session.start"].firstMatch),
-            ("analysis", app.buttons["court.calibration.open"].firstMatch),
+            ("analysis", app.buttons["court.handedness.open"].firstMatch),
             ("settings", app.descendants(matching: .any)["court.camera.standby-delay"].firstMatch),
         ]
         // At the largest text sizes the fixed controls scroll with the page, so tabs are reached by scrolling.
@@ -492,7 +492,7 @@ final class WorkspaceUITests: XCTestCase {
     /// finished, the full-screen boards, history list, detail, query and the delete confirmation.
     /// With `COURT_UI_LIVE_VIDEO=1` and an external sender (`court-probe file`) it waits for the
     /// sender, records until the sender's video ends, and also captures the live page, the shot list,
-    /// handedness and calibration. Keeps going after a failed step so one miss does not lose the
+    /// and handedness. Keeps going after a failed step so one miss does not lose the
     /// rest of the tour. Never opens pairing or the camera's connect page (their codes carry keys).
     /// UI-QA records only.
     func testScreenTourForReview() throws {
@@ -617,22 +617,6 @@ final class WorkspaceUITests: XCTestCase {
                 if app.navigationBars["持拍手"].waitForExistence(timeout: 5) {
                     attach("tour-24-handedness")
                     app.navigationBars["持拍手"].buttons["取消"].firstMatch.tap()
-                }
-            }
-            let calibrate = app.buttons["court.calibration.open"].firstMatch
-            if makeReachable(calibrate), calibrate.isEnabled {
-                calibrate.tap()
-                let image = app.descendants(matching: .any)["court.calibration.image"].firstMatch
-                if image.waitForExistence(timeout: 8) {
-                    attach("tour-25-calibration")
-                    if makeReachable(image) {
-                        // The loupe shows while the finger is down (seen by `simctl io screenshot` from outside).
-                        let point = image.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.35))
-                        point.press(forDuration: 0.5, thenDragTo: point.withOffset(CGVector(dx: 6, dy: 4)),
-                                    withVelocity: .slow, thenHoldForDuration: 4)
-                        attach("tour-25-calibration-one-point")
-                    }
-                    app.navigationBars["标定球场"].buttons["取消"].firstMatch.tap()
                 }
             }
             XCUIDevice.shared.orientation = .landscapeLeft
@@ -866,55 +850,33 @@ final class WorkspaceUITests: XCTestCase {
 
     /// Opt in only with an external real-video sender ready. For xcodebuild:
     /// TEST_RUNNER_COURT_UI_LIVE_VIDEO=1 xcodebuild test ...
-    /// -only-testing:ZacksCourtUITests/WorkspaceUITests/testManualCourtCalibrationOnLiveVideo
+    /// -only-testing:ZacksCourtUITests/WorkspaceUITests/testAutomaticCourtOnLiveVideo
     /// Xcode scheme test environment may instead set COURT_UI_LIVE_VIDEO=1.
-    func testManualCourtCalibrationOnLiveVideo() throws {
+    func testAutomaticCourtOnLiveVideo() throws {
         guard liveVideoOptIn else { throw XCTSkip("Requires COURT_UI_LIVE_VIDEO=1 and an external real-video sender") }
         enterServer()
-        let open = app.buttons["court.calibration.open"].firstMatch
-        XCTAssertTrue(makeReachable(open))
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: open)
-        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 120), .completed, "Waiting for the externally sent, real public test video")
-        open.tap()
-        let image = app.descendants(matching: .any)["court.calibration.image"].firstMatch
-        XCTAssertTrue(image.waitForExistence(timeout: 8))
-        XCTAssertTrue(makeReachable(image))
-        // These corners were manually verified in public-first-frame.png.
-        // They identify doubles-court line intersections in the actual 1920×1080 source.
-        let corners: [CGPoint] = [CGPoint(x: 365.0 / 1920, y: 856.0 / 1080),
-                                  CGPoint(x: 1563.0 / 1920, y: 856.0 / 1080),
-                                  CGPoint(x: 1333.0 / 1920, y: 303.0 / 1080),
-                                  CGPoint(x: 577.0 / 1920, y: 303.0 / 1080)]
-        for corner in corners { tapImagePoint(corner, in: image) }
-        XCTAssertTrue(app.staticTexts["四角已选，请核对边线是否对齐"].exists)
-        attach("manual-01-four-real-court-corners")
-        tapReachable(app.buttons["撤销上一点"].firstMatch)
-        XCTAssertTrue(app.staticTexts["下一点：4 · 远端左角"].exists)
-        XCTAssertTrue(makeReachable(image))
-        tapImagePoint(corners[3], in: image)
-        tapReachable(app.buttons["court.calibration.save"].firstMatch)
-        XCTAssertTrue(app.navigationBars["标定球场"].waitForNonExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["球场映射可用"].waitForExistence(timeout: 40))
+        // No manual corners: the camera finds the court in the real public video by itself.
+        XCTAssertTrue(app.staticTexts["球场映射可用"].waitForExistence(timeout: 120), "Waiting for the externally sent, real public test video")
         XCTAssertTrue(makeReachable(app.staticTexts["球场映射可用"].firstMatch))
-        attach("manual-02-mapping-available")
+        attach("live-01-court-recognized")
         tapReachable(app.buttons["court.handedness.open"].firstMatch)
         XCTAssertTrue(app.staticTexts["近端持拍手"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["远端持拍手"].firstMatch.exists)
-        attach("manual-02b-handedness-settings")
+        attach("live-02-handedness-settings")
         tapReachable(app.buttons["保存持拍手"].firstMatch)
 
-        startTraining(title: "UI-QA-MANUAL-CALIBRATION")
+        startTraining(title: "UI-QA-LIVE-VIDEO")
         XCTAssertTrue(makeReachable(app.staticTexts["最近击球"].firstMatch))
         XCTAssertTrue(app.staticTexts["court.analysis.shot-count"].waitForExistence(timeout: 45), "A real video shot must be detected after starting the record")
         // Compact shot rows name the landing state in their spoken label.
         let placed = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "落点已标在球场图")).firstMatch
         XCTAssertTrue(placed.waitForExistence(timeout: 30), "At least one real-video bounce must have a court position")
-        attach("manual-03-real-shot-and-bounce")
+        attach("live-03-real-shot-and-bounce")
         finishTraining()
         tapReachable(app.buttons["历史记录"].firstMatch)
-        let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI-QA-MANUAL-CALIBRATION")).firstMatch
+        let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI-QA-LIVE-VIDEO")).firstMatch
         XCTAssertTrue(record.waitForExistence(timeout: 5)); record.tap()
-        attach("manual-04-saved-analysis-history")
+        attach("live-04-saved-analysis-history")
         app.navigationBars.buttons["历史记录"].tap()
         app.buttons["完成"].firstMatch.tap()
     }
@@ -927,7 +889,7 @@ final class WorkspaceUITests: XCTestCase {
             throw XCTSkip("Requires COURT_UI_SAVED_HISTORY=1 and a saved real-video record")
         }
         app.buttons["历史记录"].firstMatch.tap()
-        let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI-QA-MANUAL-CALIBRATION")).firstMatch
+        let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI-QA-LIVE-VIDEO")).firstMatch
         XCTAssertTrue(makeSheetReachable(record)); record.tap()
         let replay = app.buttons["回看这一拍"].firstMatch
         XCTAssertTrue(makeSheetReachable(replay)); XCTAssertTrue(replay.isEnabled); replay.tap()
@@ -1181,15 +1143,6 @@ final class WorkspaceUITests: XCTestCase {
         return environment["COURT_UI_LIVE_VIDEO"] == "1" || environment["TEST_RUNNER_COURT_UI_LIVE_VIDEO"] == "1"
     }
 
-    private func tapImagePoint(_ point: CGPoint, in image: XCUIElement) {
-        let bounds = image.frame
-        let scale = min(bounds.width / 1920, bounds.height / 1080)
-        let imageWidth = 1920 * scale, imageHeight = 1080 * scale
-        let x = ((bounds.width - imageWidth) / 2 + point.x * imageWidth) / bounds.width
-        let y = ((bounds.height - imageHeight) / 2 + point.y * imageHeight) / bounds.height
-        image.coordinate(withNormalizedOffset: CGVector(dx: x, dy: y)).tap()
-    }
-
     private func assertNoScoringControls() {
         XCTAssertFalse(app.buttons["比赛"].exists)
         XCTAssertFalse(app.staticTexts["手动计分"].exists)
@@ -1271,7 +1224,6 @@ final class WorkspaceUITests: XCTestCase {
         let inPreview = preview.exists && element.exists && preview.frame.minX <= element.frame.midX && element.frame.midX <= preview.frame.maxX
         let scroll = inPreview ? preview : app.scrollViews["court.connect.scroll"].exists ? app.scrollViews["court.connect.scroll"].firstMatch :
             app.navigationBars["持拍手"].exists ? app.scrollViews["court.handedness.scroll"].firstMatch :
-            app.navigationBars["标定球场"].exists ? app.scrollViews["court.calibration.scroll"].firstMatch :
             app.scrollViews["court.camera.sidebar"].exists ? app.scrollViews["court.camera.sidebar"].firstMatch :
             app.scrollViews["court.workspace.scroll"].firstMatch.exists
             ? app.scrollViews["court.workspace.scroll"].firstMatch : app.scrollViews.firstMatch

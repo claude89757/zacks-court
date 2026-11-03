@@ -24,7 +24,7 @@ import CourtCore
         if args.first == "independent-replay" { try IndependentReplayCommand.run(args); return }
         if args.first == "court-calibrate" { try CourtCalibrateCommand.run(args); return }
         if args.first == "court-lock" { try CourtLockCommand.run(args); return }
-        guard args.count >= 3 else { throw CourtError.message("Usage: court-analyze VIDEO MODEL_DIRECTORY OUTPUT_JSON [MAX_SECONDS] [cpu] [--corners CORNERS_JSON]") }
+        guard args.count >= 3 else { throw CourtError.message("Usage: court-analyze VIDEO MODEL_DIRECTORY OUTPUT_JSON [MAX_SECONDS] [cpu]") }
         let video = URL(fileURLWithPath: args[0]), modelDirectory = URL(fileURLWithPath: args[1])
         let outputURL = URL(fileURLWithPath: args[2])
         guard !FileManager.default.fileExists(atPath: outputURL.path) else { throw CourtError.message("Output already exists; choose a new output path.") }
@@ -36,12 +36,7 @@ import CourtCore
         let duration = try await asset.load(.duration).seconds
         let size = try await track.load(.naturalSize)
         let units: MLComputeUnits = args.contains("cpu") ? .cpuOnly : .all
-        var configuration = TennisAnalysisConfiguration(modelDirectory: modelDirectory, nominalFPS: fps, computeUnits: units)
-        if let index = args.firstIndex(of: "--corners") {
-            guard args.count > index + 1 else { throw CourtError.message("--corners requires a JSON file of four normalized points") }
-            configuration.manualCourtCorners = try JSONDecoder().decode([NormalizedPoint].self, from: Data(contentsOf: URL(fileURLWithPath: args[index + 1])))
-            try ManualCourtCorners.validate(configuration.manualCourtCorners!)
-        }
+        let configuration = TennisAnalysisConfiguration(modelDirectory: modelDirectory, nominalFPS: fps, computeUnits: units)
         let engine = try ReferenceChain.makeEngine(configuration: configuration)
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])

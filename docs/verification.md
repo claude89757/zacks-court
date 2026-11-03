@@ -2548,3 +2548,21 @@ S家 链报的是击球后前 5 个样本拟合的速度，和 S家 App 的端�
 检查：`swift build` 通过；`swift run court-check` 通过；`swift test` 304 项，0 失败，18 项跳过（需要 S家链、S家模型、外部视频或显式开启的用例）。没改 iOS 界面和工程，没有跑模拟器编译。
 
 没有验证：iPhone 上每 0.8 秒一次精修的耗时和发热（只在 Mac 上量过，Phase 0 没跑）；真实的漂移和晃动：合成的只有纯转动，没有平移、卷帘快门、运动模糊和对焦/曝光变化；真实球场上的效果（没有实拍）；跟踪在长时间漂移后会不会慢慢带偏（只靠每 60 秒的复查纠正，没有专门测）。
+
+## 2026-11-04 去掉手动标定球场
+
+原因：用户要求「把手动标定球场的逻辑去掉，不依赖用户标定，一定是有算法模来兜底的」。球场现在只靠自动识别：自研链用 `IndependentLiveCourt`（上一节加了跟踪），S家链用它自己的球场地标映射；识别不了时只说明原因，落点和界内外保持未知。
+
+改动：
+- 界面：删掉 `CourtCalibrationSheet`、机位「击球分析」页、iPhone 看板「机位与分析」卡片和 Mac 看板上的「标定球场」按钮；浏览器看板去掉标定对话框、按钮和样式。提示文字不再指向手动标定，改为「识别出球场前不画落点、不判界内外」。
+- 机位：去掉 `setManualCourtCorners`、`calibrationImage`、标定静帧、`status.manualCorners`；`framingChanged()` 改倍率时重启时序分析，并让自研链丢掉旧球场重新识别（`IndependentLiveEngine.restartCourt`，之前改倍率只清手动四角，自研球场要靠画面运动才会发现）。去掉 `IndependentLiveCourt.pause/resume`、`IndependentManualCourt`、`TennisCourtMapping.manual`、`ManualCourtCorners`、`TennisAnalysisConfiguration.manualCourtCorners`、`court-analyze --corners`。
+- 协议：`CameraStatus.manualCorners`、`WireControl.corners/clearCorners` 字段去掉（旧端多带的字段照常忽略）；`corners`、`still` 两个命令名和 `still` 包类型保留，只为旧看板发来时能解码，机位回执 `ok: false`「此版本已去掉手动标定，球场由机位自动识别。请更新看板 App。」。
+- `ReferenceChain` 接口去掉手动参数；本地的 S家链（`.local/s-chain`，不进 Git）同步改掉，`scripts/reference-chain.sh on` 时 `swift build --build-tests` 通过，之后切回 `off`。
+- 保存的数据里本来就没有四角，不需要迁移。
+
+检查：
+- `swift build` 通过；`swift run court-check` 通过；`swift test` 301 项，0 失败，18 项跳过（需要 S家链、S家模型、外部视频或显式开启的用例）。
+- `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 后模拟器 SDK Debug `build-for-testing` 通过。新建的 iPhone 17 Pro 模拟器（iOS 26.1）上：`testCameraSidebarPagesKeepControlsReachable`（页面锚点从标定按钮换成持拍手按钮）通过；`COURT_CODE_ONLY=1 ./scripts/test-ios-ui.sh` 5 项全部通过（方向与生命周期、分析空状态、记录小结、最大辅助字号两项）。之后还原了 `Info.plist`，删掉了模拟器。
+- 单元测试改动：删掉四角几何与手动映射的用例；`testRestartDropsTheCameraAndSearchesAgain`（改倍率后重新识别）；浏览器看板测试改为旧页面的 `still` 和 `corners` 请求都收到拒绝、不发静帧；协议测试确认带旧字段的 `corners` 命令仍能解码。
+
+没有验证：`testAutomaticCourtOnLiveVideo`（原来的手动标定实拍用例改成等自动识别，需要外部视频，没跑）和依赖它那条记录的 `testSavedRealShotPlayback`（记录名从 UI-QA-MANUAL-CALIBRATION 改成 UI-QA-LIVE-VIDEO，旧记录不再匹配）；真机上改倍率后的重新识别；旧版看板连新机位时的提示（只有单元测试）。README 截图里如果有「标定球场」按钮没有重拍。

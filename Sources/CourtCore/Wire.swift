@@ -21,7 +21,9 @@ public enum WireProtocol {
 }
 
 public enum WireKind: String, CaseIterable, Sendable {
-    case hello, status, control, analysis, session, preview, still, file
+    case hello, status, control, analysis, session, preview, file
+    /// The calibration still of the removed manual corners: never sent now, still decoded from older cameras.
+    case still
 }
 
 public struct StreamHeader: Codable {

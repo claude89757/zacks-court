@@ -92,11 +92,9 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
     private let tracker = PersonTracker(maximumMissingSeconds: 2.5)
     private var lastPersonPTS = -Double.infinity
     private var lastFrame: (pixels: CVPixelBuffer, streamID: UUID)?
-    private let imageContext = CIContext(options: [.cacheIntermediates: false])
     private static let ledgerLimit = 600
     // Bounce-lane confined.
     private var bounceRuntime: ReferenceBounceResolver?
-    private var bounceMapping: TennisCourtMapping?
 
     /// Called on the analysis worker queue; return promptly.
     public var onSnapshot: ((TennisAnalysisSnapshot) -> Void)? {
@@ -161,9 +159,8 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             }
             do {
                 let engine = try ReferenceChain.laneEngine(configuration)
-                let mapping = try configuration.manualCourtCorners.map { try TennisCourtMapping.manual(corners: $0) }
                 let runtime = try ReferenceChain.bounceResolver(configuration)
-                bounceLane.sync { bounceRuntime = runtime; bounceMapping = mapping }
+                bounceLane.sync { bounceRuntime = runtime }
                 self.engine = engine
                 lock.lock(); metrics.ready = true; metrics.tennisAvailable = true
                 metrics.loadSeconds = ProcessInfo.processInfo.systemUptime - start; lock.unlock()
@@ -294,16 +291,15 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         }
     }
 
-    /// New court corners and hands without reloading models; the temporal run restarts.
-    public func reconfigure(manualCorners: [NormalizedPoint]?, near: TennisHandedness, far: TennisHandedness,
+    /// New hands without reloading models; the temporal run restarts. `restartCourt` (the framing changed)
+    /// also drops the automatic court so it is searched for again in the new picture.
+    public func reconfigure(near: TennisHandedness, far: TennisHandedness, restartCourt: Bool = false,
                             completion: (@Sendable (String?) -> Void)? = nil) {
         worker.async { [self] in
             var failure: String?
             do {
-                try engine?.reconfigure(manualCorners: manualCorners, near: near, far: far)
-                try live?.setManualCorners(manualCorners)
-                let mapping = try manualCorners.map { try TennisCourtMapping.manual(corners: $0) }
-                bounceLane.async { [self] in bounceMapping = mapping }
+                try engine?.reconfigure(near: near, far: far)
+                if restartCourt { live?.restartCourt() }
             } catch { failure = error.localizedDescription }
             probeAnchor = nil
             lock.lock(); resyncRequested = true; lock.unlock()
@@ -316,30 +312,12 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         worker.async { [self] in engine?.courtRefreshInterval = seconds }
     }
 
-    /// Most recent analysed full-resolution frame of `streamID`, as JPEG (remote calibration still).
-    public func latestFrameJPEG(streamID: UUID? = nil, quality: Double = 0.85, completion: @escaping @Sendable (Data?, Int, Int) -> Void) {
-        worker.async { [self] in
-            guard let frame = lastFrame, streamID == nil || frame.streamID == streamID else { completion(nil, 0, 0); return }
-            let image = CIImage(cvPixelBuffer: frame.pixels)
-            let options = [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality]
-            let data = imageContext.jpegRepresentation(of: image, colorSpace: CGColorSpaceCreateDeviceRGB(), options: options)
-            completion(data, CVPixelBufferGetWidth(frame.pixels), CVPixelBufferGetHeight(frame.pixels))
-        }
-    }
     /// Only a reference to the latest analysed frame, taken on the worker queue without encoding,
     /// so the browser preview can scale and encode it elsewhere (docs/web-display.md §6).
     public func latestFrameBuffer(streamID: UUID? = nil, completion: @escaping @Sendable (CVPixelBuffer?) -> Void) {
         worker.async { [self] in
             guard let frame = lastFrame, streamID == nil || frame.streamID == streamID else { completion(nil); return }
             completion(frame.pixels)
-        }
-    }
-    /// Same frame as a CGImage for on-device calibration.
-    public func latestFrameImage(streamID: UUID? = nil, completion: @escaping @Sendable (CGImage?) -> Void) {
-        worker.async { [self] in
-            guard let frame = lastFrame, streamID == nil || frame.streamID == streamID else { completion(nil); return }
-            let image = CIImage(cvPixelBuffer: frame.pixels)
-            completion(imageContext.createCGImage(image, from: image.extent))
         }
     }
 
@@ -503,7 +481,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             var failure: String?
             if let runtime = bounceRuntime {
                 do {
-                    resolved = try autoreleasepool { try runtime.resolve(request, manualMapping: bounceMapping) }
+                    resolved = try autoreleasepool { try runtime.resolve(request) }
                 } catch { failure = error.localizedDescription }
             } else { failure = "触地定位模型未加载" }
             let elapsed = ProcessInfo.processInfo.systemUptime - start

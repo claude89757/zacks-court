@@ -79,7 +79,7 @@ xcrun simctl list devices available
 | --- | --- |
 | `COURT_ANALYSIS_MODELS_DIR` + `COURT_TEST_VIDEO` | `swift test --filter WorkspaceIntegrationTests/testRealTennisVideoAnalysedOnCameraMirrorsToDisplay`：本机进程内的机位用真实模型分析网球视频，经 TLS 镜像到看板并保存 |
 | `COURT_DEVICE_DISPLAY=1`（Mac）+ `COURT_AUTOPILOT=1`（iPhone，`devicectl … --environment-variables` 启动） | 实机自检：`swift test --filter DeviceValidationTests` 让这台 Mac 做看板，把配对票据写入 `.local/device-run-*/pairing.txt`（0600，不打印内容）；用 `devicectl device copy to --domain-type appDataContainer` 把它拷到 App 的 `Documents/autopilot-pairing.txt`，再启动 iPhone。机位读取后立即删除票据，录制一段（`COURT_AUTOPILOT_SECONDS`，默认 90 秒）后结束；记录中看板取一段 5 秒片段，结束后回传首段录像并校验，报告里记下连接方式。机位数据写入 `Documents/Autopilot/`，不进入用户历史。只是一次室内运行，不证明发热、续航或精度 |
-| `COURT_UI_LIVE_VIDEO=1`（或 `TEST_RUNNER_COURT_UI_LIVE_VIDEO=1`） | `testManualCourtCalibrationOnLiveVideo`：需要外部发送真实视频，验证四角标定与分析 |
+| `COURT_UI_LIVE_VIDEO=1`（或 `TEST_RUNNER_COURT_UI_LIVE_VIDEO=1`） | `testAutomaticCourtOnLiveVideo`：需要外部发送真实视频，验证自动识别球场与分析 |
 | `COURT_UI_ZOOM_DEMO=1`（App 启动环境，`testCameraZoomPresetsFitAndRespond` 自己设置） | 模拟器没有相机：机位显示三摄的倍率预设而不采集，用来检查各屏幕尺寸上倍率按钮的位置、44 pt 与点按/拖动；不证明真实镜头、帧率或画质 |
 | `TEST_RUNNER_COURT_UI_STORE_SHOTS=<目录>` | `testStoreScreens`：先用 `court-probe demo-session` 写入示例记录，再走历史记录和记录详情，每屏存成 PNG 到该目录（上架截图的原图）；可加 `-configuration Release` 用上架配置跑 |
 | `COURT_UI_SAVED_HISTORY=1`（或 `TEST_RUNNER_…`） | `testSavedRealShotPlayback`：需要已保存的真实视频记录，验证逐拍回看 |
@@ -122,7 +122,8 @@ python3 scripts/field-test-report.py --self-test
 - **不做计分**。旧版存档中的手动比分只作兼容读取，不提供入口。
 - **未知保持为空**：缺少证据的球速、落点、类别显示「—」并附原因，统计只算有效值，从不按 0 计入。
 - **采集固定 1920×1080 / 60 fps**：不支持时明确拒绝，不提供 30 fps 选项，也不自动降帧或降分辨率；发热降载只削减预览、人员检测、触地定位与分析（`CameraLoadPolicy`）。
-- **变焦与系统相机一致，记录中锁定**：三摄虚拟设备 0.5×–25× 无级变焦（`CameraZoomRange`），只在倍率变化时换镜头，帧始终 1080p60；会话 `active` 时锁定，一次录像只用一个镜头；改倍率经 `framingChanged()` 清除手动四角并重启时序分析。
+- **球场只靠自动识别**（用户 2026-11-04）：没有手动四角标定，也不要加回来；识别不了时写明原因、请用户调整机位。旧看板发来的 `corners` / `still` 命令仍能解码，机位回执拒绝并说明已去掉手动标定。
+- **变焦与系统相机一致，记录中锁定**：三摄虚拟设备 0.5×–25× 无级变焦（`CameraZoomRange`），只在倍率变化时换镜头，帧始终 1080p60；会话 `active` 时锁定，一次录像只用一个镜头；改倍率经 `framingChanged()` 重启时序分析并重新识别球场。
 - **机位画面默认打开**：进入机位模式和回到前台时自动开始采集，不需要点「开始采集」；手机竖着拿或平放时不报错，等手机横过来就自动打开（`CameraModel.waitForLandscape`）。采集中手机转向会重开采集换成新方向，在记录的会话随之暂停。用户点「停止采集」后等用户再开。重开采集不会继续已暂停的会话。
 - **机位支持 iPhone 13 及更新机型**（2026-10-29 用户要求）：`CameraHardware.isSupported` 按型号代号放行 iPhone14,x 及以上（含 iPhone SE 第 3 代与以后的新机型），模拟器、Mac 与更早的 iPhone 拒绝。只有 `CameraHardware.measured`（目前 iPhone18,2）做过 Phase 0 负载实测；其他机型在机位页提示未实测，靠同一套降载保护。新机型实测后加入 `measured`，并在 `names` 里补上型号名。
 - **估计不是测量**：界面与文档始终把球速、落点称为模型估计或候选；空中球不按地面单应性换算速度。

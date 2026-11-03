@@ -67,7 +67,7 @@ final class CameraModel {
             Task { @MainActor in
                 guard let self else { return }
                 self.streaming = streaming
-                if !streaming { self.zoomNotice = nil; self.controller?.zoomFactor = nil }
+                if !streaming { self.controller?.zoomFactor = nil }
                 #if os(iOS)
                 if !streaming { self.stopMonitoringRotation() }
                 if streaming { self.stopWaitingForLandscape() }
@@ -101,8 +101,6 @@ final class CameraModel {
     var zoomRange: CameraZoomRange?
     /// Factor the camera applies, or applies at the next start.
     var zoomFactor = 1.0
-    /// Shown after a zoom change cleared the manual court corners.
-    var zoomNotice: String?
     /// Remembered per device, like the other camera settings.
     @ObservationIgnored private var committedZoom = UserDefaults.standard.object(forKey: "court.camera.zoom") as? Double ?? 1 {
         didSet { UserDefaults.standard.set(committedZoom, forKey: "court.camera.zoom") }
@@ -126,13 +124,12 @@ final class CameraModel {
     func commitZoom(_ factor: Double) {
         guard showsZoom, let zoomRange else { return }
         // A recording that started mid-pinch (from a display) locks zoom, but the camera already
-        // moved: keep that framing and still clear corners and restart analysis for it.
+        // moved: keep that framing and still restart analysis and the court search for it.
         let value = zoomLocked ? zoomFactor : zoomRange.clamp(factor)
         if !zoomLocked { zoomFactor = value; engine.setZoom(value) }
         guard abs(value - committedZoom) > 0.001 else { return }
         committedZoom = value
-        let cleared = controller?.framingChanged() ?? false
-        zoomNotice = cleared ? "镜头倍率已改变，手动四角已清除，改用自动映射；需要时请重新标定。" : nil
+        controller?.framingChanged()
     }
 
     // MARK: Role lifecycle
@@ -449,11 +446,11 @@ final class CameraModel {
 
     // MARK: Standby
 
-    /// Standby applies while a session records and the court mapping is usable (auto or manual).
+    /// Standby applies while a session records and the court mapping is usable.
     /// Called once a second by the workspace.
     func tickStandby() {
         guard let controller else { standby.update(eligible: false); return }
-        let calibrated = controller.manualCourtCorners != nil || controller.tennisAnalysis?.calibration.isAvailable == true
+        let calibrated = controller.tennisAnalysis?.calibration.isAvailable == true
             || !(controller.metrics.tennisAvailable)
         let recording = controller.session?.state == .active && streaming
         if recording && recordingSince == nil { recordingSince = Date() } else if !recording { recordingSince = nil }

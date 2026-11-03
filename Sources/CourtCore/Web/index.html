@@ -101,7 +101,6 @@
         <section class="panel" data-testid="court.web.camera">
           <div class="eyebrow" aria-hidden="true">CAMERA</div><h2>机位设置</h2>
           <div class="row">
-            <button id="calibrate" data-testid="court.calibration.open">标定球场</button>
             <button id="wake" data-testid="court.camera.wake">唤醒机位屏幕</button>
           </div>
           <div class="hands">
@@ -132,23 +131,6 @@
       </div>
     </div>
   </main>
-
-  <dialog id="calibration" class="sheet" data-testid="court.calibration.sheet">
-    <h2>标定球场</h2>
-    <p id="calibration-hint" class="muted small">按住画面会出现放大镜，松手前可移动对准；已放的点可以拖动微调。标定需要看着画面点选，读屏无法完成；不标定时机位会自动识别球场。</p>
-    <p id="calibration-step" class="step" aria-live="polite">依次点：近左、近右、远右、远左（双打外角）。</p>
-    <div id="still-wrap" class="still-wrap"><img id="still" alt="机位标定画面" draggable="false" aria-describedby="calibration-hint"><svg id="still-marks" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true"></svg><div id="still-points" aria-hidden="true"></div><div id="still-loupe" class="loupe" hidden aria-hidden="true"></div></div>
-    <p id="calibration-error" class="error" role="alert"></p>
-    <div class="row">
-      <button id="calibration-undo">撤销一点</button>
-      <button id="calibration-cancel">取消</button>
-      <button id="calibration-save" class="primary" disabled data-testid="court.calibration.save">应用四角</button>
-    </div>
-    <div class="sheet-footer">
-      <span class="muted small">不想用手动四角？</span>
-      <button id="calibration-clear" class="quiet" data-testid="court.calibration.clear">恢复自动映射…</button>
-    </div>
-  </dialog>
 
   <dialog id="detail" class="sheet" data-testid="court.history.detail">
     <div class="row between"><h2 id="detail-title">记录</h2><button id="detail-close">关闭</button></div>

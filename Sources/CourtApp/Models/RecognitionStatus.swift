@@ -22,7 +22,6 @@ struct RecognitionStatus: Equatable {
     struct Input {
         var isLive: Bool
         var calibration: TennisCourtCalibrationState?
-        var manualCorners = false
         /// Camera load-shedding level: L1 pauses person detection, L2 pauses bounce localization (S家).
         var shed = 0
         /// The in-house lane: shedding slows its person detection instead, and landing points continue.
@@ -56,11 +55,11 @@ struct RecognitionStatus: Equatable {
         }
         guard calibration.isAvailable else {
             let reason = calibration.reason.flatMap { $0.isEmpty ? nil : $0 } ?? "没有找到足够的场地地标"
-            return Row(id: id, title: title, value: "球场映射未就绪", detail: reason + "。可点「标定球场」手动点选四角。", tone: .warning)
+            return Row(id: id, title: title, value: "球场映射未就绪", detail: reason + "。识别出球场前不画落点、不判界内外。", tone: .warning)
         }
         // The in-house court says how it was found in `reason` (lines and pixel error); S家 leaves it empty.
         let found = calibration.reason.flatMap { $0.isEmpty ? nil : $0 } ?? "自动识别 · \(calibration.landmarkCount) 个场地参考点"
-        var parts = [input.manualCorners ? "手动四角标定，移动机位后需重标" : found]
+        var parts = [found]
         if let residual = calibration.validationErrorMeters, residual.isFinite { parts.append(String(format: "拟合残差 %.2f m", residual)) }
         return Row(id: id, title: title, value: "球场映射可用", detail: parts.joined(separator: " · "), tone: .good)
     }

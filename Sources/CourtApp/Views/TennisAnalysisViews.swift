@@ -209,7 +209,7 @@ struct TennisAnalysisOverview: View {
     private func panelEmptyText(_ live: String) -> String { historical ? "本次记录没有可用的击球候选。" : live }
 
     private var unavailableBounceReason: String {
-        if let calibration, !calibration.isAvailable { return "还没识别出球场，暂不画落点。可点「标定球场」手动点选四角。" }
+        if let calibration, !calibration.isAvailable { return "还没识别出球场，暂不画落点。" }
         return latest?.placementReasonText.map { "最近一拍：" + $0 } ?? "还没有落点。"
     }
 

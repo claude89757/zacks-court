@@ -93,8 +93,6 @@ final class IndependentLiveCourt {
     private var misfits = 0
     private(set) var inFlight = false
     private var launchedAt = 0.0
-    /// Manual corners in use: no sampling, no solves, results in flight are dropped.
-    private(set) var paused = false
     enum Motion: Sendable { case still, drifting, shaking }
     /// How much the picture moved over the last `motionLookback` seconds (motion check on).
     private(set) var motion = Motion.still
@@ -122,15 +120,9 @@ final class IndependentLiveCourt {
         nextRecheck = camera == nil ? .infinity : pts + options.recheckInterval
     }
 
-    /// Manual corners: the user's camera replaces the automatic court until `resume()`.
-    func pause(with camera: IndependentPinholeCamera) {
-        paused = true; self.camera = camera; latest = nil; misfits = 0
-        samples.removeAll(); newSamples = 0; nextRecheck = .infinity; resetMotion()
-    }
-
-    /// Manual corners cleared: search again from the image.
-    func resume() {
-        paused = false; camera = nil; latest = nil; misfits = 0
+    /// The framing changed (zoom): the old camera no longer matches the picture, so search again.
+    func restart() {
+        camera = nil; latest = nil; misfits = 0
         samples.removeAll(); newSamples = 0; lastSample = -.infinity; nextRecheck = .infinity; resetMotion()
     }
 
@@ -146,20 +138,18 @@ final class IndependentLiveCourt {
     func offer(_ full: CVPixelBuffer?, pts: Double) -> Change? {
         var change: Change?
         var thumbnail: Thumbnail?
-        if let full, !paused, options.motionPixels != nil, let t = Self.thumbnail(full) {
+        if let full, options.motionPixels != nil, let t = Self.thumbnail(full) {
             thumbnail = t
             change = checkMotion(t, pts: pts)       // first, so a solve that saw a shake is ignored
         }
         let latency = options.simulatedLatencyScale, launched = launchedAt
         if let outcome = mailbox.take(if: { o in latency.map { pts >= launched + o.seconds * $0 } ?? true }) {
             inFlight = false
-            if !paused {
-                if movedSinceLaunch { stats.solves += 1; stats.solveSeconds += outcome.seconds }
-                else if let applied = apply(outcome, pts: pts) { change = applied }
-            }
+            if movedSinceLaunch { stats.solves += 1; stats.solveSeconds += outcome.seconds }
+            else if let applied = apply(outcome, pts: pts) { change = applied }
             movedSinceLaunch = false
         }
-        guard let full, !inFlight, !paused, motion != .shaking, pts - lastSample >= options.sampleInterval else { return change }
+        guard let full, !inFlight, motion != .shaking, pts - lastSample >= options.sampleInterval else { return change }
         if let current = camera, motion == .drifting || stillTrackDue(pts) {
             // follow the mount by refining the current camera on this frame
             guard let sample = Self.sample(full) else { return change }
@@ -523,31 +513,5 @@ final class IndependentLiveCourt {
             }
         }
         return try IndependentCourtImage(width: W, height: H, blue: out[0], green: out[1], red: out[2])
-    }
-}
-
-/// Four tapped doubles corners (near left, near right, far right, far left; normalized, origin top left)
-/// to a camera for the in-house lane: the court-plane homography and the closed-form pinhole of the
-/// automatic search, with the principal point at the image centre. The user's points are not refined
-/// or checked against the lines; like the S家 mapping, accuracy is not independently verified.
-public enum IndependentManualCourt {
-    public static func camera(corners: [NormalizedPoint], width: Int = 1920, height: Int = 1080) throws -> IndependentPinholeCamera {
-        _ = try TennisCourtMapping.manual(corners: corners)          // same order and shape checks as manual corners elsewhere
-        let W = Double(width), H = Double(height), half = IndependentCourt.doublesHalfWidth, L = IndependentCourt.length
-        let world = [SIMD2(-half, 0), SIMD2(half, 0), SIMD2(half, L), SIMD2(-half, L)]
-        let image = corners.map { SIMD2($0.x * W, $0.y * H) }
-        let toWorld = IndependentCourtSearch.squareToQuad(world), toImage = IndependentCourtSearch.squareToQuad(image)
-        let homography = IndependentCourtSearch.mul(toImage, inverse(toWorld))
-        guard let p = IndependentCourtSearch.pinhole(homography, cx: W / 2, cy: H / 2, gateOnly: false), p.ok,
-              p.f > 300, p.f < 6000, p.C.z > 0.3, p.C.y < 1.5 else {
-            throw CourtError.message("四角不能形成合理的相机位置，请重新点选双打外侧四角。")
-        }
-        let r = IndependentPinholeCamera.rotationVector(p.R)
-        return IndependentPinholeCamera(f: p.f, rvec: [r.x, r.y, r.z], tvec: [p.t.x, p.t.y, p.t.z], principal: [W / 2, H / 2])
-    }
-
-    static func inverse(_ m: [Double]) -> [Double] {
-        let a = simd_double3x3(rows: [SIMD3(m[0], m[1], m[2]), SIMD3(m[3], m[4], m[5]), SIMD3(m[6], m[7], m[8])]).inverse
-        return [a[0][0], a[1][0], a[2][0], a[0][1], a[1][1], a[2][1], a[0][2], a[1][2], a[2][2]]
     }
 }

@@ -15,7 +15,7 @@
 | 位置 | 内容 |
 | --- | --- |
 | `Sources/CourtCore/IndependentAnalysis/Live/IndependentLiveEngine.swift` | 实时链：vImage 缩放（NV12 BT.709）、48 帧中位数背景 + 8 帧一批的 FP16 TrackNetV3、Vision 人框（全画面 + 远端裁剪 + 姿态补框）、每 0.25 秒跑一次滑动窗口规则 |
-| `…/Live/IndependentLiveCourt.swift` | 自动球场：取样、分带中位数、后台求解、每 60 秒复查、换相机或丢失；手动四角 `IndependentManualCourt` |
+| `…/Live/IndependentLiveCourt.swift` | 自动球场：取样、分带中位数、后台求解、单帧跟踪、每 60 秒复查、换相机或丢失（没有手动四角） |
 | `…/Court/` | 标定器（Python 原型 `court_auto.py` 的逐项移植）：白线证据、Hough、合并线、2×2 搜索、闭式相机、亚像素精修 + LM |
 | `…/Shots/` | v13 逐拍规则：`IndependentShotPipeline`（入口与转成行）、`IndependentBallEvents`（交汇点和触地）、`IndependentShotFlights`（人框、动作规则）、`IndependentFlightModel`（带阻力的飞行拟合）、`IndependentShotGeometry`（针孔相机）、`IndependentLiveShots`（滑动窗口、补算、冻结） |
 | `…/IndependentBall*.swift` 等 | 更早的本地视频实验链（Codex 的工作），App 里的「本地视频实验」用它 |

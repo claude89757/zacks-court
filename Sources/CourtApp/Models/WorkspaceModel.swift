@@ -39,7 +39,6 @@ struct LinkStats {
     var analysisError: String?
     var dashboardEvents: [TennisShotEvent] = []
     var tennisAnalysisError: String?
-    var calibrationFrame: CGImage?
     var error: String?
     /// A neutral message (record switched, backfill done, record deleted) shown in the shared
     /// banner on every surface. It goes away by itself after a reading time; see `noticeLifetime`.
@@ -125,7 +124,6 @@ struct LinkStats {
     @ObservationIgnored private var recentRows: [TennisShotEvent] = []
     @ObservationIgnored private(set) var pendingIntents: [WireControl] = []
     @ObservationIgnored private var replyWaiters: [UUID: CheckedContinuation<WireControl?, Never>] = [:]
-    @ObservationIgnored private var stillWaiters: [UUID: CheckedContinuation<CGImage?, Never>] = [:]
     @ObservationIgnored private var previewViewers = 0
     @ObservationIgnored private var lastCheckpoint = Date.distantPast
     @ObservationIgnored private var mirrorDirty = false
@@ -181,21 +179,20 @@ struct LinkStats {
     var analysis: AnalysisSnapshot? { controller?.people ?? (isLive ? cameraStatus?.people : nil) }
     var nearHandedness: TennisHandedness { controller?.nearHandedness ?? cameraStatus?.near ?? .right }
     var farHandedness: TennisHandedness { controller?.farHandedness ?? cameraStatus?.far ?? .right }
-    var manualCourtCorners: [NormalizedPoint]? { controller?.manualCourtCorners ?? cameraStatus?.manualCorners }
     /// 「识别状态」 rows from the camera's own state (camera role) or its 1 Hz status and the mirrored ledger (display).
     var recognition: RecognitionStatus {
         if let controller {
             let people = controller.people.map { RecognitionStatus.People(streamID: $0.streamID, pts: $0.pts, count: $0.people.count) }
             let events = controller.dashboardEvents.isEmpty ? controller.tennisAnalysis?.events ?? [] : controller.dashboardEvents
             return RecognitionStatus(.init(isLive: isLive, calibration: controller.tennisAnalysis?.calibration,
-                                           manualCorners: controller.manualCourtCorners != nil, shed: controller.shed.level,
+                                           shed: controller.shed.level,
                                            inHouse: Self.isInHouse(controller.tennisAnalysis), people: people, latestPTS: controller.counters.latestPTS,
                                            streamID: controller.streamID, events: events))
         }
         let status = isLive ? cameraStatus : nil
         let people = analysis.map { RecognitionStatus.People(streamID: $0.streamID, pts: $0.pts, count: $0.people.count) }
         return RecognitionStatus(.init(isLive: isLive, calibration: tennisAnalysis?.calibration,
-                                       manualCorners: status?.manualCorners != nil, shed: status?.shed ?? 0,
+                                       shed: status?.shed ?? 0,
                                        inHouse: Self.isInHouse(tennisAnalysis), people: people, latestPTS: status?.analysis.latestPTS,
                                        streamID: status?.analysis.streamID, events: dashboardEvents))
     }
@@ -485,29 +482,7 @@ struct LinkStats {
         }
     }
 
-    // MARK: Calibration and handedness
-
-    func prepareCalibration() async {
-        if let controller {
-            guard camera.streaming else { error = "请先开始采集，再标定球场。"; return }
-            calibrationFrame = await controller.calibrationImage()
-            if calibrationFrame == nil { error = "还没有可用的分析画面，请稍后再试。" }
-            return
-        }
-        guard isLive else { error = "请先连接机位并开始采集。"; return }
-        let request = WireControl(.still)
-        let image = await withCheckedContinuation { (continuation: CheckedContinuation<CGImage?, Never>) in
-            stillWaiters[request.id] = continuation
-            sendControl(request)
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(6))
-                self?.resolveStill(request.id, image: nil)
-            }
-        }
-        guard isLive else { error = "机位连接已变化，请重新打开标定。"; return }
-        calibrationFrame = image
-        if image == nil, error == nil { error = "没有收到机位的标定画面，请稍后再试。" }
-    }
+    // MARK: Handedness
 
     func setHandedness(near: TennisHandedness, far: TennisHandedness) {
         if let controller { controller.setHandedness(near: near, far: far); return }
@@ -515,22 +490,6 @@ struct LinkStats {
         guard connected else { error = "机位未连接，持拍手设置需要在机位连接后保存。"; return }
         sendControl(control)
         displaySnapshot = nil
-    }
-
-    @discardableResult func setManualCourtCorners(_ corners: [NormalizedPoint]?) -> Bool {
-        if let controller {
-            do { try controller.setManualCourtCorners(corners); camera.zoomNotice = nil; return true }
-            catch { self.error = error.localizedDescription; return false }
-        }
-        guard isLive else { error = "机位连接已变化，请重新获取画面再标定。"; return false }
-        if let corners {
-            do { try ManualCourtCorners.validate(corners) }
-            catch { self.error = error.localizedDescription; return false }
-        }
-        var control = WireControl(.corners); control.corners = corners; control.clearCorners = corners == nil
-        sendControl(control)
-        displaySnapshot = nil
-        return true
     }
 
     // MARK: Session commands
@@ -702,7 +661,6 @@ struct LinkStats {
     func backfillGaps(_ session: CourtSession) {
         guard backfill == nil, !(controller?.session?.id == session.id && hasActiveSession) else { return }
         guard let models = AnalysisModelLocator.directory else { error = "这台设备没有分析模型，无法离线补算。"; return }
-        // Sessions do not store manual corners, so backfill uses automatic court mapping.
         #if targetEnvironment(simulator)
         let configuration = TennisAnalysisConfiguration(modelDirectory: models, computeUnits: .cpuOnly)
         #else
@@ -926,9 +884,8 @@ struct LinkStats {
             statusLog.append(["t": Date().timeIntervalSince1970, "connected": false, "reason": reason], session: id, directory: storageDirectory)
         }
         connected = false; cameraStatus = nil; lastStatusAt = nil
-        displaySnapshot = nil; calibrationFrame = nil
+        displaySnapshot = nil
         preview.clear()
-        for (id, _) in stillWaiters { resolveStill(id, image: nil) }
         for (id, _) in replyWaiters { resolveReply(id, nil) }
         if transferReceiver.isActive { transferReceiver.cancel("机位连接中断，已传部分会保留，重新连接后点「继续回传」。") }
         if clipReceiver.isActive { clipReceiver.cancel("机位连接中断，片段未取完。") }
@@ -1023,10 +980,6 @@ struct LinkStats {
                     else { error = message }
                 }
                 resolveReply(request, control)
-                if control.ok == false { resolveStill(request, image: nil) }
-            case .still:
-                guard let request = packet.header.message.flatMap(UUID.init(uuidString:)) else { return }
-                resolveStill(request, image: Self.decodeJPEG(packet.payload))
             default: break
             }
         } catch { self.error = "机位发来的数据无法读取（\(error.localizedDescription)）：把两台设备更新到同一版本后重新连接。" }
@@ -1133,12 +1086,6 @@ struct LinkStats {
         }
     }
     private func resolveReply(_ id: UUID, _ reply: WireControl?) { replyWaiters.removeValue(forKey: id)?.resume(returning: reply) }
-    private func resolveStill(_ id: UUID, image: CGImage?) { stillWaiters.removeValue(forKey: id)?.resume(returning: image) }
-
-    private static func decodeJPEG(_ data: Data) -> CGImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
-    }
 
     // MARK: Teardown
 
@@ -1176,7 +1123,7 @@ struct LinkStats {
         statusLog.close()
         await camera.shutdown()
         preview.clear(); dashboardEvents = []; recentRows = []; displaySnapshot = nil
-        calibrationFrame = nil; cameraStatus = nil
+        cameraStatus = nil
         connected = false; deviceName = "尚未连接机位"
     }
 

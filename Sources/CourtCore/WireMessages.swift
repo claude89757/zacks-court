@@ -76,7 +76,6 @@ public struct CameraStatus: Codable, Equatable, Sendable {
     public var warnings: [String] = []
     public var near: TennisHandedness = .right
     public var far: TennisHandedness = .right
-    public var manualCorners: [NormalizedPoint]?
     public var previewing = false
     public var people: AnalysisSnapshot?
     /// State of the camera's session `sessionID` (nil with no session, or from an older v2 camera).
@@ -97,7 +96,7 @@ public struct CameraStatus: Codable, Equatable, Sendable {
             lhs.fps == rhs.fps && lhs.captureDrops == rhs.captureDrops && lhs.recordingSeconds == rhs.recordingSeconds &&
             lhs.sessionID == rhs.sessionID && lhs.analysis == rhs.analysis && lhs.device == rhs.device &&
             lhs.shed == rhs.shed && lhs.shedReason == rhs.shedReason && lhs.warnings == rhs.warnings &&
-            lhs.near == rhs.near && lhs.far == rhs.far && lhs.manualCorners == rhs.manualCorners &&
+            lhs.near == rhs.near && lhs.far == rhs.far &&
             lhs.previewing == rhs.previewing && lhs.people?.pts == rhs.people?.pts &&
             lhs.sessionState == rhs.sessionState && lhs.busy == rhs.busy && lhs.zoom == rhs.zoom &&
             lhs.hawkEye == rhs.hawkEye
@@ -107,7 +106,10 @@ public struct CameraStatus: Codable, Equatable, Sendable {
 /// Display → camera commands, and the camera's replies (`command == .reply`).
 public struct WireControl: Codable, Sendable {
     public enum Command: String, Codable, Sendable {
-        case start, pause, resume, finish, marker, handedness, corners, preview, still, wake, reply
+        case start, pause, resume, finish, marker, handedness, preview, wake, reply
+        /// Manual court corners and the still frame to tap them on, from displays before they were removed.
+        /// Kept so such a command still decodes and gets a refusal instead of no answer.
+        case corners, still
         /// Display → replaced camera: another camera took this display; stop reconnecting.
         case superseded
         /// Recording transfer: `label` names the file, `offset` resumes a partial copy.
@@ -134,9 +136,6 @@ public struct WireControl: Codable, Sendable {
     public var stream: UUID?
     public var near: TennisHandedness?
     public var far: TennisHandedness?
-    /// corners: nil with `clearCorners == true` returns to automatic court mapping.
-    public var corners: [NormalizedPoint]?
-    public var clearCorners: Bool?
     /// hawkEye: the settings to use from now on.
     public var hawkEye: HawkEyeSettings?
     public var enabled: Bool?
