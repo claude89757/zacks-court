@@ -2454,3 +2454,19 @@ S家 链报的是击球后前 5 个样本拟合的速度，和 S家 App 的端�
 检查：`swift build` 通过；`swift run court-check` 通过；`swift test` 303 项，0 失败，18 项跳过（需要 S家链、S家模型、外部视频或显式开启的用例）。没改 iOS 界面和工程，没有跑模拟器编译。
 
 没有验证：iPhone 上的耗时（求解和运动判断都只在 Mac 上量过）；真实的晃动：合成的只有纯转动，没有平移、卷帘快门、运动模糊和自动对焦/曝光变化；球员走到镜头跟前、占满画面时是否误判在动；真实球场上的效果（这轮没有实拍）。
+
+## 2026-11-04 新图标与带大字说明的商店截图
+
+原因：用户要求重做 logo，并把商店截图换成有大字说明的版本，第一张要画出多台设备怎么配合；界内外（电子司线）要单独成一张。
+
+做了什么：
+- 图标换成矢量的「球印压线」（`assets/brand/zacks-court-logo.svg`），用户在 5 个方向里选的。母图由 Chrome 渲染为 1024×1024，`prepare-app-icons.swift` 改读新母图，导出 iPhone 图标目录和 Mac 的 `ZacksCourt.icns`；旧的吉祥物母图和提示词删除。
+- 商店截图中英各 5 张（`docs/app-store/screenshots/iphone-6.9/<语言>/`），由 `scripts/render-store-screens.sh` 从模板、文案和原图渲染。界内外回放、OUT 卡片和发球测速牌取自浏览器看板：脚本把页面拷到临时目录，用假的机位连接喂 `court-probe demo-session` 的示例记录。App 界面取自 Release 构建上的 `testStoreScreens`。每张都标「画面为演示数据」。旧的 5 张删除。
+
+验证（本机 M4 Pro，Xcode 26，Chrome 无界面渲染）：
+- `render-store-screens.sh` 输出 10 张，全部是 1320×2868（脚本逐张检查尺寸）。
+- 新建的 iPhone 17 Pro Max 模拟器（iOS 26.1）上，Release 构建跑 `testStoreScreens`：1 项通过，0 失败。
+- 换图标后 `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 编译成功，之后还原了 `Info.plist`。
+- 没有改 Swift 代码，所以没跑 `swift build`、`court-check`、`swift test`。
+
+没有验证：新图标在真机主屏和 App Store 上的效果；截图没有上传到 App Store Connect（1.0 已上架，要等 1.1 一起提交）。顺带发现浏览器看板在手机竖屏宽度（440 pt）下，界内外回放的结论卡片会超出右边、关闭按钮被挤出屏幕，这次没修。

@@ -8,10 +8,10 @@ import UniformTypeIdentifiers
 let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
 let files = FileManager.default
 let brand = root.appendingPathComponent("assets/brand")
-let masterURL = brand.appendingPathComponent("zacks-court-mascot-master.png")
+let masterURL = brand.appendingPathComponent("zacks-court-logo-master.png")
 guard let source = CGImageSourceCreateWithURL(masterURL as CFURL, nil),
       let master = CGImageSourceCreateImageAtIndex(source, 0, nil),
-      master.width == master.height else { fatalError("A square mascot master is required") }
+      master.width == master.height else { fatalError("A square logo master is required") }
 let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 
 func render(_ image: CGImage, size: Int, rounded: Bool = false, transparent: Bool = false) -> CGImage {
@@ -78,7 +78,7 @@ for (idiom, points, scale) in slots {
 try writeJSON(["images": entries, "info": info], to: appIcon.appendingPathComponent("Contents.json"))
 
 let macMaster = render(master, size: 1024, rounded: true, transparent: true)
-try writePNG(macMaster, to: brand.appendingPathComponent("zacks-court-mascot-mac.png"))
+try writePNG(macMaster, to: brand.appendingPathComponent("zacks-court-logo-mac.png"))
 let iconset = root.appendingPathComponent(".local/app-icons/ZacksCourt.iconset")
 try files.createDirectory(at: iconset, withIntermediateDirectories: true)
 for points in [16, 32, 128, 256, 512] {
@@ -94,4 +94,4 @@ convert.arguments = ["-c", "icns", iconset.path, "-o", brand.appendingPathCompon
 try convert.run()
 convert.waitUntilExit()
 guard convert.terminationStatus == 0 else { fatalError("ICNS export failed") }
-print("Exported iPhone/iPad AppIcon catalog and macOS ZacksCourt.icns from the approved mascot master.")
+print("Exported iPhone/iPad AppIcon catalog and macOS ZacksCourt.icns from the approved logo master.")

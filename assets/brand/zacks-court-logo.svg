@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Zacks Court app icon: a ball's mark on the line, the ball bouncing on. Full-bleed square; the
+       platforms round the corners. Export with scripts/prepare-app-icons.swift. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#17331F"/><stop offset="1" stop-color="#07120C"/></linearGradient>
+    <radialGradient id="ball" cx="0.36" cy="0.3" r="0.78"><stop offset="0" stop-color="#E6FF96"/><stop offset="0.55" stop-color="#C2F057"/><stop offset="1" stop-color="#8DBE30"/></radialGradient>
+    <radialGradient id="mark" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#D4F77A" stop-opacity="1"/><stop offset=".72" stop-color="#C2F057" stop-opacity=".8"/><stop offset="1" stop-color="#C2F057" stop-opacity="0"/></radialGradient>
+    <linearGradient id="trailIn" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#C2F057" stop-opacity="0"/><stop offset="1" stop-color="#C2F057" stop-opacity=".75"/></linearGradient>
+    <linearGradient id="trailOut" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#C2F057" stop-opacity=".75"/><stop offset="1" stop-color="#C2F057" stop-opacity=".15"/></linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect x="0" y="648" width="1024" height="70" fill="#F3EED9"/>
+  <ellipse cx="430" cy="664" rx="170" ry="46" fill="url(#mark)"/>
+  <path d="M110 190 C 250 300, 350 470, 424 630" fill="none" stroke="url(#trailIn)" stroke-width="40" stroke-linecap="round"/>
+  <path d="M436 630 C 500 500, 580 420, 660 380" fill="none" stroke="url(#trailOut)" stroke-width="40" stroke-linecap="round"/>
+  <circle cx="742" cy="342" r="172" fill="url(#ball)"/>
+  <path d="M630 236 C 708 286, 712 398, 640 452" fill="none" stroke="#F3EED9" stroke-width="22" stroke-linecap="round"/>
+  <path d="M854 232 C 776 282, 772 400, 846 454" fill="none" stroke="#F3EED9" stroke-width="22" stroke-linecap="round"/>
+</svg>
