@@ -58,7 +58,125 @@
       }
     }
   },
+  "zh-Hant": {
+    "demo": "畫面為示範資料",
+    "frames": {
+      "01-scene": {
+        "title": "一台[拍]，一台[看]",
+        "sub": "iPhone 架在場邊錄影，在本機估計每一拍；另一台手機或任何瀏覽器同步看結果。",
+        "camera": "機位 · 錄影 + 本機分析",
+        "phone": "看板 · 手機",
+        "browser": "看板 · 任何瀏覽器",
+        "cameraTag": "發球 · 152 km/h 估計",
+        "foot": "同一 Wi-Fi、熱點或直連 · 不用帳號"
+      },
+      "02-line-calls": {
+        "title": "電子司線，喊出 [Out!]",
+        "sub": "球一落地就判界內、出界或壓線附近，出界時語音喊 Out!，還有轉播式回放。",
+        "note": "單機位模型估計，不是正式判罰；預設判近端半場。",
+        "calls": [
+          [
+            "OUT",
+            "出界",
+            "出界約 32 公分 · 底線"
+          ],
+          [
+            "IN",
+            "界內",
+            "距邊線約 40 公分"
+          ],
+          [
+            "CLOSE",
+            "壓線附近",
+            "離底線不到 10 公分，不報出界"
+          ]
+        ],
+        "voice": "出界時喊"
+      },
+      "03-serve-speed": {
+        "title": "[發球球速]，大字看",
+        "sub": "每一次發球的球速估計，附最高、平均和趨勢。",
+        "points": [
+          "每次發球自動識別",
+          "最高、平均、趨勢一屏看完",
+          "整塊螢幕就是讀數，遠處也看得清"
+        ]
+      },
+      "04-replay": {
+        "title": "每一拍都能[回看]",
+        "sub": "逐拍列出球速、落點和動作，點一下看那一拍的錄影，原始錄影可以匯出。"
+      },
+      "05-private": {
+        "title": "不用帳號，資料[只在你的裝置上]",
+        "sub": "兩台裝置在同一 Wi-Fi、熱點或直連下配對，中間不經過任何伺服器。",
+        "chips": [
+          "無需註冊",
+          "不上傳雲端",
+          "區域網直連"
+        ]
+      }
+    }
+  },
   "en-US": {
+    "demo": "Screens show demo data",
+    "frames": {
+      "01-scene": {
+        "title": "One [films]. One [watches].",
+        "sub": "An iPhone by the court records and estimates every shot on device. Another phone or any browser follows live.",
+        "camera": "Camera · records + analyses",
+        "phone": "Display · phone",
+        "browser": "Display · any browser",
+        "cameraTag": "Serve · 152 km/h est.",
+        "foot": "Same Wi-Fi, hotspot or direct link · No account"
+      },
+      "02-line-calls": {
+        "title": "Line calls with a spoken [Out!]",
+        "sub": "Every bounce is called in, out or too close to call, with a broadcast-style replay.",
+        "note": "Single-camera estimate, not an official call. Near half by default.",
+        "calls": [
+          [
+            "OUT",
+            "Out",
+            "About 32 cm long · baseline"
+          ],
+          [
+            "IN",
+            "In",
+            "About 40 cm inside the sideline"
+          ],
+          [
+            "CLOSE",
+            "Too close",
+            "Within 10 cm of the baseline, never called out"
+          ]
+        ],
+        "voice": "Called out loud"
+      },
+      "03-serve-speed": {
+        "title": "[Serve speed], big and clear",
+        "sub": "An estimated speed for every serve, with max, average and trend.",
+        "points": [
+          "Serves detected automatically",
+          "Max, average and trend at a glance",
+          "The whole screen is the number"
+        ]
+      },
+      "04-replay": {
+        "title": "[Replay] any shot",
+        "sub": "Every shot listed with speed, bounce and stroke. Tap to watch it; export the original video."
+      },
+      "05-private": {
+        "title": "No account. Your data [stays with you]",
+        "sub": "Pair two devices over Wi-Fi, a hotspot or a direct link. No server in between.",
+        "chips": [
+          "No sign-up",
+          "No cloud",
+          "Local network only"
+        ]
+      }
+    }
+  },
+  "en-GB": {
     "demo": "Screens show demo data",
     "frames": {
       "01-scene": {

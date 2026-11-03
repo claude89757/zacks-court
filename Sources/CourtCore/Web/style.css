@@ -48,7 +48,7 @@ select { width: 100%; }
 
 .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; flex-wrap: wrap; }
 .brand { display: flex; align-items: center; gap: 8px; }
-.brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green); }
+.brand .logo { width: 26px; height: 26px; border-radius: 22.4%; flex: none; }
 .pill { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 0.85rem; color: var(--muted); }
 .pill.ok { color: var(--green); }
 .pill.bad { color: var(--warning); }
