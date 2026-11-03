@@ -23,6 +23,7 @@ import CourtCore
         if args.first == "independent-live" { try await IndependentLiveCommand.run(args); return }
         if args.first == "independent-replay" { try IndependentReplayCommand.run(args); return }
         if args.first == "court-calibrate" { try CourtCalibrateCommand.run(args); return }
+        if args.first == "court-lock" { try CourtLockCommand.run(args); return }
         guard args.count >= 3 else { throw CourtError.message("Usage: court-analyze VIDEO MODEL_DIRECTORY OUTPUT_JSON [MAX_SECONDS] [cpu] [--corners CORNERS_JSON]") }
         let video = URL(fileURLWithPath: args[0]), modelDirectory = URL(fileURLWithPath: args[1])
         let outputURL = URL(fileURLWithPath: args[2])

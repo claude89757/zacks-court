@@ -142,6 +142,28 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertEqual(replayed[0].map(\.stroke), live.published.map(\.shot.stroke))
     }
 
+    /// The picture moved while the shot flew: the live chain drops those candidates (`discard`), the
+    /// catch-up publishes nothing from them, and the trace replays to the same empty list.
+    func testDiscardedCandidatesAreNotCaughtUp() throws {
+        let cam = IndependentProjector(camera)
+        var s = IndependentFlight.State(p: SIMD3(0.5, 0.3, 1.0), v: SIMD3(-1.0, 24, 3.0))
+        var candidates = [IndependentShotCandidate](), k = 0
+        while s.p.z > IndependentCourt.ballRadius || k < 60 {
+            let q = cam.project(s.p)
+            if k >= 2 { candidates.append(IndependentShotCandidate(decodeIndex: k, time: 600 + Double(k), u: q.u, v: q.v, peak: 0.9)) }
+            s = IndependentFlight.rk4(s, 1 / 60); k += 1
+            if s.p.z < IndependentCourt.ballRadius { s.p.z = IndependentCourt.ballRadius; s.v.z = -0.65 * s.v.z; s.v.x *= 0.8; s.v.y *= 0.75 }
+        }
+        let end = (candidates.last?.time ?? 600) / 60 + 0.01
+        var live = IndependentLiveShots()
+        var trace: [IndependentLiveTraceEvent] = [.newStream, .candidates(candidates), .discard(before: end), .camera(camera), .catchUp(now: end + 2)]
+        live.append(candidates); live.trim(keeping: 0, now: end)
+        XCTAssertTrue(live.catchUp(now: end + 2, camera: camera, people: IndependentPeople([:])).isEmpty)
+        XCTAssertTrue(live.published.isEmpty, "nothing seen while moving is published")
+        trace = try JSONDecoder().decode([IndependentLiveTraceEvent].self, from: JSONEncoder().encode(trace))
+        XCTAssertEqual(IndependentLiveTrace.replay(trace).first?.count, 0)
+    }
+
     /// Right-handed rules: near forehand to the image right, far forehand to the image left,
     /// a serve at the baseline above the head, a volley inside the service line.
     func testStrokeRules() {

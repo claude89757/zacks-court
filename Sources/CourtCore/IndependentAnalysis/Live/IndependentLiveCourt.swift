@@ -10,23 +10,40 @@ import simd
 /// like the prototype's `np.median` of decoded frames, and solved by `IndependentCourtCalibrator` on a
 /// utility queue, so ball batches never wait; the result is picked up on the analysis queue with the
 /// next frame.
-/// - Searching: the first solve after `firstAttemptFrames` samples (about 7 s), then after every
-///   `retryFrames` new samples, over the last `frames` samples (the prototype used 25 over 20 s).
+/// - Moving: a phone is rarely still while it is being mounted. Every full frame gives a 240×135
+///   thumbnail that is compared with the one a second earlier (`motionPixels`); while the picture moves
+///   no samples are kept, a solve in flight is ignored and a found camera is dropped, so a median never
+///   mixes two poses and a knocked mount is not used with its old court.
+/// - Searching: the first solve once `firstAttemptFrames` still samples are in (about 3 s), then after
+///   every `retryFrames` new ones, over the last `frames` samples (the prototype used 25 over 20 s). A
+///   sample that drifted from the window's first one restarts the window.
 /// - Found: every `recheckInterval` seconds a fresh median of `recheckFrames` samples is solved again.
 ///   A camera whose reference points moved more than `movedPixels` replaces the current one (the mount
-///   moved). A refusal keeps the current camera if it still fits the lines; after `dropAfterMisfits`
-///   refusals in a row where it no longer fits, the camera is dropped and the search starts again.
+///   moved slowly). A refusal keeps the current camera if it still fits the lines; after
+///   `dropAfterMisfits` refusals in a row where it no longer fits, the camera is dropped and the search
+///   starts again.
 /// Calibration only: speeds and landing points stay model estimates.
 final class IndependentLiveCourt {
     struct Options: Sendable {
         var sampleInterval = 0.8
         var frames = 25
-        var firstAttemptFrames = 9
-        var retryFrames = 4
+        var firstAttemptFrames = 4
+        var retryFrames = 2
         var recheckInterval = 60.0
         var recheckFrames = 15
         var movedPixels = 3.0
         var dropAfterMisfits = 2
+        /// Offline evaluation only: a finished solve is picked up once the stream has advanced by its
+        /// wall-clock seconds times this factor, as if it had run beside the stream. Nil in the App.
+        var simulatedLatencyScale: Double?
+        /// Camera motion check (nil: off). A 240×135 thumbnail of every full frame is compared with
+        /// the one `motionLookback` seconds earlier; more than `motionPixels` of apparent displacement
+        /// means the phone is moving: the samples are dropped, a solve in flight is ignored, and a found
+        /// camera is dropped (unknown stays unknown) until the picture is still and the court found again.
+        /// 4 px: a still camera measured at most 3.4 px over about 30 minutes of seven match videos, a
+        /// real 8-16 px move at least 4.5 px nine times in ten (`court-analyze court-lock`, 2026-11-04).
+        var motionPixels: Double? = 4
+        var motionLookback = 1.0
         init() {}
     }
 
@@ -41,7 +58,7 @@ final class IndependentLiveCourt {
     }
 
     struct Stats: Sendable {
-        var solves = 0, solveSeconds = 0.0, samples = 0, found = 0, moved = 0, lost = 0
+        var launches = 0, solves = 0, solveSeconds = 0.0, samples = 0, found = 0, moved = 0, lost = 0
     }
 
     static let width = IndependentCourtCalibrator.width, height = IndependentCourtCalibrator.height
@@ -56,9 +73,17 @@ final class IndependentLiveCourt {
     private var newSamples = 0
     private var nextRecheck = Double.infinity
     private var misfits = 0
-    private var inFlight = false
+    private(set) var inFlight = false
+    private var launchedAt = 0.0
     /// Manual corners in use: no sampling, no solves, results in flight are dropped.
     private(set) var paused = false
+    /// The picture moved within the last `motionLookback` seconds (motion check on).
+    private(set) var moving = false
+    /// Last measured displacement in full-resolution pixels, for evaluation.
+    private(set) var lastMotion: Double?
+    private var thumbnails: [(pts: Double, image: Thumbnail)] = []
+    private var anchor: Thumbnail?
+    private var movedSinceLaunch = false
     private let mailbox = Mailbox()
     private let queue = DispatchQueue(label: "court.independent.court-calibration", qos: .utility)
 
@@ -73,26 +98,26 @@ final class IndependentLiveCourt {
     /// A camera set from outside (fixed): kept, and re-checked from `pts` on.
     func adopt(_ camera: IndependentPinholeCamera?, pts: Double) {
         self.camera = camera; latest = nil; misfits = 0
-        samples.removeAll(); newSamples = 0
+        samples.removeAll(); newSamples = 0; resetMotion()
         nextRecheck = camera == nil ? .infinity : pts + options.recheckInterval
     }
 
     /// Manual corners: the user's camera replaces the automatic court until `resume()`.
     func pause(with camera: IndependentPinholeCamera) {
         paused = true; self.camera = camera; latest = nil; misfits = 0
-        samples.removeAll(); newSamples = 0; nextRecheck = .infinity
+        samples.removeAll(); newSamples = 0; nextRecheck = .infinity; resetMotion()
     }
 
     /// Manual corners cleared: search again from the image.
     func resume() {
         paused = false; camera = nil; latest = nil; misfits = 0
-        samples.removeAll(); newSamples = 0; lastSample = -.infinity; nextRecheck = .infinity
+        samples.removeAll(); newSamples = 0; lastSample = -.infinity; nextRecheck = .infinity; resetMotion()
     }
 
     /// Stream change or pause: the phone may have moved. Searching restarts its samples; a found camera
     /// is re-checked right away.
     func streamChanged(pts: Double) {
-        samples.removeAll(); newSamples = 0; lastSample = -.infinity
+        samples.removeAll(); newSamples = 0; lastSample = -.infinity; resetMotion()
         if camera != nil { nextRecheck = pts }
     }
 
@@ -100,27 +125,69 @@ final class IndependentLiveCourt {
     /// full-resolution copy when one is due. Never blocks on the solve.
     func offer(_ full: CVPixelBuffer?, pts: Double) -> Change? {
         var change: Change?
-        if let outcome = mailbox.take() { inFlight = false; if !paused { change = apply(outcome, pts: pts) } }
-        guard let full, !inFlight, !paused, camera == nil || pts >= nextRecheck, pts - lastSample >= options.sampleInterval,
+        let latency = options.simulatedLatencyScale, launched = launchedAt
+        if let outcome = mailbox.take(if: { o in latency.map { pts >= launched + o.seconds * $0 } ?? true }) {
+            inFlight = false
+            if !paused {
+                if movedSinceLaunch { stats.solves += 1; stats.solveSeconds += outcome.seconds }
+                else { change = apply(outcome, pts: pts) }
+            }
+            movedSinceLaunch = false
+        }
+        var thumbnail: Thumbnail?
+        if let full, !paused, let threshold = options.motionPixels, let t = Self.thumbnail(full) {
+            thumbnail = t
+            if let lost = checkMotion(t, pts: pts, threshold: threshold) { change = lost }
+        }
+        guard let full, !inFlight, !paused, !moving, camera == nil || pts >= nextRecheck, pts - lastSample >= options.sampleInterval,
               let sample = Self.sample(full) else { return change }
+        if let threshold = options.motionPixels, let thumbnail {
+            // the window holds one pose only: a sample that moved away from the first one restarts it
+            if samples.isEmpty || anchor == nil { anchor = thumbnail }
+            else if let anchor, Self.motion(anchor, thumbnail) > threshold { samples.removeAll(); newSamples = 0; self.anchor = thumbnail }
+        }
         lastSample = pts; samples.append(sample); newSamples += 1; stats.samples += 1
         if samples.count > options.frames { samples.removeFirst(samples.count - options.frames) }
         if let current = camera {
             guard samples.count >= options.recheckFrames else { return change }
-            launch(current: current)
+            launch(current: current, pts: pts)
             samples.removeAll()          // a re-check holds no frames once its median is taken
         } else {
             let due = latest == nil ? samples.count >= options.firstAttemptFrames : newSamples >= options.retryFrames
-            if due && samples.count >= options.firstAttemptFrames { launch(current: nil) }
+            if due && samples.count >= options.firstAttemptFrames { launch(current: nil, pts: pts) }
         }
         return change
+    }
+
+    private func resetMotion() { thumbnails.removeAll(); anchor = nil; moving = false; lastMotion = nil; movedSinceLaunch = inFlight }
+
+    /// Compares the thumbnail with the one `motionLookback` seconds earlier (or, when full frames come
+    /// sparsely, the last one up to three lookbacks old). Moving drops the samples and any solve in
+    /// flight; a found camera is dropped (`.lost`). With nothing to compare, the picture counts as still,
+    /// as before the check existed, so `moving` can never stick.
+    private func checkMotion(_ t: Thumbnail, pts: Double, threshold: Double) -> Change? {
+        let previous = thumbnails.last
+        thumbnails.removeAll { pts - $0.pts > options.motionLookback + 0.05 }
+        defer { thumbnails.append((pts, t)) }
+        guard let reference = thumbnails.first ?? previous.flatMap({ pts - $0.pts <= 3 * options.motionLookback ? $0 : nil }) else {
+            moving = false; lastMotion = nil; return nil
+        }
+        guard pts - reference.pts >= options.motionLookback * 0.5 else { return nil }
+        let m = Self.motion(reference.image, t)
+        lastMotion = m; moving = m > threshold
+        guard moving else { return nil }
+        samples.removeAll(); newSamples = 0; anchor = nil
+        if inFlight { movedSinceLaunch = true }
+        guard camera != nil else { return nil }
+        camera = nil; latest = nil; misfits = 0; nextRecheck = .infinity; stats.lost += 1
+        return .lost
     }
 
     /// Waits for a solve in flight (tests and the end of a file run).
     func drain() { queue.sync {} }
 
-    private func launch(current: IndependentPinholeCamera?) {
-        inFlight = true; newSamples = 0
+    private func launch(current: IndependentPinholeCamera?, pts: Double) {
+        inFlight = true; newSamples = 0; launchedAt = pts; stats.launches += 1
         let frames = samples, mailbox = mailbox
         queue.async {
             let began = ProcessInfo.processInfo.systemUptime
@@ -177,6 +244,100 @@ final class IndependentLiveCourt {
         return rms <= 1.5 && distance(refined.camera, camera) <= movedPixels
     }
 
+    // MARK: Motion
+
+    /// Luma at 1/8 resolution, normalized to zero mean and unit deviation (so a global change of
+    /// brightness is not motion).
+    struct Thumbnail: Sendable {
+        static let width = 240, height = 135, scale = 8.0
+        let pixels: [Float]
+    }
+
+    static func thumbnail(_ pixels: CVPixelBuffer) -> Thumbnail? {
+        guard CVPixelBufferGetWidth(pixels) == width, CVPixelBufferGetHeight(pixels) == height else { return nil }
+        let tw = Thumbnail.width, th = Thumbnail.height
+        var small = [UInt8](repeating: 0, count: tw * th)
+        CVPixelBufferLockBaseAddress(pixels, .readOnly); defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+        let format = CVPixelBufferGetPixelFormatType(pixels)
+        let ok: Bool = small.withUnsafeMutableBytes { out in
+            var dst = vImage_Buffer(data: out.baseAddress, height: vImagePixelCount(th), width: vImagePixelCount(tw), rowBytes: tw)
+            switch format {
+            case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
+                guard let y = CVPixelBufferGetBaseAddressOfPlane(pixels, 0) else { return false }
+                var src = vImage_Buffer(data: y, height: vImagePixelCount(height), width: vImagePixelCount(width),
+                                        rowBytes: CVPixelBufferGetBytesPerRowOfPlane(pixels, 0))
+                return vImageScale_Planar8(&src, &dst, nil, vImage_Flags(kvImageNoFlags)) == kvImageNoError
+            case kCVPixelFormatType_32BGRA:
+                guard let base = CVPixelBufferGetBaseAddress(pixels) else { return false }
+                var color = [UInt8](repeating: 0, count: tw * th * 4)
+                return color.withUnsafeMutableBytes { c -> Bool in
+                    var src = vImage_Buffer(data: base, height: vImagePixelCount(height), width: vImagePixelCount(width),
+                                            rowBytes: CVPixelBufferGetBytesPerRow(pixels))
+                    var mid = vImage_Buffer(data: c.baseAddress, height: vImagePixelCount(th), width: vImagePixelCount(tw), rowBytes: tw * 4)
+                    guard vImageScale_ARGB8888(&src, &mid, nil, vImage_Flags(kvImageNoFlags)) == kvImageNoError else { return false }
+                    let p = c.bindMemory(to: UInt8.self), o = out.bindMemory(to: UInt8.self)
+                    for i in 0 ..< tw * th { o[i] = p[i * 4 + 1] }          // green as luma
+                    return true
+                }
+            default:
+                return false
+            }
+        }
+        guard ok else { return nil }
+        var values = small.map(Float.init)
+        let n = Float(values.count), mean = values.reduce(0, +) / n
+        let sd = max(1, (values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / n).squareRoot())
+        for i in values.indices { values[i] = (values[i] - mean) / sd }
+        return Thumbnail(pixels: values)
+    }
+
+    /// Apparent displacement between two thumbnails in full-resolution pixels: the median normal flow
+    /// |∂I/∂t| / |∇I| over the strongest edges (the top fifth of gradients, and clearly above flat-area
+    /// noise), at 1/8 and at 1/16 resolution, whichever is larger (the coarser one keeps moves of 10-30 px
+    /// within its linear range). Court lines and the background carry most strong edges, so players
+    /// moving count little; small for a still camera, large when it moves.
+    static func motion(_ a: Thumbnail, _ b: Thumbnail) -> Double {
+        let w = Thumbnail.width, h = Thumbnail.height
+        let fine = normalFlow(a.pixels, b.pixels, width: w, height: h)
+        let coarse = normalFlow(halved(a.pixels, width: w, height: h), halved(b.pixels, width: w, height: h), width: w / 2, height: h / 2)
+        return max(fine * Thumbnail.scale, coarse * Thumbnail.scale * 2)
+    }
+
+    private static func halved(_ p: [Float], width w: Int, height h: Int) -> [Float] {
+        let hw = w / 2, hh = h / 2
+        var out = [Float](repeating: 0, count: hw * hh)
+        for y in 0 ..< hh { for x in 0 ..< hw {
+            let i = 2 * y * w + 2 * x
+            out[y * hw + x] = (p[i] + p[i + 1] + p[i + w] + p[i + w + 1]) * 0.25
+        } }
+        return out
+    }
+
+    /// Median normal flow in pixels of the given grid.
+    private static func normalFlow(_ pa: [Float], _ pb: [Float], width w: Int, height h: Int) -> Double {
+        var gradients: [Float] = [], ratios: [Float] = []
+        gradients.reserveCapacity(w * h); ratios.reserveCapacity(w * h)
+        for y in 1 ..< h - 1 {
+            for x in 1 ..< w - 1 {
+                let i = y * w + x
+                let gx = (pa[i + 1] - pa[i - 1] + pb[i + 1] - pb[i - 1]) * 0.25
+                let gy = (pa[i + w] - pa[i - w] + pb[i + w] - pb[i - w]) * 0.25
+                let g = (gx * gx + gy * gy).squareRoot()
+                gradients.append(g); ratios.append(abs(pb[i] - pa[i]) / max(g, 1e-3))
+            }
+        }
+        // 80th percentile of the gradients from a histogram (0-4 in steps of 1/128; a sort costs more)
+        var histogram = [Int](repeating: 0, count: 513)
+        for g in gradients { histogram[min(512, Int(g * 128))] += 1 }
+        var below = 0, bin = 0
+        while bin < 512, below + histogram[bin] <= gradients.count * 4 / 5 { below += histogram[bin]; bin += 1 }
+        let cut = max(Float(bin) / 128, 0.2)
+        var strong = zip(gradients, ratios).filter { $0.0 >= cut }.map(\.1)
+        guard strong.count >= 20 else { return 0 }
+        strong.sort()
+        return Double(strong[strong.count / 2])
+    }
+
     // MARK: Samples
 
     struct Sample: Sendable {
@@ -194,7 +355,12 @@ final class IndependentLiveCourt {
     final class Mailbox: @unchecked Sendable {
         private let lock = NSLock(); private var outcome: Outcome?
         func put(_ o: Outcome) { lock.lock(); outcome = o; lock.unlock() }
-        func take() -> Outcome? { lock.lock(); defer { outcome = nil; lock.unlock() }; return outcome }
+        /// The finished outcome if there is one and `ready` accepts it; it stays in the box otherwise.
+        func take(if ready: (Outcome) -> Bool = { _ in true }) -> Outcome? {
+            lock.lock(); defer { lock.unlock() }
+            guard let o = outcome, ready(o) else { return nil }
+            outcome = nil; return o
+        }
     }
 
     /// A tightly packed copy of a 1920×1080 NV12 or 32BGRA buffer; nil for other sizes or formats.

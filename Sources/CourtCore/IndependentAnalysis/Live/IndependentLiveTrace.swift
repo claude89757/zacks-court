@@ -16,6 +16,8 @@ public enum IndependentLiveTraceEvent: Sendable, Codable, Equatable {
     case freeze
     case reset
     case trim(now: Double)
+    /// The picture moved: candidates before `before` were seen by another pose and are dropped.
+    case discard(before: Double)
     case update(now: Double)
     case catchUp(now: Double)
 }
@@ -40,6 +42,7 @@ public enum IndependentLiveTrace {
             case .freeze: shots.freeze()
             case .reset: shots.reset()
             case .trim(let now): shots.trim(keeping: pendingSeconds, now: now)
+            case .discard(let before): shots.trim(keeping: 0, now: before)
             case .update(let now):
                 if let camera { shots.update(now: now, camera: camera, people: IndependentPeople(people)) }
             case .catchUp(let now):
