@@ -136,6 +136,8 @@ public struct CourtWorkspace: View {
 
     /// At accessibility sizes the logo and history button take their own row above the brand name, which
     /// keeps the full width and may shrink a little instead of breaking 「ZACKS COURT」 letter by letter.
+    @ScaledMetric(relativeTo: .title) private var logoSize: CGFloat = 36
+
     @ViewBuilder private var header: some View {
         let brand = Text("ZACKS COURT").font(.headline.weight(.bold)).tracking(2)
             .lineLimit(1).minimumScaleFactor(0.6)
@@ -143,7 +145,7 @@ public struct CourtWorkspace: View {
         if dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: CourtStyle.Space.s) {
                 HStack(spacing: CourtStyle.Space.m) {
-                    Image(systemName: "tennisball.fill").font(.title).foregroundStyle(CourtStyle.green).accessibilityHidden(true)
+                    CourtLogoMark(size: min(logoSize, 64))
                     Spacer(minLength: CourtStyle.Space.s)
                     historyButton
                 }
@@ -151,7 +153,7 @@ public struct CourtWorkspace: View {
             }
         } else {
             HStack(spacing: CourtStyle.Space.m) {
-                Image(systemName: "tennisball.fill").font(.title).foregroundStyle(CourtStyle.green).accessibilityHidden(true)
+                CourtLogoMark(size: min(logoSize, 64))
                 VStack(alignment: .leading, spacing: CourtStyle.Space.xs) {
                     brand
                     Text("把每一次上场，留下来。").font(.caption).foregroundStyle(CourtStyle.muted)
