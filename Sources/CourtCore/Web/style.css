@@ -243,6 +243,13 @@ select { width: 100%; }
   align-items: center; gap: 16px; padding: 14px 18px; background: rgba(19, 26, 22, 0.94);
   border: 2px solid var(--call, var(--recording)); border-radius: var(--radius-card); }
 .challenge-verdict.out .hawkeye-shout { color: #fff; }
+.challenge-top strong { white-space: nowrap; }
+/* Narrow phones: a smaller verdict leaves the bounce mark visible above it. */
+@media (max-width: 400px) {
+  .challenge-verdict { gap: 10px; padding: 10px 12px; }
+  .challenge-verdict .hawkeye-shout { font-size: 1.8rem; padding: 6px 12px; }
+  .challenge-verdict .hawkeye-text { font-size: 1rem; }
+}
 .challenge-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 8px; }
 .challenge-foot video { width: 100%; max-height: 32vh; }
 .challenge-stage { min-height: 38vh; }
