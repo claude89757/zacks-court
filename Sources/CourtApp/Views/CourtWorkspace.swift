@@ -3,7 +3,7 @@ import CourtCore
 
 private enum WorkspaceSheet: Identifiable, Hashable {
     /// `record` is history opened on one record's detail (「查看详情」 on the end-of-record summary).
-    case pairing, history, record(UUID), calibration, handedness, liveVideo, shots, independentVideo, importVideo
+    case pairing, history, record(UUID), handedness, liveVideo, shots, independentVideo, importVideo
     var id: Self { self }
 }
 
@@ -31,15 +31,13 @@ public struct CourtWorkspace: View {
             #if os(macOS)
             if model.role == .server {
                 CourtDesktopDashboard(model: model, pairing: { sheet = .pairing }, history: { openHistory() }, openRecord: { openHistory($0) },
-                                      calibration: {
-                                          Task { await model.prepareCalibration(); if model.calibrationFrame != nil { sheet = .calibration } }
-                                      }, handedness: { sheet = .handedness }, leave: leave, finish: { confirmFinish = true })
+                                      handedness: { sheet = .handedness }, leave: leave, finish: { confirmFinish = true })
             } else if model.role == .camera {
-                CameraWorkspace(model: model, calibrate: openCalibration, handedness: { sheet = .handedness }, leave: leave)
+                CameraWorkspace(model: model, handedness: { sheet = .handedness }, leave: leave)
             } else { standardWorkspace(geometry: geometry) }
             #else
             if model.role == .camera {
-                CameraWorkspace(model: model, calibrate: openCalibration, handedness: { sheet = .handedness }, leave: leave)
+                CameraWorkspace(model: model, handedness: { sheet = .handedness }, leave: leave)
             } else { standardWorkspace(geometry: geometry) }
             #endif
         }
@@ -57,7 +55,6 @@ public struct CourtWorkspace: View {
             case .pairing: PairingSheet(model: model)
             case .history: CourtHistory(model: model)
             case .record(let id): CourtHistory(model: model, open: id)
-            case .calibration: CourtCalibrationSheet(model: model)
             case .handedness: CourtHandednessSheet(model: model)
             case .liveVideo: CourtLiveVideoWindow(model: model)
             case .shots: CourtShotListSheet(model: model)
@@ -118,7 +115,7 @@ public struct CourtWorkspace: View {
                             header.id("workspace-top")
                             CourtBanners(model: model)
                             if model.role == .camera {
-                                CameraWorkspace(model: model, calibrate: openCalibration, handedness: { sheet = .handedness }, leave: leave)
+                                CameraWorkspace(model: model, handedness: { sheet = .handedness }, leave: leave)
                             } else {
                                 roleSelection(wide: geometry.size.width >= 700 && !dynamicTypeSize.isAccessibilitySize)
                             }
@@ -339,18 +336,8 @@ public struct CourtWorkspace: View {
 
     private var healthCard: some View {
         CameraHealthCard(model: model, showPeople: $showPeople) {
-            let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: CourtStyle.Space.s))
-                : AnyLayout(HStackLayout(spacing: CourtStyle.Space.s))
-            layout {
-                Button(action: openCalibration) { Label("标定球场", systemImage: "viewfinder").frame(maxWidth: .infinity) }
-                    .buttonStyle(CourtButton()).disabled(!model.isLive || model.isBusy)
-                    .accessibilityIdentifier("court.calibration.open")
-                Button { sheet = .handedness } label: { Label("持拍手", systemImage: "hand.raised").frame(maxWidth: .infinity) }
-                    .buttonStyle(CourtButton()).accessibilityIdentifier("court.handedness.open")
-            }
-            if !model.isLive {
-                Text("收到实时画面后可标定球场。").font(.caption).foregroundStyle(CourtStyle.muted)
-            }
+            Button { sheet = .handedness } label: { Label("持拍手", systemImage: "hand.raised").frame(maxWidth: .infinity) }
+                .buttonStyle(CourtButton()).accessibilityIdentifier("court.handedness.open")
         }
     }
 
@@ -367,9 +354,6 @@ public struct CourtWorkspace: View {
         }
     }
 
-    private func openCalibration() {
-        Task { await model.prepareCalibration(); if model.calibrationFrame != nil { sheet = .calibration } }
-    }
 
     private func leave() {
         if model.hasActiveSession || model.camera.streaming || model.isRecording || model.isSaving {

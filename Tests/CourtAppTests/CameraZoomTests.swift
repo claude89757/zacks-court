@@ -2,7 +2,7 @@ import XCTest
 import CourtCore
 
 /// Camera zoom: range and presets from the capture format, the status field, and the framing change
-/// that clears manual corners. The camera itself is not used (the simulator and Mac have no zoom).
+/// that restarts analysis. The camera itself is not used (the simulator and Mac have no zoom).
 @MainActor
 final class CameraZoomTests: XCTestCase {
     func testRangeComesFromTheFormatAndStopsAtTheSystemLimit() throws {
@@ -75,18 +75,12 @@ final class CameraZoomTests: XCTestCase {
         XCTAssertNotEqual(older, status, "a zoom change is a status change")
     }
 
-    func testFramingChangeClearsManualCornersAndReportsIt() async throws {
+    func testFramingChangeRestartsAnalysis() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("court-zoom-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let rig = CameraRig(root: root)
-        let corners = [NormalizedPoint(x: 0.1, y: 0.9), NormalizedPoint(x: 0.9, y: 0.9),
-                       NormalizedPoint(x: 0.7, y: 0.35), NormalizedPoint(x: 0.3, y: 0.35)]
-        try rig.camera.setManualCourtCorners(corners)
-        XCTAssertEqual(rig.camera.status.manualCorners, corners)
-        XCTAssertTrue(rig.camera.framingChanged())
-        XCTAssertNil(rig.camera.manualCourtCorners)
-        XCTAssertNil(rig.camera.status.manualCorners)
-        XCTAssertFalse(rig.camera.framingChanged(), "nothing to clear the second time")
+        rig.camera.framingChanged()
+        XCTAssertNil(rig.camera.tennisAnalysis, "the temporal run restarts")
 
         rig.camera.zoomFactor = 2
         XCTAssertNil(rig.camera.status.zoom, "zoom is reported only while capturing")

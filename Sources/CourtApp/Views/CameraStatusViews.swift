@@ -89,7 +89,7 @@ struct CameraHealth {
                 }
             }
             if model.isLive, model.recognition.rows.contains(where: { $0.id == "court.recognition.court" && $0.tone == .warning }) {
-                items.append("球场映射未就绪，可点「标定球场」手动点选四角。")
+                items.append("球场映射未就绪：正在自动识别球场，识别出来前不画落点、不判界内外。")
             }
         }
         var seen = Set<String>()

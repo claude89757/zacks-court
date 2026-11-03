@@ -4,7 +4,7 @@ import simd
 @testable import CourtCore
 
 /// The live lane's automatic court: sampling, the banded median, the find / move / lose cycle on
-/// rendered courts, manual corners, and catching up the shots from before the court was found.
+/// rendered courts, restarting after a zoom, and catching up the shots from before the court was found.
 /// Synthetic inputs only: these prove the plumbing and geometry, not field accuracy.
 final class IndependentLiveCourtTests: XCTestCase {
     static let cameraA = IndependentPinholeCamera.lookingAt(SIMD3(0, 9, 0), from: SIMD3(0.3, -6.4, 3.2), f: 1150)
@@ -192,22 +192,24 @@ final class IndependentLiveCourtTests: XCTestCase {
         XCTAssertLessThan(IndependentLiveCourt.distance(try XCTUnwrap(court.camera), pose(0.60)), 2)
     }
 
-    func testManualCornersGiveTheCameraAndPauseTheSearch() throws {
-        let P = IndependentProjector(Self.cameraA)
-        let corners = [SIMD3(-5.485, 0.0, 0), SIMD3(5.485, 0, 0), SIMD3(5.485, 23.77, 0), SIMD3(-5.485, 23.77, 0)].map { X -> NormalizedPoint in
-            let q = P.project(X); return NormalizedPoint(x: q.u / 1920, y: q.v / 1080)
-        }
-        let camera = try IndependentManualCourt.camera(corners: corners)
-        XCTAssertLessThan(IndependentLiveCourt.distance(camera, Self.cameraA), 0.5)
-        XCTAssertThrowsError(try IndependentManualCourt.camera(corners: [corners[1], corners[0], corners[2], corners[3]]), "wrong order")
-
-        let court = IndependentLiveCourt()
-        court.pause(with: camera)
-        let a = try bgra(try CourtRenderer(camera: Self.cameraB).render())
-        for k in 0..<40 { XCTAssertNil(court.offer(a, pts: Double(k))) }
-        XCTAssertEqual(court.stats.samples, 0, "no sampling while manual corners are in use")
-        court.resume()
+    /// A zoom change: the camera in use no longer matches the picture, so it is dropped and the court is
+    /// searched for again in the new framing.
+    func testRestartDropsTheCameraAndSearchesAgain() throws {
+        var options = IndependentLiveCourt.Options()
+        options.sampleInterval = 0.1; options.firstAttemptFrames = 1; options.retryFrames = 1
+        let court = IndependentLiveCourt(options: options)
+        court.adopt(Self.cameraA, pts: 0)
+        court.restart()
         XCTAssertTrue(court.searching)
+        let b = try bgra(try CourtRenderer(camera: Self.cameraB).render())
+        var pts = 1.0, found: IndependentPinholeCamera?
+        for _ in 0..<5 where found == nil {
+            pts += 0.1
+            if case .found(let camera)? = court.offer(b, pts: pts) { found = camera }
+            court.drain()
+        }
+        if found == nil { pts += 0.1; if case .found(let camera)? = court.offer(b, pts: pts) { found = camera } }
+        XCTAssertLessThan(IndependentLiveCourt.distance(try XCTUnwrap(found, "found again"), Self.cameraB), 1.5)
     }
 
     // MARK: catch-up of shots from before the court was found

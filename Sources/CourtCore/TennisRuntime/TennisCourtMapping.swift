@@ -13,23 +13,6 @@ struct TennisCourtMapping {
         guard crosses.allSatisfy({ $0 >= -1e-10 }) || crosses.allSatisfy({ $0 <= 1e-10 }) else { return nil }
         return Self.project(p, coefficients)
     }
-    static func manual(corners: [NormalizedPoint]) throws -> TennisCourtMapping {
-        guard corners.count == 4, corners.allSatisfy({ $0.x.isFinite && $0.y.isFinite && (0...1).contains($0.x) && (0...1).contains($0.y) }) else {
-            throw CourtError.message("手动场地标定需要四个有效归一化角点。")
-        }
-        let cross = corners.indices.map { i in
-            let a = corners[i], b = corners[(i+1)%4], c = corners[(i+2)%4]
-            return (b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x)
-        }
-        guard cross.allSatisfy({ $0 < -1e-8 }), polygonArea(corners) >= 0.02,
-              corners[0].x < corners[1].x, corners[3].x < corners[2].x,
-              corners[0].y + corners[1].y > corners[2].y + corners[3].y else {
-            throw CourtError.message("请按近左、近右、远右、远左依次标记双打外侧四角，不能交叉或重合。")
-        }
-        let world: [TennisSurfacePoint] = [.init(x:0,y:0),.init(x:10.97,y:0),.init(x:10.97,y:23.77),.init(x:0,y:23.77)]
-        guard let h = solve(image:corners,world:world) else { throw CourtError.message("四角不能形成有效的球场平面。") }
-        return .init(coefficients:h,hull:corners,state:.init(isAvailable:true,landmarkCount:4,validationErrorMeters:nil,reason:"用户四角标定；精度未独立验证，移动机位后需重标"))
-    }
     static func project(_ p: NormalizedPoint, _ h: [Double]) -> TennisSurfacePoint? {
         let denominator = h[6] * p.x + h[7] * p.y + 1
         guard denominator.isFinite, abs(denominator) > 1e-10 else { return nil }
@@ -69,13 +52,5 @@ struct TennisCourtMapping {
     }
     static func polygonArea(_ p: [NormalizedPoint]) -> Double {
         abs(p.indices.reduce(0.0) { s,i in let a = p[i],b = p[(i+1)%p.count]; return s + a.x*b.y - b.x*a.y }) / 2
-    }
-}
-
-/// User-marked court corners (doubles outer corners, near-left → near-right → far-right → far-left).
-public enum ManualCourtCorners {
-    /// Invalid user corners always fail rather than silently reverting to automatic calibration.
-    public static func validate(_ corners: [NormalizedPoint]) throws {
-        _ = try TennisCourtMapping.manual(corners: corners)
     }
 }

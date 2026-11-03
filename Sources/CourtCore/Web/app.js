@@ -9,7 +9,6 @@ const STROKES = {
   volley: "截击", overhead: "高压", feed: "喂球", unknown: "待确认",
 };
 const STROKE_ORDER = Object.keys(STROKES);
-const CORNERS = ["近左", "近右", "远右", "远左"];
 // Same words as the App (SessionState.courtTitle, CameraStatusPanel.thermalTitle).
 const SESSION_STATES = { active: "进行中", paused: "已暂停", completed: "已完成", interrupted: "意外中断" };
 const THERMAL = { nominal: "正常", fair: "偏暖", serious: "偏高", critical: "过热" };
@@ -27,7 +26,7 @@ const state = {
   token: null, access: null, nonce: null,
   camera: null, status: null, session: null, clockOffset: 0,
   sessionRows: new Map(), recentRows: new Map(), recentCalibration: null,
-  waiters: new Map(), stillWaiters: new Map(),
+  waiters: new Map(),
   previewOn: false, previewURL: null, lastFrameAt: 0,
   renderQueued: false, lastRender: 0,
   history: [],
@@ -195,8 +194,6 @@ function receive(message) {
       if (body.command === "reply") {
         const waiter = state.waiters.get(body.replyTo);
         if (waiter) { state.waiters.delete(body.replyTo); waiter.resolve(body); }
-        const still = state.stillWaiters.get(body.replyTo);
-        if (still && body.ok === false) { state.stillWaiters.delete(body.replyTo); still.reject(new Error(body.message || "机位没有返回画面。")); }
       }
       break;
     default: break;
@@ -428,115 +425,7 @@ function receiveBinary(buffer) {
     image.src = url; image.hidden = false;
     state.lastFrameAt = Date.now();
     scheduleRender();
-  } else if (bytes[0] === 2) {
-    const waiter = state.stillWaiters.get(info.request);
-    if (waiter) { state.stillWaiters.delete(info.request); waiter.resolve({ url: URL.createObjectURL(blob), info }); }
   }
-}
-
-// MARK: Calibration
-
-const calibration = { points: [], url: null };
-$("calibrate").addEventListener("click", async () => {
-  const button = $("calibrate");
-  button.disabled = true;
-  try {
-    const id = uuid();
-    const still = new Promise((resolve, reject) => {
-      state.stillWaiters.set(id, { resolve, reject });
-      setTimeout(() => { if (state.stillWaiters.delete(id)) reject(new Error("机位没有返回标定画面。")); }, 15000);
-    });
-    send("control", { id, command: "still" });
-    const { url } = await still;
-    if (calibration.url) URL.revokeObjectURL(calibration.url);
-    calibration.url = url; calibration.points = [];
-    $("still").src = url;
-    $("calibration-error").textContent = "";
-    drawMarks();
-    $("calibration").showModal();
-  } catch (error) { toast(error.message); }
-  button.disabled = false;
-});
-// Press to see a 3× loupe, move to aim, release to place the next corner; a press on a placed
-// corner drags it instead. Pointer events cover touch, pen and mouse.
-const calibrationPress = { index: null, at: null };
-function stillPoint(event) {
-  const box = $("still").getBoundingClientRect();
-  const clamp = (v) => Math.min(1, Math.max(0, v));
-  const near = event.clientX >= box.left - 16 && event.clientX <= box.right + 16 && event.clientY >= box.top - 16 && event.clientY <= box.bottom + 16;
-  return { x: clamp((event.clientX - box.left) / box.width), y: clamp((event.clientY - box.top) / box.height), near, box };
-}
-function showLoupe(point) {
-  const loupe = $("still-loupe"), { width, height } = point.box, zoom = 3, d = 120, gap = 30;
-  const px = point.x * width, py = point.y * height;
-  // Above the finger; below it, or beside it, when the picture has no room above.
-  let cx = px, cy = py - d / 2 - gap;
-  if (cy - d / 2 < 0) {
-    if (py + d + gap <= height) cy = py + d / 2 + gap;
-    else { cy = Math.min(Math.max(py, d / 2), Math.max(d / 2, height - d / 2)); cx = px > width / 2 ? px - d / 2 - gap : px + d / 2 + gap; }
-  }
-  cx = Math.min(Math.max(cx, d / 2), Math.max(d / 2, width - d / 2));
-  loupe.style.left = `${cx}px`; loupe.style.top = `${cy}px`;
-  loupe.style.backgroundImage = `url("${calibration.url}")`;
-  loupe.style.backgroundSize = `${width * zoom}px ${height * zoom}px`;
-  loupe.style.backgroundPosition = `${d / 2 - px * zoom}px ${d / 2 - py * zoom}px`;
-  loupe.hidden = false;
-}
-const stillWrap = $("still-wrap");
-stillWrap.addEventListener("pointerdown", (event) => {
-  const point = stillPoint(event);
-  if (!point.near || !calibration.url) return;
-  event.preventDefault();
-  try { stillWrap.setPointerCapture(event.pointerId); } catch { /* synthetic or already released pointer */ }
-  // A placed corner within reach of the press is moved rather than adding a new one.
-  let index = null, best = 28;
-  calibration.points.forEach((p, i) => {
-    const distance = Math.hypot((p.x - point.x) * point.box.width, (p.y - point.y) * point.box.height);
-    if (distance <= best) { best = distance; index = i; }
-  });
-  calibrationPress.index = index; calibrationPress.at = point;
-  showLoupe(point); drawMarks();
-});
-stillWrap.addEventListener("pointermove", (event) => {
-  if (!calibrationPress.at) return;
-  const point = stillPoint(event);
-  calibrationPress.at = point;
-  if (calibrationPress.index !== null) calibration.points[calibrationPress.index] = { x: point.x, y: point.y };
-  showLoupe(point); drawMarks();
-});
-stillWrap.addEventListener("pointerup", () => {
-  const { index, at } = calibrationPress;
-  if (!at) return;
-  if (index === null && calibration.points.length < 4) calibration.points.push({ x: at.x, y: at.y });
-  calibrationPress.index = null; calibrationPress.at = null;
-  $("still-loupe").hidden = true; drawMarks();
-});
-stillWrap.addEventListener("pointercancel", () => {
-  calibrationPress.index = null; calibrationPress.at = null;
-  $("still-loupe").hidden = true; drawMarks();
-});
-$("calibration-undo").addEventListener("click", () => { calibration.points.pop(); drawMarks(); });
-$("calibration-cancel").addEventListener("click", () => $("calibration").close());
-$("calibration-clear").addEventListener("click", async () => {
-  if (!confirm("恢复自动映射？机位会丢弃手动四角，改用自动识别的球场。")) return;
-  const reply = await run($("calibration-clear"), "corners", { clearCorners: true });
-  if (reply.ok !== false) { $("calibration").close(); toast("已恢复自动球场映射", true); }
-});
-$("calibration-save").addEventListener("click", async () => {
-  const reply = await command("corners", { corners: calibration.points, clearCorners: false });
-  if (reply.ok === false) { $("calibration-error").textContent = reply.message || "四角无效：点「撤销一点」后按近左、近右、远右、远左重新选择。"; return; }
-  $("calibration").close(); toast("已应用手动四角（未独立验证）", true);
-});
-function drawMarks() {
-  const points = calibration.points;
-  const pending = calibrationPress.at && calibrationPress.index === null && points.length < 4 ? calibrationPress.at : null;
-  // Rings with a centre dot leave the corner itself visible; the number sits beside the ring.
-  const corner = (p, n, active) => `<div class="corner${active ? " active" : ""}" style="left:${p.x * 100}%;top:${p.y * 100}%"><span>${n}</span></div>`;
-  $("still-points").innerHTML = points.map((p, i) => corner(p, i + 1, calibrationPress.index === i)).join("") + (pending ? corner(pending, points.length + 1, true) : "");
-  $("still-marks").innerHTML = points.length > 1
-    ? `<polyline points="${points.map((p) => `${p.x},${p.y}`).join(" ")}${points.length === 4 ? ` ${points[0].x},${points[0].y}` : ""}" fill="none" stroke="var(--green)" stroke-width="2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"/>` : "";
-  $("calibration-step").textContent = points.length < 4 ? `下一点：${points.length + 1} · ${CORNERS[points.length]}（依次：近左、近右、远右、远左双打外角）` : "四个角已选好，核对边线后点「应用四角」。";
-  $("calibration-save").disabled = points.length !== 4;
 }
 
 // MARK: History
@@ -1240,7 +1129,7 @@ function render() {
   $("start-row").hidden = controllable; $("run-row").hidden = !controllable;
   // Session buttons wait while a command is in flight or the camera is pausing or finishing.
   const waiting = state.pending ? "已发送到机位，等待机位确认…" : connected && status?.busy ? "机位正在保存录像与分析…" : "";
-  for (const id of ["calibrate", "wake", "near", "far", "preview-toggle"]) $(id).disabled = !connected;
+  for (const id of ["wake", "near", "far", "preview-toggle"]) $(id).disabled = !connected;
   for (const id of ["start", "pause", "finish"]) $(id).disabled = !connected || !!waiting;
   $("pause").textContent = session?.state === "active" ? "暂停" : "继续";
   for (const id of ["marker", "marker-review"]) $(id).disabled = !connected || session?.state !== "active" || !!waiting;
@@ -1252,11 +1141,9 @@ function render() {
   if (status && document.activeElement !== $("far")) $("far").value = status.far || "right";
 
   const calibrationState = status?.analysis?.calibration || (open ? session?.tennisCalibration : state.recentCalibration);
-  $("calibration-state").textContent = status?.manualCorners
-    ? "球场映射：手动四角（未独立验证）。镜头移动或变焦后请重新标定。"
-    : calibrationState?.isAvailable
+  $("calibration-state").textContent = calibrationState?.isAvailable
       ? `球场映射：自动，${calibrationState.landmarkCount} 个场地参考点${Number.isFinite(calibrationState.validationErrorMeters) ? `，残差 ${calibrationState.validationErrorMeters.toFixed(2)} m` : ""}。`
-      : `还没识别出球场（${calibrationState?.reason || "等待场地地标"}）。可点「标定球场」手动点选四角。`;
+      : `还没识别出球场（${calibrationState?.reason || "等待场地地标"}）。识别出来前不画落点、不判界内外。`;
 
   // Preview
   $("preview-toggle").textContent = state.previewOn ? "关闭实时画面" : "打开实时画面";
@@ -1300,7 +1187,7 @@ function renderAnalysis(open, calibrationState) {
   const kinds = STROKE_ORDER.filter((k) => placed.some(({ shot }) => shot.stroke === k));
   $("placement-legend").innerHTML = kinds.map((k) => `<span>${markIcon(k)}${STROKES[k]}</span>`).join("");
   $("placement-note").textContent = rows.length === 0 ? "出现击球后，落点会画在球场图上。"
-    : placed.length === 0 ? (calibrationState && !calibrationState.isAvailable ? "还没识别出球场，暂不画落点。可点「标定球场」手动点选四角。" : `最近一拍：${placementReason(latest)}`)
+    : placed.length === 0 ? (calibrationState && !calibrationState.isAvailable ? "还没识别出球场，暂不画落点。" : `最近一拍：${placementReason(latest)}`)
       : `${placed.length} 拍有落点 · ${rows.length - placed.length} 拍暂无落点`;
 
   // Strokes

@@ -61,7 +61,11 @@ import CourtCore
         for part in parts { decoded += try decoder.append(try StreamPacket.message(.analysis, part).encoded()) }
         let restored = try decoded.map { try $0.decode(WireAnalysis.self) }
         expectEqual(restored.flatMap(\.events).map(\.id), rows.map(\.id))
-        var control = WireControl(.corners, sessionID: UUID()); control.clearCorners = true
+        // An older display's manual-corner command (fields since removed) still decodes, so it can be refused.
+        let control = WireControl(.corners, sessionID: UUID())
+        var old = try JSONSerialization.jsonObject(with: JSONEncoder().encode(control)) as! [String: Any]
+        old["corners"] = [["x": 0.2, "y": 0.8]]; old["clearCorners"] = false
+        expectEqual(try JSONDecoder().decode(WireControl.self, from: JSONSerialization.data(withJSONObject: old)).command, .corners)
         let reply = WireControl.reply(to: control, ok: false, message: "x")
         let echoed = try decoder.append(try StreamPacket.message(.control, reply).encoded())[0].decode(WireControl.self)
         expectEqual(echoed.replyTo, control.id); expectEqual(echoed.ok, false); expectEqual(echoed.command, .reply)

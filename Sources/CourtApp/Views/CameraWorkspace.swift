@@ -5,7 +5,6 @@ import CoreImage.CIFilterBuiltins
 @MainActor
 struct CameraWorkspace: View {
     let model: WorkspaceModel
-    var calibrate: () -> Void = {}
     var handedness: () -> Void = {}
     let leave: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -159,7 +158,6 @@ struct CameraWorkspace: View {
         CourtBanners(model: model)
         // The camera's own notice may ask for a step (「重新开始采集后点「继续」」): it stays until closed.
         if let notice = controller?.notice { CourtNoticeBanner(text: notice) { controller?.notice = nil } }
-        if let notice = camera.zoomNotice, controller?.manualCourtCorners == nil { CourtNotice(text: notice, warning: true) }
         if let reason = controller?.shed.reason, (controller?.shed.level ?? 0) >= 2 { CourtNotice(text: reason, warning: true) }
         ForEach(camera.selfCheckWarnings, id: \.self) { CourtNotice(text: $0, warning: true) }
     }
@@ -304,10 +302,10 @@ struct CameraWorkspace: View {
     }
 
     /// New users need the setup tips first: shown on 记录 until a session opens or the court is
-    /// calibrated, and until dismissed on this device. They stay in 设置 either way.
+    /// recognized, and until dismissed on this device. They stay in 设置 either way.
     private var showsSetupTips: Bool {
         guard !setupTipsDismissed, controller?.hasOpenSession != true else { return false }
-        let calibrated = controller?.manualCourtCorners != nil || controller?.tennisAnalysis?.calibration.isAvailable == true
+        let calibrated = controller?.tennisAnalysis?.calibration.isAvailable == true
         return !calibrated
     }
     private var setupTipsCard: some View {
@@ -327,7 +325,7 @@ struct CameraWorkspace: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("从底线后方拍到完整球场，让底线、边线、发球线和球网清楚可见。")
             Text("拉近到双打四个外角刚好都在画面内，球场越大越利于识别。")
-            Text("固定横向机位后开始采集，开始记录前设好倍率；记录期间保持方向与倍率不变。可以直接在这台机位上标定四角。")
+            Text("固定横向机位后开始采集，开始记录前设好倍率；记录期间保持方向与倍率不变。球场会自动识别，不需要手动标定。")
             Text("长时间录制建议接上充电宝，并开启「引导式访问」防止误退出应用。")
         }.font(.caption).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
     }
@@ -336,15 +334,8 @@ struct CameraWorkspace: View {
         let events = controller?.dashboardEvents ?? []
         VStack(alignment: .leading, spacing: 12) {
             pageHeader("击球分析")
-            buttonPair {
-                Button(action: calibrate) { Label("标定球场", systemImage: "viewfinder").frame(maxWidth: .infinity) }
-                    .buttonStyle(CourtButton()).disabled(!camera.streaming)
-                    .accessibilityIdentifier("court.calibration.open")
-            } _: {
-                Button(action: handedness) { Label("持拍手", systemImage: "hand.raised").frame(maxWidth: .infinity) }
-                    .buttonStyle(CourtButton()).accessibilityIdentifier("court.handedness.open")
-            }
-            if !camera.streaming { disabledReason("开始采集后可标定球场。") }
+            Button(action: handedness) { Label("持拍手", systemImage: "hand.raised").frame(maxWidth: .infinity) }
+                .buttonStyle(CourtButton()).accessibilityIdentifier("court.handedness.open")
             TennisAnalysisStatus(status: model.tennisAnalysisStatus, modelsAvailable: model.analysisModelsAvailable,
                                  calibration: model.tennisAnalysis?.calibration, error: nil,
                                  isLive: model.isLive, limitations: model.tennisAnalysis?.limitations ?? [],
@@ -380,7 +371,7 @@ struct CameraWorkspace: View {
             Picker("无操作后黑屏", selection: Bindable(camera.standby).delay) {
                 ForEach(CameraStandby.Delay.allCases) { Text($0.title).tag($0) }
             }.pickerStyle(.menu).frame(minHeight: 44).accessibilityIdentifier("court.camera.standby-delay")
-            Text("记录中、球场标定可用且无操作时自动黑屏并调暗屏幕，停止渲染实时预览以减少耗电；录像与分析不受影响。轻点屏幕唤醒 15 秒。")
+            Text("记录中、球场映射可用且无操作时自动黑屏并调暗屏幕，停止渲染实时预览以减少耗电；录像与分析不受影响。轻点屏幕唤醒 15 秒。")
                 .font(.caption).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
             if let remaining = camera.standby.peekRemaining {
                 Text("\(remaining) 秒后回到省电值守").font(.caption).foregroundStyle(CourtStyle.green)
@@ -456,8 +447,8 @@ struct CameraWorkspace: View {
     private var zoomHint: String {
         guard camera.showsZoom || camera.streaming else { return "开始采集后在预览上双指缩放或点倍率调整，设定保存在这台机位上。" }
         guard let range = camera.zoomRange else { return "这台设备的 1080p · 60 fps 格式不支持变焦。" }
-        if camera.zoomLocked { return "正在记录：倍率已锁定，暂停后可调整。改倍率会让分析重新开始，手动四角需重新标定。" }
-        var text = "和系统相机一样：点倍率切换镜头，在倍率上左右拖动或双指缩放无级调节，范围 \(CameraZoomRange.title(range.minimum))–\(CameraZoomRange.title(range.maximum))。改倍率会让分析重新开始，手动四角需重新标定。"
+        if camera.zoomLocked { return "正在记录：倍率已锁定，暂停后可调整。改倍率会让分析和球场识别重新开始。" }
+        var text = "和系统相机一样：点倍率切换镜头，在倍率上左右拖动或双指缩放无级调节，范围 \(CameraZoomRange.title(range.minimum))–\(CameraZoomRange.title(range.maximum))。改倍率会让分析和球场识别重新开始。"
         if range.isUpscaled(range.maximum) {
             text += "超过所用镜头的 2 倍为数码放大（倍率显示为橙色），画面会变软，不利于识别球。"
         }

@@ -13,9 +13,9 @@ final class RecognitionStatusTests: XCTestCase {
         TennisShotEvent(streamID: stream ?? self.stream, sourcePTS: pts, stroke: .groundstroke, confidence: 0.8,
                         speedKPH: speed, speedReason: speedReason, bounce: bounce)
     }
-    private func live(_ events: [TennisShotEvent] = [], calibration: TennisCourtCalibrationState? = nil, manual: Bool = false,
+    private func live(_ events: [TennisShotEvent] = [], calibration: TennisCourtCalibrationState? = nil,
                       shed: Int = 0, people: RecognitionStatus.People? = nil, latest: Double? = 100) -> RecognitionStatus {
-        RecognitionStatus(.init(isLive: true, calibration: calibration, manualCorners: manual, shed: shed, people: people,
+        RecognitionStatus(.init(isLive: true, calibration: calibration, shed: shed, people: people,
                                 latestPTS: latest, streamID: stream, events: events))
     }
 
@@ -26,7 +26,7 @@ final class RecognitionStatusTests: XCTestCase {
         XCTAssertTrue(status.rows.allSatisfy { $0.tone == .idle })
     }
 
-    func testCourtRowNamesAutomaticOrManualMappingAndTheReasonWhenMissing() throws {
+    func testCourtRowNamesTheAutomaticMappingAndTheReasonWhenMissing() throws {
         let auto = try row(live(calibration: .init(isAvailable: true, landmarkCount: 10, validationErrorMeters: 0.57, reason: nil)), "court")
         XCTAssertEqual(auto.value, "球场映射可用")
         XCTAssertEqual(auto.detail, "自动识别 · 10 个场地参考点 · 拟合残差 0.57 m")
@@ -34,13 +34,11 @@ final class RecognitionStatusTests: XCTestCase {
         // the in-house court states its lines and pixel error itself
         let inHouse = try row(live(calibration: .init(isAvailable: true, landmarkCount: 7, reason: "自动识别 · 7 条球场线 · 对齐误差 0.6 像素")), "court")
         XCTAssertEqual(inHouse.detail, "自动识别 · 7 条球场线 · 对齐误差 0.6 像素")
-        let manual = try row(live(calibration: .init(isAvailable: true, landmarkCount: 4, reason: "用户四角标定"), manual: true), "court")
-        XCTAssertEqual(manual.detail, "手动四角标定，移动机位后需重标")
         let missing = try row(live(calibration: .init(isAvailable: false, landmarkCount: 3, reason: "受支持的可见地面地标不足七个")), "court")
         XCTAssertEqual(missing.value, "球场映射未就绪")
         XCTAssertEqual(missing.tone, .warning)
         XCTAssertTrue(missing.detail?.hasPrefix("受支持的可见地面地标不足七个") == true)
-        XCTAssertTrue(missing.detail?.contains("标定球场") == true)
+        XCTAssertFalse(missing.detail?.contains("标定") == true, "no manual calibration to point to")
         XCTAssertEqual(try row(live(), "court").value, "球场映射未就绪", "Live but no calibration yet")
     }
 

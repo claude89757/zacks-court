@@ -109,7 +109,7 @@ public enum WebWire {
     }
 
     /// Binary frame: 1 byte type, 4-byte big-endian JSON length, JSON, then the JPEG bytes.
-    public enum BinaryType: UInt8 { case preview = 1, still = 2 }
+    public enum BinaryType: UInt8 { case preview = 1 }
     public struct ImageInfo: Codable, Sendable {
         public var width: Int
         public var height: Int

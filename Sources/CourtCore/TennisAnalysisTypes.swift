@@ -100,13 +100,11 @@ public struct TennisAnalysisConfiguration {
     }
     public var farHandedness: TennisHandedness
     public var computeUnits: MLComputeUnits
-    /// User-selected doubles outer corners, near-left → near-right → far-right → far-left.
-    public var manualCourtCorners: [NormalizedPoint]?
     /// When true the engine never runs the bounce search inline; it queues `TennisBounceRequest`s
     /// for a separate lane so bounce spikes cannot stall the ~10 Hz pair cadence (camera-side analysis).
     public var defersBounceLocalization = false
-    public init(modelDirectory: URL, nominalFPS: Double = 60, handedness: TennisHandedness = .right, computeUnits: MLComputeUnits = .all, manualCourtCorners: [NormalizedPoint]? = nil, farHandedness: TennisHandedness = .right) {
-        self.modelDirectory = modelDirectory; self.nominalFPS = nominalFPS; self.handedness = handedness; self.computeUnits = computeUnits; self.manualCourtCorners = manualCourtCorners; self.farHandedness = farHandedness
+    public init(modelDirectory: URL, nominalFPS: Double = 60, handedness: TennisHandedness = .right, computeUnits: MLComputeUnits = .all, farHandedness: TennisHandedness = .right) {
+        self.modelDirectory = modelDirectory; self.nominalFPS = nominalFPS; self.handedness = handedness; self.computeUnits = computeUnits; self.farHandedness = farHandedness
     }
 }
 /// One deferred bounce localization. Holds two analysis-owned frame copies until the lane finishes.

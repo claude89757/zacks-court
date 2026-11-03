@@ -249,7 +249,6 @@ struct CourtDesktopDashboard: View {
     let history: () -> Void
     /// History opened on one record (「查看详情」 on the end-of-record summary).
     let openRecord: (UUID) -> Void
-    let calibration: () -> Void
     let handedness: () -> Void
     let leave: () -> Void
     let finish: () -> Void
@@ -420,14 +419,8 @@ struct CourtDesktopDashboard: View {
                 // The iPhone's 「机位与分析」 card: key values, what needs attention, setup actions, and
                 // the full camera status, recognition and people detection folded underneath.
                 CameraHealthCard(model: model, showPeople: $showPeople) {
-                    Button(action: calibration) { Label("标定球场", systemImage: "viewfinder").frame(maxWidth: .infinity) }
-                        .buttonStyle(CourtButton()).disabled(!model.isLive || model.isBusy)
-                        .accessibilityIdentifier("court.calibration.open")
                     Button(action: handedness) { Label("持拍手", systemImage: "hand.raised").frame(maxWidth: .infinity) }
                         .buttonStyle(CourtButton()).accessibilityIdentifier("court.handedness.open")
-                    if !model.isLive {
-                        Text("收到实时画面后可标定球场。").font(.caption).foregroundStyle(CourtStyle.muted)
-                    }
                 }
             }
         }

@@ -69,7 +69,6 @@ public final class CameraSessionController {
     public private(set) var people: AnalysisSnapshot?
     public private(set) var nearHandedness: TennisHandedness = .right
     public private(set) var farHandedness: TennisHandedness = .right
-    public private(set) var manualCourtCorners: [NormalizedPoint]?
     /// Line-call settings a display sent; every bounce is judged with the settings of its time.
     public private(set) var hawkEye = HawkEyeSettings.off
     public private(set) var counters = CameraMediaPipeline.Counters()
@@ -150,7 +149,6 @@ public final class CameraSessionController {
         journal = AnalysisJournal(directory: storageDirectory)
         if let configuration {
             nearHandedness = configuration.nearHandedness; farHandedness = configuration.farHandedness
-            manualCourtCorners = configuration.manualCourtCorners
         }
         if let data = try? Data(contentsOf: hawkEyeURL), let saved = try? JSONDecoder().decode(HawkEyeSettings.self, from: data) { hawkEye = saved }
         let analyzer = self.analyzer, sink = previewSink
@@ -270,7 +268,7 @@ public final class CameraSessionController {
 
     public func setHandedness(near: TennisHandedness, far: TennisHandedness) {
         nearHandedness = near; farHandedness = far
-        analyzer.reconfigure(manualCorners: manualCourtCorners, near: near, far: far)
+        analyzer.reconfigure(near: near, far: far)
         tennisAnalysis = nil
         sendStatus()
     }
@@ -289,38 +287,17 @@ public final class CameraSessionController {
     /// Digital zoom the camera applies while capturing (nil without capture or zoom). Reported in status.
     public var zoomFactor: Double? { didSet { if zoomFactor != oldValue { sendStatus() } } }
 
-    /// The camera's framing changed (zoom). Manual corners no longer match the picture, so they are
-    /// cleared and automatic mapping takes over; the temporal run restarts so no trajectory bridges it.
-    /// Returns whether manual corners were cleared.
-    @discardableResult public func framingChanged() -> Bool {
-        let cleared = manualCourtCorners != nil
-        manualCourtCorners = nil
-        analyzer.reconfigure(manualCorners: nil, near: nearHandedness, far: farHandedness)
-        tennisAnalysis = nil
-        sendStatus()
-        return cleared
-    }
-
-    /// Validates and applies doubles outer corners (nil returns to automatic mapping).
-    public func setManualCourtCorners(_ corners: [NormalizedPoint]?) throws {
-        if let corners { try ManualCourtCorners.validate(corners) }
-        manualCourtCorners = corners
-        analyzer.reconfigure(manualCorners: corners, near: nearHandedness, far: farHandedness) { [weak self] failure in
-            guard let failure else { return }
-            Task { @MainActor in self?.error = failure }
-        }
+    /// The camera's framing changed (zoom). The automatic court no longer matches the picture, so it is
+    /// searched for again; the temporal run restarts so no trajectory bridges the change.
+    public func framingChanged() {
+        analyzer.reconfigure(near: nearHandedness, far: farHandedness, restartCourt: true)
         tennisAnalysis = nil
         sendStatus()
     }
 
-    /// Latest analysed full-resolution frame of the running capture, for on-device calibration.
-    public func calibrationImage() async -> CGImage? {
-        guard let stream = streamID else { return nil }
-        let box = await withCheckedContinuation { (continuation: CheckedContinuation<ImageBox, Never>) in
-            analyzer.latestFrameImage(streamID: stream) { continuation.resume(returning: ImageBox(image: $0)) }
-        }
-        return box.image
-    }
+    /// Older displays can still ask for manual corners or a calibration still; the court now
+    /// always comes from automatic recognition, so they get this refusal instead of no answer.
+    private let manualCourtRemoved = "此版本已去掉手动标定，球场由机位自动识别。请更新看板 App。"
 
     /// Leaving the camera role: finish the open session, then stop the link and tickers.
     public func shutdown() async {
@@ -595,14 +572,12 @@ public final class CameraSessionController {
         case .hawkEye:
             if let settings = control.hawkEye { setHawkEye(settings) } else { ok = false; message = "界内外设置无效。" }
         case .corners:
-            do { try setManualCourtCorners(control.clearCorners == true ? nil : control.corners) }
-            catch { ok = false; message = error.localizedDescription }
+            ok = false; message = manualCourtRemoved
         case .preview:
             previewRequested = control.enabled == true
             applyShed()
         case .still:
-            sendStill(for: control, to: origin)
-            return
+            ok = false; message = manualCourtRemoved
         case .wake:
             wakeRequests += 1
         case .transfer:
@@ -620,30 +595,6 @@ public final class CameraSessionController {
 
     private func reply(to request: WireControl, ok: Bool, message: String? = nil, _ origin: Target) {
         send(.control, WireControl.reply(to: request, ok: ok, message: message), to: origin)
-    }
-
-    private func sendStill(for request: WireControl, to origin: Target) {
-        guard let stream = streamID else {
-            reply(to: request, ok: false, message: "机位尚未开始采集，无法获取标定画面。", origin); return
-        }
-        analyzer.latestFrameJPEG(streamID: stream, quality: 0.8) { [weak self] data, width, height in
-            Task { @MainActor in
-                guard let self else { return }
-                guard let data, !data.isEmpty, data.count < PacketDecoder.maximumBody - PacketDecoder.maximumHeader else {
-                    self.reply(to: request, ok: false, message: "机位还没有可用的分析画面，请稍后再试。", origin); return
-                }
-                switch origin {
-                case .web(let client):
-                    let info = WebWire.ImageInfo(width: width, height: height, streamID: stream, request: request.id)
-                    if let frame = try? WebWire.binary(.still, info: info, jpeg: data) { self.web?.sendBinary(frame, to: client) }
-                default:
-                    var header = StreamHeader(kind: WireKind.still.rawValue)
-                    header.width = width; header.height = height; header.streamID = stream
-                    header.message = request.id.uuidString
-                    self.link?.send(StreamPacket(header: header, payload: data))
-                }
-            }
-        }
     }
 
     private func displayLost() {
@@ -835,7 +786,7 @@ public final class CameraSessionController {
         status.device = deviceState()
         status.shed = shed.level; status.shedReason = shed.reason
         status.warnings = extraWarnings()
-        status.near = nearHandedness; status.far = farHandedness; status.manualCorners = manualCourtCorners
+        status.near = nearHandedness; status.far = farHandedness
         status.zoom = capturing ? zoomFactor : nil
         status.hawkEye = hawkEye
         status.previewing = pipeline.isPreviewing
@@ -1094,7 +1045,6 @@ public final class CameraSessionController {
 
 private struct StoreBox: @unchecked Sendable { let store: SessionStore }
 private struct SealResult: @unchecked Sendable { let final: TennisAnalysisSnapshot?; let rows: [TennisShotEvent] }
-private struct ImageBox: @unchecked Sendable { let image: CGImage? }
 
 /// Lets the preview lane reach whichever link is current without touching the main actor.
 private final class PreviewSink: @unchecked Sendable {

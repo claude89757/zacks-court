@@ -25,13 +25,6 @@ final class CourtMappingTests: XCTestCase {
         XCTAssertNil(mapping.project(.init(x:0.01,y:0.99)))
         XCTAssertNil(TennisCourtMapping.solve(image:Array(repeating:.init(x:0,y:0),count:4),world:world))
     }
-    func testManualCourtCornersHaveExplicitSurfaceContractAndRejectCrossing() throws {
-        let corners: [NormalizedPoint] = [.init(x:0.1,y:0.9),.init(x:0.9,y:0.9),.init(x:0.7,y:0.1),.init(x:0.3,y:0.1)]
-        let mapping = try TennisCourtMapping.manual(corners:corners)
-        XCTAssertTrue(mapping.state.isAvailable); XCTAssertNil(mapping.state.validationErrorMeters)
-        XCTAssertEqual(try XCTUnwrap(mapping.project(corners[2])).y,23.77,accuracy:0.000001)
-        XCTAssertThrowsError(try TennisCourtMapping.manual(corners:[corners[0],corners[2],corners[1],corners[3]]))
-    }
     func testBuildsWithoutTheReferenceChainRefuseItPlainly() {
         guard !ReferenceChain.isAvailable else { return }
         XCTAssertThrowsError(try ReferenceChain.makeEngine(configuration: .init(modelDirectory: URL(fileURLWithPath: "/does-not-exist"))))

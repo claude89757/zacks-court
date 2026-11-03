@@ -286,9 +286,9 @@ final class WebDisplayTests: XCTestCase {
         await rig.close()
     }
 
-    // MARK: Preview and still
+    // MARK: Preview
 
-    @MainActor func testPreviewOnlyWhenAskedAndStillOnlyToTheAsker() async throws {
+    @MainActor func testPreviewOnlyWhenAskedAndManualCalibrationRefused() async throws {
         let rig = CameraRig(root: makeRoot("court-web-preview"))
         rig.camera.startWebDisplay(webRoot: try webRoot(), port: nil)
         let port = try await listening(rig.camera)
@@ -318,11 +318,13 @@ final class WebDisplayTests: XCTestCase {
             XCTAssertEqual(watcher.binaries.count, stopped, "No preview at L2")
             rig.camera.shed = (0, nil)
 
-            let still = other.control("still", [:])
-            try await waitFor("still", timeout: 10) { other.binaries.contains { $0.type == 2 } }
-            let image = try XCTUnwrap(other.binaries.first { $0.type == 2 })
-            XCTAssertEqual(image.info["request"] as? String, still)
-            XCTAssertFalse(watcher.binaries.contains { $0.type == 2 }, "The still goes only to the browser that asked")
+            // Manual calibration is gone: a calibration still or corners from an old page are refused.
+            for command in ["still", "corners"] {
+                let id = other.control(command, [:])
+                try await waitFor("\(command) refused", timeout: 10) { other.reply(to: id) != nil }
+                XCTAssertEqual(other.reply(to: id)?["ok"] as? Bool, false)
+            }
+            XCTAssertFalse(other.binaries.contains { $0.type == 2 }, "no still image is sent")
             watcher.preview(false)
         } catch { watcher.close(); other.close(); await rig.close(); throw error }
         watcher.close(); other.close()
