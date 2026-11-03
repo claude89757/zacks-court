@@ -10,18 +10,24 @@ import simd
 /// like the prototype's `np.median` of decoded frames, and solved by `IndependentCourtCalibrator` on a
 /// utility queue, so ball batches never wait; the result is picked up on the analysis queue with the
 /// next frame.
-/// - Moving: a phone is rarely still while it is being mounted. Every full frame gives a 240×135
-///   thumbnail that is compared with the one a second earlier (`motionPixels`); while the picture moves
-///   no samples are kept, a solve in flight is ignored and a found camera is dropped, so a median never
-///   mixes two poses and a knocked mount is not used with its old court.
+/// - Motion: every full frame gives a 240×135 thumbnail that is compared with the one a second earlier.
+///   Up to `motionPixels` the picture is still; up to `shakePixels` it drifts (a hand-held or loosely
+///   propped phone); above that it shakes (the phone is being mounted, knocked or handled). While it
+///   shakes no samples are kept, a solve in flight is ignored and a found camera is dropped, so a median
+///   never mixes two poses and a knocked mount is not used with its old court.
 /// - Searching: the first solve once `firstAttemptFrames` still samples are in (about 3 s), then after
 ///   every `retryFrames` new ones, over the last `frames` samples (the prototype used 25 over 20 s). A
-///   sample that drifted from the window's first one restarts the window.
-/// - Found: every `recheckInterval` seconds a fresh median of `recheckFrames` samples is solved again.
-///   A camera whose reference points moved more than `movedPixels` replaces the current one (the mount
-///   moved slowly). A refusal keeps the current camera if it still fits the lines; after
-///   `dropAfterMisfits` refusals in a row where it no longer fits, the camera is dropped and the search
-///   starts again.
+///   sample that drifted from the window's first one restarts the window. While the picture drifts a
+///   still window never comes, so single samples are solved (same gates).
+/// - Tracking: a found camera is refined on single frames, every `sampleInterval` while the picture
+///   drifts and every `stillTrackInterval` while it is still. A refinement that still fits the lines and
+///   moved at most `trackPixels` replaces the camera when it moved more than `movedPixels`. While
+///   drifting, `dropAfterMisfits` misses in a row drop the camera; while still a miss only brings the
+///   re-check forward.
+/// - Re-check: every `recheckInterval` seconds a fresh median of `recheckFrames` samples is solved
+///   from scratch, so a camera that tracking led astray is replaced. A refusal keeps the current camera
+///   if it still fits the lines; after `dropAfterMisfits` refusals in a row where it no longer fits, the
+///   camera is dropped and the search starts again.
 /// Calibration only: speeds and landing points stay model estimates.
 final class IndependentLiveCourt {
     struct Options: Sendable {
@@ -38,11 +44,21 @@ final class IndependentLiveCourt {
         var simulatedLatencyScale: Double?
         /// Camera motion check (nil: off). A 240×135 thumbnail of every full frame is compared with
         /// the one `motionLookback` seconds earlier; more than `motionPixels` of apparent displacement
-        /// means the phone is moving: the samples are dropped, a solve in flight is ignored, and a found
-        /// camera is dropped (unknown stays unknown) until the picture is still and the court found again.
+        /// means the picture drifts (tracked, see `trackPixels`), more than `shakePixels` that it shakes.
         /// 4 px: a still camera measured at most 3.4 px over about 30 minutes of seven match videos, a
         /// real 8-16 px move at least 4.5 px nine times in ten (`court-analyze court-lock`, 2026-11-04).
         var motionPixels: Double? = 4
+        /// Above this the phone is being knocked or handled, not drifting: the samples are dropped, a solve
+        /// in flight is ignored and a found camera is dropped (unknown stays unknown) until the court is found
+        /// again. 15 px: a hand-held phone filming a screen measured 3-7 px of drift and 18-27 px when
+        /// handled or at clip cuts (iPhone recording, 2026-11-04).
+        var shakePixels = 15.0
+        /// A drifting mount is followed: every `sampleInterval` the current camera is refined on one frame
+        /// and kept if it still fits and moved at most this much; `dropAfterMisfits` misses in a row drop it.
+        var trackPixels = 25.0
+        /// A slow drift can stay under `motionPixels`: while still, the found camera is also refined on one
+        /// frame this often (nil: off). A miss here does not drop it; it brings the median re-check forward.
+        var stillTrackInterval: Double? = 0.8
         var motionLookback = 1.0
         init() {}
     }
@@ -70,6 +86,8 @@ final class IndependentLiveCourt {
     private(set) var stats = Stats()
     private var samples: [Sample] = []
     private var lastSample = -Double.infinity
+    private var lastTrack = -Double.infinity
+    private var windowRestarted = false
     private var newSamples = 0
     private var nextRecheck = Double.infinity
     private var misfits = 0
@@ -77,8 +95,10 @@ final class IndependentLiveCourt {
     private var launchedAt = 0.0
     /// Manual corners in use: no sampling, no solves, results in flight are dropped.
     private(set) var paused = false
-    /// The picture moved within the last `motionLookback` seconds (motion check on).
-    private(set) var moving = false
+    enum Motion: Sendable { case still, drifting, shaking }
+    /// How much the picture moved over the last `motionLookback` seconds (motion check on).
+    private(set) var motion = Motion.still
+    var moving: Bool { motion != .still }
     /// Last measured displacement in full-resolution pixels, for evaluation.
     private(set) var lastMotion: Double?
     private var thumbnails: [(pts: Double, image: Thumbnail)] = []
@@ -121,62 +141,78 @@ final class IndependentLiveCourt {
         if camera != nil { nextRecheck = pts }
     }
 
-    /// Analysis queue, every frame: collects the result of a finished solve, then takes a sample from a
-    /// full-resolution copy when one is due. Never blocks on the solve.
+    /// Analysis queue, every frame: measures how much the picture moved, collects a finished solve or
+    /// tracking step, then takes a sample when one is due. Never blocks on the solve.
     func offer(_ full: CVPixelBuffer?, pts: Double) -> Change? {
         var change: Change?
+        var thumbnail: Thumbnail?
+        if let full, !paused, options.motionPixels != nil, let t = Self.thumbnail(full) {
+            thumbnail = t
+            change = checkMotion(t, pts: pts)       // first, so a solve that saw a shake is ignored
+        }
         let latency = options.simulatedLatencyScale, launched = launchedAt
         if let outcome = mailbox.take(if: { o in latency.map { pts >= launched + o.seconds * $0 } ?? true }) {
             inFlight = false
             if !paused {
                 if movedSinceLaunch { stats.solves += 1; stats.solveSeconds += outcome.seconds }
-                else { change = apply(outcome, pts: pts) }
+                else if let applied = apply(outcome, pts: pts) { change = applied }
             }
             movedSinceLaunch = false
         }
-        var thumbnail: Thumbnail?
-        if let full, !paused, let threshold = options.motionPixels, let t = Self.thumbnail(full) {
-            thumbnail = t
-            if let lost = checkMotion(t, pts: pts, threshold: threshold) { change = lost }
+        guard let full, !inFlight, !paused, motion != .shaking, pts - lastSample >= options.sampleInterval else { return change }
+        if let current = camera, motion == .drifting || stillTrackDue(pts) {
+            // follow the mount by refining the current camera on this frame
+            guard let sample = Self.sample(full) else { return change }
+            let still = motion == .still
+            lastSample = pts; lastTrack = pts; stats.samples += 1; samples.removeAll(); anchor = nil
+            launch([sample], current: current, track: true, trackWhileStill: still, pts: pts)
+            return change
         }
-        guard let full, !inFlight, !paused, !moving, camera == nil || pts >= nextRecheck, pts - lastSample >= options.sampleInterval,
-              let sample = Self.sample(full) else { return change }
+        guard camera == nil || pts >= nextRecheck, let sample = Self.sample(full) else { return change }
         if let threshold = options.motionPixels, let thumbnail {
             // the window holds one pose only: a sample that moved away from the first one restarts it
             if samples.isEmpty || anchor == nil { anchor = thumbnail }
-            else if let anchor, Self.motion(anchor, thumbnail) > threshold { samples.removeAll(); newSamples = 0; self.anchor = thumbnail }
+            else if let anchor, Self.motion(anchor, thumbnail) > threshold {
+                samples.removeAll(); self.anchor = thumbnail; windowRestarted = true
+            }
         }
         lastSample = pts; samples.append(sample); newSamples += 1; stats.samples += 1
         if samples.count > options.frames { samples.removeFirst(samples.count - options.frames) }
         if let current = camera {
             guard samples.count >= options.recheckFrames else { return change }
-            launch(current: current, pts: pts)
+            launch(samples, current: current, track: false, pts: pts)
+            lastTrack = pts
             samples.removeAll()          // a re-check holds no frames once its median is taken
         } else {
-            let due = latest == nil ? samples.count >= options.firstAttemptFrames : newSamples >= options.retryFrames
-            if due && samples.count >= options.firstAttemptFrames { launch(current: nil, pts: pts) }
+            // a drifting picture never gives a still window, nor does a drift just under the threshold that
+            // keeps restarting it: solve what there is (gates unchanged)
+            let needed = motion == .drifting || windowRestarted ? 1 : options.firstAttemptFrames
+            let due = latest == nil || newSamples >= options.retryFrames
+            if due && samples.count >= needed { launch(samples, current: nil, track: false, pts: pts) }
         }
         return change
     }
 
-    private func resetMotion() { thumbnails.removeAll(); anchor = nil; moving = false; lastMotion = nil; movedSinceLaunch = inFlight }
+    private func resetMotion() { thumbnails.removeAll(); anchor = nil; motion = .still; lastMotion = nil; movedSinceLaunch = inFlight }
 
     /// Compares the thumbnail with the one `motionLookback` seconds earlier (or, when full frames come
-    /// sparsely, the last one up to three lookbacks old). Moving drops the samples and any solve in
-    /// flight; a found camera is dropped (`.lost`). With nothing to compare, the picture counts as still,
-    /// as before the check existed, so `moving` can never stick.
-    private func checkMotion(_ t: Thumbnail, pts: Double, threshold: Double) -> Change? {
+    /// sparsely, the last one up to three lookbacks old). Shaking drops the samples, any solve in flight
+    /// and a found camera (`.lost`); drifting only changes how the court is followed or searched. With
+    /// nothing to compare, the picture counts as still, so the state can never stick.
+    private func checkMotion(_ t: Thumbnail, pts: Double) -> Change? {
+        guard let drift = options.motionPixels else { return nil }
         let previous = thumbnails.last
         thumbnails.removeAll { pts - $0.pts > options.motionLookback + 0.05 }
         defer { thumbnails.append((pts, t)) }
         guard let reference = thumbnails.first ?? previous.flatMap({ pts - $0.pts <= 3 * options.motionLookback ? $0 : nil }) else {
-            moving = false; lastMotion = nil; return nil
+            motion = .still; lastMotion = nil; return nil
         }
         guard pts - reference.pts >= options.motionLookback * 0.5 else { return nil }
         let m = Self.motion(reference.image, t)
-        lastMotion = m; moving = m > threshold
-        guard moving else { return nil }
-        samples.removeAll(); newSamples = 0; anchor = nil
+        lastMotion = m
+        motion = m > options.shakePixels ? .shaking : m > drift ? .drifting : .still
+        guard motion == .shaking else { return nil }
+        samples.removeAll(); anchor = nil
         if inFlight { movedSinceLaunch = true }
         guard camera != nil else { return nil }
         camera = nil; latest = nil; misfits = 0; nextRecheck = .infinity; stats.lost += 1
@@ -186,16 +222,27 @@ final class IndependentLiveCourt {
     /// Waits for a solve in flight (tests and the end of a file run).
     func drain() { queue.sync {} }
 
-    private func launch(current: IndependentPinholeCamera?, pts: Double) {
-        inFlight = true; newSamples = 0; launchedAt = pts; stats.launches += 1
-        let frames = samples, mailbox = mailbox
+    /// While still, between re-checks, the found camera is refined every `stillTrackInterval`.
+    private func stillTrackDue(_ pts: Double) -> Bool {
+        guard motion == .still, options.motionPixels != nil, let every = options.stillTrackInterval else { return false }
+        return pts < nextRecheck && pts - lastTrack >= every
+    }
+
+    private func launch(_ frames: [Sample], current: IndependentPinholeCamera?, track: Bool, trackWhileStill: Bool = false, pts: Double) {
+        inFlight = true; newSamples = 0; windowRestarted = false; launchedAt = pts; stats.launches += 1
+        let mailbox = mailbox, trackPixels = options.trackPixels
         queue.async {
             let began = ProcessInfo.processInfo.systemUptime
             var outcome = Outcome(calibration: IndependentCourtCalibration(), currentFits: nil, seconds: 0)
             if let image = try? Self.median(frames) {
-                outcome.calibration = IndependentCourtCalibrator.calibrate(image)
-                if let current, !outcome.calibration.found { outcome.currentFits = Self.fits(current, image) }
-            }
+                if track, let current {
+                    outcome.track = true; outcome.trackWhileStill = trackWhileStill
+                    outcome.tracked = Self.track(current, image, maxPixels: trackPixels)
+                } else {
+                    outcome.calibration = IndependentCourtCalibrator.calibrate(image)
+                    if let current, !outcome.calibration.found { outcome.currentFits = Self.fits(current, image) }
+                }
+            } else if track { outcome.track = true; outcome.trackWhileStill = trackWhileStill }
             outcome.seconds = ProcessInfo.processInfo.systemUptime - began
             mailbox.put(outcome)
         }
@@ -203,11 +250,26 @@ final class IndependentLiveCourt {
 
     private func apply(_ outcome: Outcome, pts: Double) -> Change? {
         stats.solves += 1; stats.solveSeconds += outcome.seconds
+        if outcome.track {
+            guard let current = camera else { return nil }        // dropped meanwhile
+            if let tracked = outcome.tracked {
+                misfits = 0
+                guard Self.distance(tracked, current) > options.movedPixels else { return nil }
+                camera = tracked; stats.moved += 1
+                return .moved(tracked)
+            }
+            // still: one frame may be occluded or blurred, so the median re-check decides
+            if outcome.trackWhileStill { nextRecheck = min(nextRecheck, pts); return nil }
+            misfits += 1
+            guard misfits >= options.dropAfterMisfits else { return nil }
+            camera = nil; latest = nil; misfits = 0; nextRecheck = .infinity; stats.lost += 1
+            return .lost
+        }
         let calibration = outcome.calibration
         guard let current = camera else {
             latest = calibration
             guard let found = calibration.camera else { return nil }
-            camera = found; misfits = 0; samples.removeAll()
+            camera = found; misfits = 0; samples.removeAll(); lastTrack = pts
             nextRecheck = pts + options.recheckInterval; stats.found += 1
             return .found(found)
         }
@@ -223,6 +285,18 @@ final class IndependentLiveCourt {
         guard misfits >= options.dropAfterMisfits else { nextRecheck = pts; return nil }
         camera = nil; latest = calibration; misfits = 0; stats.lost += 1
         return .lost
+    }
+
+    /// The current camera refined on a new image when it still explains the court lines (the `fits`
+    /// rules) and moved at most `maxPixels`; nil otherwise. Starting from the current camera, a move of
+    /// 20 px converged on every frame of three match videos (`court-lock --fits --fit-pan`, 2026-11-04).
+    static func track(_ camera: IndependentPinholeCamera, _ image: IndependentCourtImage, maxPixels: Double) -> IndependentPinholeCamera? {
+        guard let refined = IndependentCourtCalibrator.refine(image, start: [camera.f] + camera.rvec + camera.tvec) else { return nil }
+        let used = refined.linesUsed
+        guard used.count >= 5, used.filter(\.isNearTransverse).count >= 2 else { return nil }
+        let rms = (used.compactMap { refined.perLineRMS[$0.rawValue] }.map { $0 * $0 }.reduce(0, +) / Double(used.count)).squareRoot()
+        guard rms <= 1.5, distance(refined.camera, camera) <= maxPixels else { return nil }
+        return refined.camera
     }
 
     /// Largest image distance between the two cameras' court reference points.
@@ -350,6 +424,11 @@ final class IndependentLiveCourt {
         var calibration: IndependentCourtCalibration
         var currentFits: Bool?
         var seconds: Double
+        /// A tracking step: `tracked` is the refined camera, nil when it no longer fits.
+        var track = false
+        var tracked: IndependentPinholeCamera?
+        /// Launched while the picture was still: a miss asks for a re-check instead of counting.
+        var trackWhileStill = false
     }
 
     final class Mailbox: @unchecked Sendable {

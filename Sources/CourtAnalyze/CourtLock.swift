@@ -5,7 +5,7 @@ import Foundation
 import simd
 
 /// `court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios a,b] [--seed N] [--latency K]
-/// [--before] [--first N] [--retry N] [--motion PX|off] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]`
+/// [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]`
 /// (`--before`: the search as it was before the motion check; `--anyway`: run without a steady solve,
 /// to see only whether the court locks and how much the picture moves.)
 ///
@@ -18,6 +18,7 @@ import simd
 /// - `settle`: shaking for the first 8 s (hand-held mounting), then still at a new rotation.
 /// - `bump`: still for 15 s, knocked for 2 s, then still at another rotation.
 /// - `wobble`: a fixed rotation plus about 2 px of slow sway throughout (counted as still).
+/// - `drift`: slow continuous turning of about 5 px per second throughout (counted as still).
 /// "Right" means within the tolerance of the rotated steady solve, not physical truth.
 enum CourtLockCommand {
     struct Rotation { var pan = 0.0, tilt = 0.0, roll = 0.0 }   // radians, camera axes (x right, y down, z forward)
@@ -36,7 +37,7 @@ enum CourtLockCommand {
     }
 
     static func run(_ args: [String]) throws {
-        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]") }
+        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]") }
         let video = URL(fileURLWithPath: args[1]), out = URL(fileURLWithPath: args[2])
         func value(_ flag: String) -> String? { args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
         let start = value("--start").flatMap(Double.init) ?? 0, duration = value("--duration").flatMap(Double.init) ?? 45
@@ -49,6 +50,8 @@ enum CourtLockCommand {
         if let v = value("--tolerance").flatMap(Double.init) { settings.tolerancePixels = v }
         if let v = value("--motion") { settings.motionPixels = v == "off" ? nil : Double(v) }
         if let v = value("--lookback").flatMap(Double.init) { settings.motionLookback = v }
+        if let v = value("--shake").flatMap(Double.init) { settings.shakePixels = v }
+        if let v = value("--still-track") { settings.stillTrackInterval = v == "off" ? nil : Double(v) }
 
         // Reference: the steady solve of the first 20 s of the stretch (25 samples, 0.8 s apart).
         var reference: IndependentPinholeCamera?, refusals: [String] = []
@@ -76,6 +79,36 @@ enum CourtLockCommand {
             print("COURT_LOCK reference_refused=\(refusals.joined(separator: ","))"); return
         }
 
+        if args.contains("--fits") {
+            // single-frame check of the steady camera on every full frame of the stretch
+            var fits: [IndependentCourtLockLab.FrameFit] = [], index = 0
+            let moved = value("--fit-moved").flatMap(Double.init) ?? 6
+            // --fit-pan DEG: frames turned by DEG of pan; the refinement starts from the unturned camera
+            let pan = (value("--fit-pan").flatMap(Double.init) ?? 0) * .pi / 180
+            let turn = Rotation(pan: pan, tilt: -pan / 2, roll: pan / 3), truth = rotated(reference, turn)
+            let warper = try Warper(f: reference.f)
+            var errors: [Double] = []
+            try decode(video, start: start, duration: duration) { pixels, _ in
+                defer { index += 1 }
+                guard index % 12 == 0 else { return }
+                let frame = turn.isZero ? pixels : try warper.warp(pixels, turn)
+                if let f = IndependentCourtLockLab.fit(frame, camera: reference, movedPixels: moved) {
+                    fits.append(f)
+                    if let r = f.refined { errors.append(IndependentCourtLockLab.distance(r, truth)) }
+                }
+            }
+            errors.sort()
+            if !errors.isEmpty {
+                print(String(format: "COURT_TRACK turn_px=%.1f refined=%d err_p50=%.2f err_p90=%.2f within3=%d", IndependentCourtLockLab.distance(reference, truth),
+                             errors.count, errors[errors.count / 2], errors[errors.count * 9 / 10], errors.filter { $0 <= 3 }.count))
+            }
+            let pass = fits.filter(\.fits).count, secs = fits.map(\.seconds).sorted()
+            print(String(format: "COURT_FITS frames=%d pass=%d (%.0f%%) median_ms=%.0f max_ms=%.0f", fits.count, pass,
+                         100 * Double(pass) / Double(max(1, fits.count)), (secs.isEmpty ? 0 : secs[secs.count / 2]) * 1000, (secs.last ?? 0) * 1000))
+            let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+            try encoder.encode(fits).write(to: out, options: .atomic)
+            return
+        }
         var rng = SplitMix(seed: seed)
         let scenarios = names.map { scenario($0, rng: &rng) }
         let labs = scenarios.map { _ in IndependentCourtLockLab(settings: settings) }
@@ -145,6 +178,13 @@ enum CourtLockCommand {
         case "wobble":
             // a mount that never quite stops: about 2 px of slow sway on top of a fixed rotation
             let p = pose(), w = (0..<3).map { _ in (rng.uniform(0.03, 0.06) * degree, rng.uniform(0.3, 2.0), rng.uniform(0, 2 * .pi)) }
+            return Scenario(name: name) { t in
+                let a = w.map { $0.0 * sin(2 * .pi * $0.1 * t + $0.2) }
+                return (Rotation(pan: p.pan + a[0], tilt: p.tilt + a[1], roll: p.roll + a[2]), true)
+            }
+        case "drift":
+            // a hand-held or loosely propped phone: slow continuous turning, about 4-6 px per second
+            let p = pose(), w = [1.0, 0.6, 0.3].map { (rng.uniform(0.7, 1.0) * $0 * degree, rng.uniform(0.025, 0.04), rng.uniform(0, 2 * .pi)) }
             return Scenario(name: name) { t in
                 let a = w.map { $0.0 * sin(2 * .pi * $0.1 * t + $0.2) }
                 return (Rotation(pan: p.pan + a[0], tilt: p.tilt + a[1], roll: p.roll + a[2]), true)

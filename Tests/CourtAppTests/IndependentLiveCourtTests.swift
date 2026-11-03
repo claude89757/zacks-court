@@ -72,7 +72,7 @@ final class IndependentLiveCourtTests: XCTestCase {
         var options = IndependentLiveCourt.Options()
         options.sampleInterval = 0.1; options.firstAttemptFrames = 1; options.retryFrames = 1
         options.recheckInterval = 1; options.recheckFrames = 1
-        options.motionPixels = nil              // the slow path: a re-check sees the mount moved
+        options.motionPixels = nil              // the slow path: a re-check sees the mount moved (no tracking)
         let court = IndependentLiveCourt(options: options)
         let a = try bgra(try CourtRenderer(camera: Self.cameraA).render())
         let b = try bgra(try CourtRenderer(camera: Self.cameraB, seed: 2).render())
@@ -107,14 +107,16 @@ final class IndependentLiveCourtTests: XCTestCase {
         XCTAssertFalse(court.latest?.refusals.isEmpty ?? true, "the refusal reason is kept for the camera screen")
     }
 
-    /// A still picture is not motion and a turned mount is; while the picture moves nothing is sampled
+    /// The renderer's sky clutter is drawn fixed in the image, which no real camera sees: left out here
+    /// (poles off, sky above row 300 painted as court) so that the picture moves with the camera.
+    private func uncluttered(_ camera: IndependentPinholeCamera) throws -> CVPixelBuffer {
+        try bgra(try CourtRenderer(camera: camera, poleSpacing: 100_000).render(masked: { _, y in y < 300 }))
+    }
+
+    /// A still picture is not motion and a turned mount is; while the picture shakes nothing is sampled
     /// and a found camera is dropped, then the court is found again at the new pose once still.
-    func testMovingPictureDropsTheCameraUntilStillAgain() throws {
-        // The renderer's sky clutter is drawn fixed in the image, which no real camera sees: left out here
-        // (poles off, sky above row 300 painted as court) so that the picture moves with the camera.
-        func render(_ camera: IndependentPinholeCamera) throws -> CVPixelBuffer {
-            try bgra(try CourtRenderer(camera: camera, poleSpacing: 100_000).render(masked: { _, y in y < 300 }))
-        }
+    func testShakingPictureDropsTheCameraUntilStillAgain() throws {
+        func render(_ camera: IndependentPinholeCamera) throws -> CVPixelBuffer { try uncluttered(camera) }
         let a = try render(Self.cameraA)
         // turned about 1 degree (about 20 px), and about 0.06 degree (about 1 px)
         let turned = IndependentPinholeCamera.lookingAt(SIMD3(0.27, 9, 0), from: SIMD3(0.3, -6.4, 3.2), f: 1150)
@@ -127,6 +129,9 @@ final class IndependentLiveCourtTests: XCTestCase {
 
         var options = IndependentLiveCourt.Options()
         options.sampleInterval = 0.1; options.firstAttemptFrames = 1; options.retryFrames = 1
+        // The flat rendered court has few edges, so the measure tops out near 6 px however far the mount
+        // turns (real footage reads 15-30 px when handled): the threshold is lowered to make this a knock.
+        options.shakePixels = 4.5
         let court = IndependentLiveCourt(options: options)
         var pts = 100.0, changes = [IndependentLiveCourt.Change](), moving = 0
         func feed(_ frame: CVPixelBuffer, seconds: Double) {
@@ -158,6 +163,33 @@ final class IndependentLiveCourtTests: XCTestCase {
         XCTAssertFalse(sparse.moving, "nothing recent to compare with counts as still")
         pts += 0.2; _ = sparse.offer(c, pts: pts); sparse.drain()
         XCTAssertLessThan(IndependentLiveCourt.distance(try XCTUnwrap(sparse.camera, "sampling resumed and found the court"), turned), 1.5)
+    }
+
+    /// A hand-held or loosely propped phone keeps turning slowly. The found camera is followed by refining
+    /// it on single frames (each step about 12 px) instead of being dropped and searched for again, whether
+    /// the measure calls the picture drifting or still.
+    func testDriftingMountIsFollowed() throws {
+        var options = IndependentLiveCourt.Options()
+        options.sampleInterval = 0.1; options.firstAttemptFrames = 1; options.retryFrames = 1
+        options.stillTrackInterval = 0.3
+        let court = IndependentLiveCourt(options: options)
+        func pose(_ x: Double) -> IndependentPinholeCamera {
+            .lookingAt(SIMD3(x, 9, 0), from: SIMD3(0.3, -6.4, 3.2), f: 1150)
+        }
+        var pts = 100.0, changes = [IndependentLiveCourt.Change]()
+        func feed(_ frame: CVPixelBuffer, seconds: Double) {
+            for _ in 0..<Int((seconds / 0.1).rounded()) {
+                pts += 0.1
+                if let change = court.offer(frame, pts: pts) { changes.append(change) }
+                court.drain()
+            }
+        }
+        feed(try uncluttered(pose(0)), seconds: 1.2)
+        guard case .found? = changes.first else { return XCTFail("court not found: \(court.latest?.refusals ?? [])") }
+        for x in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] { feed(try uncluttered(pose(x)), seconds: 0.5) }
+        XCTAssertFalse(changes.contains(.lost), "a drifting mount keeps its court: \(changes)")
+        XCTAssertGreaterThanOrEqual(changes.filter { if case .moved = $0 { return true } else { return false } }.count, 3)
+        XCTAssertLessThan(IndependentLiveCourt.distance(try XCTUnwrap(court.camera), pose(0.60)), 2)
     }
 
     func testManualCornersGiveTheCameraAndPauseTheSearch() throws {

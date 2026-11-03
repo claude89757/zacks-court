@@ -410,8 +410,9 @@ public final class IndependentLiveEngine {
             case .lost: use(nil)
             }
         }
-        if full != nil, let court, court.moving {
-            // ball positions seen while the phone moves belong to no single court: never caught up later
+        if full != nil, let court, court.moving, configuration.camera == nil {
+            // ball positions seen while the phone moves and no court is known belong to no single pose:
+            // never caught up later (a court being tracked keeps them)
             movedUntil = pts; shots.trim(keeping: 0, now: pts); traceObserver?(.discard(before: pts))
         }
         if let full {
