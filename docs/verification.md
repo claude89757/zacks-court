@@ -2501,3 +2501,14 @@ S家 链报的是击球后前 5 个样本拟合的速度，和 S家 App 的端�
 - 新图标没有在真机上看过。
 - 繁体文案是按字逐个转换和检查的，没有请母语用户读过。
 - 关键词的实际搜索效果要上线一两周后，在「App 分析」里看。
+
+## 2026-11-04 1.1 发版准备：版本号与试归档
+
+改动：`MARKETING_VERSION` 改成 1.1（构建号 1）；1.1 的「新功能」写好已知的改动（免费、导入视频、碰动后更快重新识别球场、窄屏回放、新图标），正在修的问题留一行待补；`docs/app-store/README.md` 第 6 节写了发版步骤和先决条件。
+
+验证（本机 M4 Pro，Xcode 26）：
+- `scripts/reference-chain.sh status` 为 `off`；`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 后 Release 归档、手动签名导出：成功，没有上传。IPA 约 69 MB，`Info.plist` 是 1.1 (1)；解开后只有 `IndependentModels/tracknetv3-base-v1` 和 `tracknetv3-base-fp16-v1`，没有 `AnalysisModels`。
+- `asc metadata validate`：0 错误 0 警告。
+- 在 App Store Connect 建 1.1 版本被拒（`You cannot create a new version of the App in the current state`）。版本页提示要先接受最新的付费 App 协议，需要账户持有人在「商务」页处理。
+
+没有验证：这次归档的代码还没有包含正在修的严重问题，正式上传要在修复合入后重新归档；App Store Connect 上没有做任何修改。

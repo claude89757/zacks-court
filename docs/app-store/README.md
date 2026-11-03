@@ -56,7 +56,7 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 5. **出口合规**：`Info.plist` 里 `ITSAppUsesNonExemptEncryption` 是 `false`。App 只用系统自带的 TLS（Network.framework）和 HMAC 认证，属于豁免范围，6 号构建也是按「不使用非豁免加密」上传的。如果以后加了自己实现的加密算法，要改这一项。
 6. **App 隐私标签**：选「不收集数据」（Data Not Collected）。依据：App 不连开发者服务器，没有统计、广告或追踪 SDK，`PrivacyInfo.xcprivacy` 里收集的数据类型为空。
 7. **类别**：主类别「体育」，次类别「健康健美」。
-8. **价格**：**1.1 起免费**（2026-11-04 决定）。免费 App 不需要付费 App 协议，所以改价一生效，已过审的 1.0 就能在各地区下载；因此改价和 1.1 提交一起做，不提前改。命令：`asc pricing schedule create --app 6827224757 --free --base-territory CHN --start-date <当天>`（推送前先确认）。以后的视频剪辑订阅要另建订阅组和内购项目，并补上付费 App 协议、税务和银行。
+8. **价格**：**1.1 起免费**（2026-11-04 决定）。免费 App 不需要付费 App 协议，所以改价一生效，已过审的 1.0 就能在各地区下载；因此等 1.1 过审之后再改价，不提前改（见第 6 节）。命令：`asc pricing schedule create --app 6827224757 --free --base-territory CHN --start-date <当天>`。以后的视频剪辑订阅要另建订阅组和内购项目，并补上付费 App 协议、税务和银行。
 
    以下是 1.0 的记录：付费下载，中国区 ¥18、美区 $2.99（2026-11-03 决定），没有内购。已在 2026-11-03 设好：以 $2.99 为基准时中国区会自动换算成 ¥22，所以基准地区选了中国大陆、价格档 ¥18，美国区自动换算正好是 $2.99；两种基准下其他 172 个地区的价格完全相同。命令是 `asc pricing schedule create --app 6827224757 --base-territory CHN --price-point <¥18 档的 ID>`，价格档 ID 用 `asc pricing price-points --app 6827224757 --territory CHN --paginate` 查。销售范围已设为全部地区（`asc pricing availability create --app 6827224757 --all-territories --available true --available-in-new-territories true`）。
 9. **中国大陆的备案**（2026-11-03 决定先不备案）：工信部的 APP 备案针对「从事互联网信息服务」的 App。这个 App 只在局域网里让设备互连，不连互联网、不连开发者服务器，按这个说法可以不备案。但苹果对中国区的执行可能更严，提交时 App 信息页可能要求填 ICP 备案号。被卡住时，先向审核说明是不联网的本地应用；不行就从销售范围里去掉中国大陆，或者办备案。以后加了任何联网功能（检查更新、统计等），都要先备案。
@@ -106,11 +106,17 @@ asc status --app 6827224757                     # 发布状态总览
 - **推广文本**随时可改，不用提交新版本；名称、副标题、关键词只能随新版本改。
 - **上线后**：在 App Store Connect 的「App 分析」里看「来源：App Store 搜索」的曝光和转化，一两周后按实际搜索词调整关键词。
 
-### 1.1 发版步骤（等主会话的修复合入 origin/main 之后）
+### 1.1 发版步骤（等正在修的问题合入 origin/main 之后）
 
-1. `apps/iphone/project.yml` 改 `MARKETING_VERSION` 为 `1.1`、`CURRENT_PROJECT_VERSION` 为新构建号（`asc builds next-build-number --app 6827224757 --version 1.1`）。
-2. `COURT_MODEL_SET=independent` 生成工程、Release 归档并导出；逐文件检查包里只有两个 TrackNetV3，没有 S家模型；上传。
-3. 补上 `metadata/version/1.1/*.json` 的「新功能」，在 App Store Connect 建 1.1 版本，推送四种语言的文字（zh-Hant、en-GB 是新增的本地化）和各自的截图。
-4. 价格改免费（见第 2 节第 8 项）。
-5. 技术支持站（zacks-court-site）的 `icon.png` 换成新图标。
-6. 关联构建，提交审核。以上会修改 App Store Connect 的步骤，推送前都要用户确认。
+先决条件（只能由账户持有人在网页上做）：
+- **同意新版付费 App 协议**（「商务」页）。2026-11-04 试着建 1.1 版本时，App Store Connect 拒绝了（`You cannot create a new version of the App in the current state`），版本页提示要先接受最新的付费 App 协议。App 目前还是付费的，所以建新版本前要先同意它。
+- **2026-11-10 前续费开发者会员**。协议、发布证书和描述文件都到这天为止，过期后不能上传。
+
+步骤（App Store Connect 的改动不用逐步问用户，由顾问模型把关；但改价只在 1.1 过审之后做）：
+1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号仍是 `1`（`asc builds next-build-number --app 6827224757 --version 1.1` 返回 1）。
+2. 确认 `scripts/reference-chain.sh status` 是 `off`，然后 `COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，Release 归档并导出（手动签名，Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」）。解开 IPA 逐个检查：只有两个 TrackNetV3，没有 `AnalysisModels`。然后上传。
+3. 补全 `metadata/version/1.1/*.json` 的「新功能」（把「待补」那一行换成正在修的问题），建 1.1 版本（`asc versions create --app 6827224757 --version 1.1 --release-type AFTER_APPROVAL`）。推送四种语言的文字，其中 zh-Hant、en-GB 是新增的本地化，如果 `metadata apply` 不新建本地化，先用 `asc localizations create` 建。
+4. 截图：新版本会沿用 1.0 的 5 张旧截图，先删掉，再上传各语言目录里的新图。
+5. 关联构建，提交审核。
+6. **过审后再改免费**（见第 2 节第 8 项）。App 付费时在哪里都卖不了，所以 1.1 过审后自动发布也没人能下载，改成免费的那一刻用户拿到的就是 1.1。不要在过审前改价，那样会先把 1.0 放出去。
+7. 技术支持站（zacks-court-site）的 `icon.png` 和 1.1 上线同时换成新图标。
