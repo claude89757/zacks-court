@@ -26,9 +26,10 @@ public struct HawkEyeReplayScene: Equatable, Sendable {
     public static let g = 9.80665
     static let samples = 36, afterSamples = 10, afterSeconds = 0.35
 
-    public init?(event: TennisShotEvent) {
-        guard let b = event.bounce, let j = b.hawkEye, let x = b.xMeters, let y = b.yMeters else { return nil }
-        judgement = j; sigmaX = b.sigmaXMeters; sigmaY = b.sigmaYMeters
+    /// `judgement`: the call to replay (a challenge's), else the call of its time.
+    public init?(event: TennisShotEvent, judgement: HawkEyeJudgement? = nil) {
+        guard let b = event.bounce, let j = judgement ?? event.lineCall, let x = b.xMeters, let y = b.yMeters else { return nil }
+        self.judgement = j; sigmaX = b.sigmaXMeters; sigmaY = b.sigmaYMeters
         bounce = SIMD3(x, y, HawkEye.ballRadius)
         (lineAnchor, outward) = Self.anchor(x: x, y: y, judgement: j, serverX: event.hit?.x)
         fromNear = event.hit.map { $0.y < HawkEye.netY } ?? (y > HawkEye.netY)

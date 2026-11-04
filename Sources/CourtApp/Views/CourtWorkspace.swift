@@ -72,6 +72,7 @@ public struct CourtWorkspace: View {
         }
         .courtSessionFeedback(model: model)
         .courtHawkEyeBanner(model: model)
+        .courtChallengeOverlay(model: model)
         // The three key-number tiles all open their metric the same way: full screen on the phone.
         #if os(iOS)
         .fullScreenCover(item: $focusedMetric) { metric in
@@ -272,6 +273,7 @@ public struct CourtWorkspace: View {
             CourtIconButton(systemImage: "chevron.left", label: "切换模式", action: leave)
             connectionPill
             Spacer(minLength: 0)
+            if model.canChallenge { ChallengeButton(model: model).fixedSize() }
             if model.connected { HawkEyeButton(model: model).fixedSize() }
             historyButton
         }

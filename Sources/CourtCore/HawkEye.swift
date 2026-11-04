@@ -158,3 +158,83 @@ public enum HawkEye {
         return row
     }
 }
+
+/// A challenge of one shot (「挑战」): a player disputes a call, anyone taps 挑战 on a display or on the
+/// camera, and the camera judges the shot again and stores the result on the row. Every screen that
+/// receives the row with a new challenge plays the replay, and the record keeps it. Judged on demand
+/// with both halves and the format of the time, whatever the line-call settings are; the stored
+/// `bounce.hawkEye` (the call of its time) is never changed by a challenge. Still a model estimate.
+public struct HawkEyeChallenge: Codable, Equatable, Sendable {
+    public var id: UUID
+    public var date: Date
+    public var format: HawkEyeFormat
+    /// nil when the shot cannot be judged; `reason` says why.
+    public var judgement: HawkEyeJudgement?
+    /// Why there is no judgement (user wording), or nil.
+    public var reason: String?
+    /// The bounce may still arrive (the shot is only a moment old); the camera updates the row.
+    public var pending: Bool?
+    public init(id: UUID = UUID(), date: Date = Date(), format: HawkEyeFormat, judgement: HawkEyeJudgement? = nil,
+                reason: String? = nil, pending: Bool? = nil) {
+        self.id = id; self.date = date; self.format = format; self.judgement = judgement
+        self.reason = reason.map { String($0.prefix(120)) }; self.pending = pending
+    }
+    public static let pendingReason = "落点还在计算，稍等片刻"
+    public static let noBounceReason = "这一拍没找到落点，无法判定界内外"
+    public static let sameHalfReason = "这一拍没有过网，不判界内外"
+}
+
+/// Which challenge is newest: the camera's own screen opens the replay when it changes.
+public struct HawkEyeChallengeRef: Equatable, Sendable {
+    public var shot: UUID
+    public var challenge: UUID
+    public init(shot: UUID, challenge: UUID) { self.shot = shot; self.challenge = challenge }
+}
+
+extension TennisShotEvent {
+    /// The call to show for this shot: a challenge's judgement, else the call of its time.
+    public var lineCall: HawkEyeJudgement? { challenge?.judgement ?? bounce?.hawkEye }
+}
+
+extension HawkEye {
+    /// How long after a shot its bounce may still arrive. A challenge of a newer shot without a bounce
+    /// waits for it instead of judging an older shot (docs/hawk-eye.md §7).
+    public static let challengeBounceWait = 3.0
+
+    /// The shot a challenge without a named shot is about: the newest shot with a bounce, unless an even
+    /// newer shot is still within `challengeBounceWait` of `latestPTS` (its bounce may be on its way;
+    /// `latestPTS` nil means nothing is being analysed). With no bounce at all, the newest shot. nil
+    /// without shots.
+    public static func challengeTarget(_ rows: [TennisShotEvent], latestPTS: Double?) -> TennisShotEvent? {
+        let sorted = rows.sorted { $0.sourcePTS < $1.sourcePTS }
+        guard let last = sorted.last else { return nil }
+        guard let bounced = sorted.last(where: { $0.bounce?.xMeters != nil && $0.bounce?.yMeters != nil }) else { return last }
+        if last.id != bounced.id, let latestPTS, latestPTS - last.sourcePTS <= challengeBounceWait { return last }
+        return bounced
+    }
+
+    /// The shot before `shot` that has a bounce: 「挑战上一拍」 when the picked shot is not the disputed one.
+    public static func previousBounced(before shot: UUID, in rows: [TennisShotEvent]) -> TennisShotEvent? {
+        let sorted = rows.sorted { $0.sourcePTS < $1.sourcePTS }
+        guard let index = sorted.firstIndex(where: { $0.id == shot }) else { return nil }
+        return sorted[..<index].last { $0.bounce?.xMeters != nil && $0.bounce?.yMeters != nil }
+    }
+
+    /// The challenge's result for the row as it is now. Both halves are judged; a ball that did not
+    /// cross the net is not. Without a bounce the result is pending (it may still arrive) or refused.
+    public static func judgeChallenge(_ challenge: HawkEyeChallenge, for event: TennisShotEvent, waiting: Bool) -> HawkEyeChallenge {
+        var c = challenge
+        c.judgement = nil; c.reason = nil; c.pending = nil
+        guard let b = event.bounce, let x = b.xMeters, let y = b.yMeters, x.isFinite, y.isFinite else {
+            if waiting { c.reason = HawkEyeChallenge.pendingReason; c.pending = true }
+            else { c.reason = HawkEyeChallenge.noBounceReason }
+            return c
+        }
+        if let hitY = event.hit?.y, (hitY > netY) == (y > netY) { c.reason = HawkEyeChallenge.sameHalfReason; return c }
+        let settings = HawkEyeSettings(enabled: true, format: challenge.format, farHalf: true)
+        c.judgement = judge(x: x, y: y, sigmaX: b.sigmaXMeters, sigmaY: b.sigmaYMeters, serve: event.stroke == .serve,
+                            serverX: event.hit?.x, settings: settings)
+        if c.judgement == nil { c.reason = HawkEyeChallenge.noBounceReason }
+        return c
+    }
+}

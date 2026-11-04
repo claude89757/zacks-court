@@ -41,6 +41,9 @@ struct HawkEyeAlert: Equatable, Identifiable {
         return result
     }
 
+    /// Speaks a challenge's verdict.
+    func say(_ text: String) { voice.say(text) }
+
     /// Rows already on the display when it (re)connects: remembered, never announced.
     func markSeen(_ rows: [TennisShotEvent]) {
         for row in rows where row.bounce?.hawkEye != nil { announced.insert(row.id) }
@@ -53,10 +56,12 @@ struct HawkEyeAlert: Equatable, Identifiable {
     private let synthesizer = AVSpeechSynthesizer()
     private var prepared = false
 
-    func sayOut() {
+    func sayOut() { say("Out!") }
+
+    func say(_ text: String) {
         prepare()
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
-        let utterance = AVSpeechUtterance(string: "Out!")
+        let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-GB") ?? AVSpeechSynthesisVoice(language: "en-US")
         utterance.rate = 0.5
         utterance.pitchMultiplier = 1.1

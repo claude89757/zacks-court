@@ -147,12 +147,13 @@ private struct HawkEyeBannerOverlay: ViewModifier {
     var large = false
     func body(content: Content) -> some View {
         content.overlay(alignment: .top) {
-            if model.role == .server, let alert = model.hawkEyeAlert {
+            if let alert = model.hawkEyeAlert {
                 HawkEyeCallBanner(alert: alert, large: large) { model.dismissHawkEyeAlert() }
                     .padding(.horizontal, CourtStyle.Space.l).padding(.top, CourtStyle.Space.s)
             }
         }
         .animation(.spring(duration: 0.3), value: model.hawkEyeAlert?.id)
+        .onChange(of: model.controller?.dashboardEvents) { _, rows in model.cameraRowsChanged(rows ?? []) }
     }
 }
 

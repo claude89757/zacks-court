@@ -462,6 +462,40 @@ final class WebDisplayTests: XCTestCase {
         await rig.close()
     }
 
+    /// A browser challenges the newest shot; the row comes back to it with the challenge's result.
+    @MainActor func testBrowserChallengesAShot() async throws {
+        let rig = CameraRig(root: makeRoot("court-web-challenge"))
+        rig.camera.startWebDisplay(webRoot: try webRoot(), port: nil)
+        let port = try await listening(rig.camera)
+        let page = TestBrowser(port: port)
+        do {
+            _ = try await page.authenticate(mac: try XCTUnwrap(rig.camera.webCredentials))
+            page.hello()
+            try await waitFor("hello", timeout: 5) { page.count("hello") == 1 }
+            XCTAssertTrue((page.last("hello")?["capabilities"] as? [String])?.contains(WireHello.challenge) == true)
+            rig.source.start()
+            try await waitFor("capturing", timeout: 10) { rig.camera.capturing && rig.camera.streamID != nil }
+            let stream = try XCTUnwrap(rig.camera.streamID)
+            var shot = TennisShotEvent(streamID: stream, sourcePTS: 1, stroke: .forehand, confidence: 0)
+            shot.bounce = TennisBounceEstimate(sourcePTS: 1.6, xMeters: 5.485, yMeters: 24.3, confidence: 0)
+            shot.hit = TennisCourtPoint(x: 5, y: 1, z: 1)
+            rig.camera.testingDeliver(WorkspaceIntegrationTests.snapshot(stream, [shot]))
+            try await waitFor("row", timeout: 5) { page.shotIDs.contains(shot.id.uuidString) }
+            let ask = page.control("challenge", ["format": "singles"])
+            try await waitFor("reply", timeout: 5) { page.reply(to: ask) != nil }
+            XCTAssertEqual(page.reply(to: ask)?["ok"] as? Bool, true)
+            func challenge() -> [String: Any]? {
+                page.analysis.flatMap { $0["events"] as? [[String: Any]] ?? [] }.last { $0["id"] as? String == shot.id.uuidString }?["challenge"] as? [String: Any]
+            }
+            try await waitFor("challenged row", timeout: 5) { challenge() != nil }
+            let judgement = try XCTUnwrap(challenge()?["judgement"] as? [String: Any])
+            XCTAssertEqual(judgement["call"] as? String, "out", "Far half, judged although line calls are off")
+            XCTAssertEqual(judgement["farHalf"] as? Bool, true)
+        } catch { page.close(); await rig.close(); throw error }
+        page.close()
+        await rig.close()
+    }
+
     /// Opt-in demo for checking the page by hand: the camera's browser server on localhost with made-up
     /// judged shots every few seconds (synthetic, labelled as such). COURT_WEB_HAWKEYE_DEMO=/path/url.txt
     /// writes the page URL (with its one-off token) there; runs COURT_WEB_HAWKEYE_DEMO_SECONDS (default 300).

@@ -467,6 +467,80 @@ struct LinkStats {
 
     func dismissHawkEyeAlert() { hawkEyeTimer?.cancel(); hawkEyeAlert = nil }
 
+    // MARK: Challenges (docs/hawk-eye.md §7)
+
+    /// The challenge replay on screen: opened on every device when a new challenge arrives.
+    var presentedChallenge: HawkEyeChallengeRef?
+    /// The connected camera takes challenges (the camera role always does).
+    var canChallenge: Bool { controller != nil || (connected && cameraCapabilities.contains(WireHello.challenge)) }
+    var challengeUnavailableReason: String? {
+        if canChallenge { return nil }
+        return connected ? "机位的 App 版本不支持挑战，请更新机位。" : "连接机位后才能挑战。"
+    }
+    /// Lines a challenge uses: the line-call format when 界内外 is on, else the one picked for this record.
+    var challengeFormat: HawkEyeFormat? {
+        if hawkEyeSettings.enabled { return hawkEyeSettings.format }
+        return challengeFormats[challengeFormatKey]
+    }
+    @ObservationIgnored private var challengeFormats: [String: HawkEyeFormat] = [:]
+    @ObservationIgnored private var seenChallenges = Set<UUID>()
+    private var challengeFormatKey: String { (controller?.session?.id ?? session?.id)?.uuidString ?? "none" }
+
+    /// Shots the challenge replay steps through: the camera's own rows on the camera, else the shown ones.
+    var challengeEvents: [TennisShotEvent] {
+        if let controller { return finishedRecordShots?.events ?? controller.dashboardEvents }
+        return shownEvents
+    }
+
+    /// Asks the camera to challenge `shot` (nil: the newest). The replay opens on every screen when the
+    /// camera's row comes back, here too; a refusal shows as an error.
+    func challenge(shot: UUID? = nil, format: HawkEyeFormat? = nil) {
+        if let format { challengeFormats[challengeFormatKey] = format }
+        let format = format ?? challengeFormat
+        if let controller {
+            if let refusal = controller.challenge(shot: shot, format: format) { error = refusal }
+            return
+        }
+        guard canChallenge else { error = challengeUnavailableReason; return }
+        var control = WireControl(.challenge); control.shot = shot; control.format = format
+        sendControl(control)
+    }
+
+    /// A row carrying a challenge this screen has not seen opens the replay (live rows only; rows from a
+    /// catch-up after reconnecting are remembered, never replayed).
+    func noteChallenges(in rows: [TennisShotEvent], replay: Bool) {
+        for row in rows {
+            guard let c = row.challenge, !seenChallenges.contains(c.id) else { continue }
+            seenChallenges.insert(c.id)
+            if replay { presentedChallenge = HawkEyeChallengeRef(shot: row.id, challenge: c.id) }
+        }
+    }
+
+    @ObservationIgnored private var announcedChallenges = Set<UUID>()
+    /// The challenge's verdict, said once per challenge however many replays show it ("Out" / "In";
+    /// a close call is shown, not said). Follows the 「出界时语音播报」 switch.
+    func announceChallenge(_ id: UUID, call: HawkEyeCall) {
+        guard hawkEyeSound, call != .close, announcedChallenges.insert(id).inserted else { return }
+        hawkEyeAlerts.say(call == .out ? "Out!" : "In.")
+    }
+
+    @ObservationIgnored private var cameraCallsPrimed = false
+    /// Camera role: the camera shows and says its own calls like a display (rows already there when the
+    /// camera page opens are remembered, never announced).
+    func cameraRowsChanged(_ rows: [TennisShotEvent]) {
+        guard controller != nil else { return }
+        let recent = Array(rows.suffix(24))
+        if !cameraCallsPrimed { cameraCallsPrimed = true; hawkEyeAlerts.markSeen(recent); return }
+        raiseHawkEye(for: recent)
+    }
+
+    /// Camera role: the controller's newest challenge (from this phone or any display).
+    func noteCameraChallenge(_ ref: HawkEyeChallengeRef?) {
+        guard let ref, !seenChallenges.contains(ref.challenge) else { return }
+        seenChallenges.insert(ref.challenge)
+        presentedChallenge = ref
+    }
+
     private func raiseHawkEye(for rows: [TennisShotEvent]) {
         guard role == .server else { return }
         let next = hawkEyeAlerts.next(for: rows, current: hawkEyeAlert, soundOn: hawkEyeSound)
@@ -1023,6 +1097,7 @@ struct LinkStats {
 
     private func apply(_ message: WireAnalysis) {
         if message.resync == true { hawkEyeAlerts.markSeen(message.events) } else { raiseHawkEye(for: message.events) }
+        noteChallenges(in: message.events, replay: message.resync != true)
         if let id = message.sessionID {
             guard session?.id == id else { return }
             if message.resync == true, message.part == 0 { session = session?.withoutTennisEvents() }

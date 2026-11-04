@@ -71,6 +71,8 @@ public final class CameraSessionController {
     public private(set) var farHandedness: TennisHandedness = .right
     /// Line-call settings a display sent; every bounce is judged with the settings of its time.
     public private(set) var hawkEye = HawkEyeSettings.off
+    /// The newest challenge (any device's): the camera's own screen plays it like a display does.
+    public private(set) var latestChallenge: HawkEyeChallengeRef?
     public private(set) var counters = CameraMediaPipeline.Counters()
     public private(set) var metrics = CameraSideAnalyzer.Metrics()
     /// Pausing or finishing (recording stops, analysis seals). Displays see it in the next status
@@ -119,6 +121,8 @@ public final class CameraSessionController {
     @ObservationIgnored private var transferring: String?
     /// A clip being cut was cancelled before its first chunk.
     @ObservationIgnored private var clipCancelled = false
+    /// Challenges by shot, so rows the analysis sends again keep (and re-judge) theirs.
+    @ObservationIgnored private var challenges: [UUID: HawkEyeChallenge] = [:]
     private static let recentLimit = 24
 
     /// Browser displays (docs/web-display.md): the camera listens for them over HTTP + WebSocket.
@@ -193,7 +197,7 @@ public final class CameraSessionController {
                 guard let self, let link, self.link === link else { return }
                 self.send(.hello, WireHello(role: .camera, device: self.identity.device, hardware: self.identity.hardware,
                                             app: self.identity.app, modelVersion: self.tennisAnalysis?.modelVersion,
-                                            session: self.openSessionMetadata, capabilities: [WireHello.clips, WireHello.hawkEye]))
+                                            session: self.openSessionMetadata, capabilities: [WireHello.clips, WireHello.hawkEye, WireHello.challenge]))
             }
         }
         link.onPacket = { [weak self, weak link] packet in
@@ -284,6 +288,79 @@ public final class CameraSessionController {
         sendStatus()
     }
 
+    // MARK: Challenges
+
+    /// Challenges a shot's line call (`shot`, or the newest when nil; docs/hawk-eye.md §7) and sends the
+    /// row to every display. `format` also becomes the line-call format. Returns why it was refused.
+    @discardableResult public func challenge(shot: UUID? = nil, format: HawkEyeFormat? = nil) -> String? {
+        if let format, format != hawkEye.format {
+            setHawkEye(HawkEyeSettings(enabled: hawkEye.enabled, format: format, farHalf: hawkEye.farHalf))
+        }
+        let rows = challengeRows
+        let latest = capturing ? counters.latestPTS : nil
+        guard let row = shot.map({ id in rows.first { $0.id == id } }) ?? HawkEye.challengeTarget(rows, latestPTS: latest) else {
+            return shot == nil ? "还没有可以挑战的击球。" : "找不到这一拍，可能已不在当前记录里。"
+        }
+        challenges[row.id] = HawkEyeChallenge(format: hawkEye.format)
+        publishChallenged(row)
+        latestChallenge = HawkEyeChallengeRef(shot: row.id, challenge: challenges[row.id]!.id)
+        if challenges[row.id]?.pending == true {
+            // the bounce is on its way; if it never comes, say so instead of waiting for ever
+            let id = row.id
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(HawkEye.challengeBounceWait + 1))
+                self?.settleChallenge(id)
+            }
+        }
+        return nil
+    }
+
+    /// Shots a challenge without a named shot picks from: the open record's, else the latest rows,
+    /// else the record that just finished.
+    private var challengeRows: [TennisShotEvent] {
+        if hasOpenSession { return session?.tennisEvents ?? [] }
+        if !recentRows.isEmpty { return recentRows }
+        return session?.tennisEvents ?? []
+    }
+
+    /// Rows with the line call of their time and their challenge brought up to date.
+    private func annotated(_ rows: [TennisShotEvent]) -> [TennisShotEvent] {
+        HawkEye.annotate(rows, settings: hawkEye).map { row in
+            guard let c = challenges[row.id] else { return row }
+            var row = row
+            let waiting = c.pending == true
+            let judged = HawkEye.judgeChallenge(c, for: row, waiting: waiting)
+            challenges[row.id] = judged; row.challenge = judged
+            return row
+        }
+    }
+
+    /// Stores the challenged row (in the record or the latest rows) and sends it to every display.
+    private func publishChallenged(_ base: TennisShotEvent, waiting: Bool? = nil) {
+        guard var c = challenges[base.id] else { return }
+        let latest = capturing ? counters.latestPTS : nil
+        let waiting = waiting ?? latest.map { $0 - base.sourcePTS <= HawkEye.challengeBounceWait } ?? false
+        c = HawkEye.judgeChallenge(c, for: base, waiting: waiting)
+        challenges[base.id] = c
+        var row = base; row.challenge = c
+        if let id = session?.id, session?.tennisEvents?.contains(where: { $0.id == row.id }) == true {
+            session?.updateKnownTennisEvents([row]); dirty = true
+            sendRows([row], sessionID: id)
+            if hasOpenSession { dashboardEvents = session?.tennisEvents ?? [] }
+        } else {
+            mergeRecent([row]); sendRows([row], sessionID: nil)
+            if !hasOpenSession { dashboardEvents = recentRows }
+        }
+    }
+
+    /// A pending challenge whose bounce never came: no bounce, said once.
+    private func settleChallenge(_ shot: UUID) {
+        guard challenges[shot]?.pending == true else { return }
+        let row = session?.tennisEvents?.first { $0.id == shot } ?? recentRows.first { $0.id == shot }
+        guard let row else { return }
+        publishChallenged(row, waiting: false)
+    }
+
     /// Digital zoom the camera applies while capturing (nil without capture or zoom). Reported in status.
     public var zoomFactor: Double? { didSet { if zoomFactor != oldValue { sendStatus() } } }
 
@@ -372,9 +449,9 @@ public final class CameraSessionController {
             analyzer.seal { final, rows in continuation.resume(returning: SealResult(final: final, rows: rows)) }
         }
         guard var final = result.final, session?.id == owner, final.streamID == stream else { return }
-        final.events = HawkEye.annotate(final.events, settings: hawkEye)
+        final.events = annotated(final.events)
         session?.recordTennisAnalysis(final, minimumPTS: minimum, completingPausedSegment: true)
-        session?.updateKnownTennisEvents(HawkEye.annotate(result.rows, settings: hawkEye))
+        session?.updateKnownTennisEvents(annotated(result.rows))
         dashboardEvents = session?.tennisEvents ?? []
         dirty = true
         sendRows(session?.tennisEvents ?? [], sessionID: owner)
@@ -383,7 +460,7 @@ public final class CameraSessionController {
     private func handle(_ raw: TennisAnalysisSnapshot) {
         guard raw.streamID == streamID else { return }
         var snapshot = raw
-        snapshot.events = HawkEye.annotate(raw.events, settings: hawkEye)
+        snapshot.events = annotated(raw.events)
         lastSnapshotAt = ProcessInfo.processInfo.systemUptime
         if session?.state == .active, segmentStream == snapshot.streamID, let id = session?.id {
             session?.recordTennisAnalysis(snapshot, minimumPTS: segmentStartPTS)
@@ -405,7 +482,7 @@ public final class CameraSessionController {
 
     /// Late bounce results for rows already published.
     private func handleLate(_ raw: [TennisShotEvent]) {
-        let rows = HawkEye.annotate(raw, settings: hawkEye)
+        let rows = annotated(raw)
         if let id = session?.id {
             let changed = session?.updateKnownTennisEvents(rows) ?? []
             if !changed.isEmpty { dirty = true; sendRows(changed, sessionID: id) }
@@ -571,6 +648,8 @@ public final class CameraSessionController {
             setHandedness(near: control.near ?? nearHandedness, far: control.far ?? farHandedness)
         case .hawkEye:
             if let settings = control.hawkEye { setHawkEye(settings) } else { ok = false; message = "界内外设置无效。" }
+        case .challenge:
+            if let refusal = challenge(shot: control.shot, format: control.format) { ok = false; message = refusal }
         case .corners:
             ok = false; message = manualCourtRemoved
         case .preview:
@@ -877,7 +956,7 @@ public final class CameraSessionController {
             // Only this browser gets the catch-up; deltas then reach it with everyone else.
             send(.hello, WireHello(role: .camera, device: identity.device, hardware: identity.hardware, app: identity.app,
                                    modelVersion: tennisAnalysis?.modelVersion, session: openSessionMetadata,
-                                   capabilities: [WireHello.clips, WireHello.hawkEye, "web"]), to: .web(client))
+                                   capabilities: [WireHello.clips, WireHello.hawkEye, WireHello.challenge, "web"]), to: .web(client))
             if let session { send(.session, session.withoutTennisEvents(), to: .web(client)); sendResync(session, to: .web(client)) }
             var recent = WireAnalysis(sessionID: nil, events: recentRows, calibration: tennisAnalysis?.calibration,
                                       modelVersion: tennisAnalysis?.modelVersion)

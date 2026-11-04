@@ -46,17 +46,18 @@ struct CourtSpeedBoard: View {
             .padding(inset)
         }
         .overlay(alignment: .bottom) {
-            if let model, model.role == .server, let alert = model.hawkEyeAlert {
+            if let model, let alert = model.hawkEyeAlert {
                 HawkEyeCallBanner(alert: alert, large: true) { model.dismissHawkEyeAlert() }
                     .padding(.horizontal, 24).padding(.bottom, 24)
             }
         }
         .animation(.spring(duration: 0.3), value: model?.hawkEyeAlert?.id)
         #if os(iOS)
-        .fullScreenCover(isPresented: $challenge) { if let model { HawkEyeChallengeView(model: model) } }
+        .fullScreenCover(isPresented: $challenge) { if let model { HawkEyeChallengeView(model: model) { challenge = false } } }
         #else
-        .sheet(isPresented: $challenge) { if let model { HawkEyeChallengeView(model: model).frame(minWidth: 760, minHeight: 520) } }
+        .sheet(isPresented: $challenge) { if let model { HawkEyeChallengeView(model: model) { challenge = false }.frame(minWidth: 760, minHeight: 520) } }
         #endif
+        .modifier(OptionalChallengeOverlay(model: model))
         .background(CourtStyle.background.ignoresSafeArea())
         .foregroundStyle(.white).preferredColorScheme(.dark)
         // The readout uses fixed, window-scaled sizes. Capping the surrounding labels at the second
@@ -110,21 +111,26 @@ struct CourtSpeedBoard: View {
         Circle().fill(isLive ? CourtStyle.green : CourtStyle.muted).frame(width: 7, height: 7)
             .accessibilityElement().accessibilityLabel(liveText)
     }
-    /// 「界内外回放」: shown once Hawk-Eye is on or a shot was judged.
+    /// 「挑战」 while the camera can take one; 「回放」 (step through judged and challenged shots) once a
+    /// shot was judged or challenged.
     @ViewBuilder private var challengeButton: some View {
-        if let model, model.role == .server, model.hawkEyeSettings.enabled || events.contains(where: { $0.bounce?.hawkEye != nil }) {
-            Button { model.dismissHawkEyeAlert(); challenge = true } label: {
-                Label("界内外回放", systemImage: "play.rectangle.on.rectangle")
-                    .font(.callout.weight(.semibold)).lineLimit(1)
-                    .padding(.horizontal, 14).frame(minHeight: 44)
-                    .background(CourtStyle.raised, in: Capsule()).contentShape(Capsule())
+        if let model {
+            if model.canChallenge { ChallengeButton(model: model).fixedSize() }
+            if events.contains(where: { $0.lineCall != nil || $0.challenge != nil }) {
+                Button { model.dismissHawkEyeAlert(); challenge = true } label: {
+                    Label("回放", systemImage: "play.rectangle.on.rectangle")
+                        .font(.callout.weight(.semibold)).lineLimit(1)
+                        .padding(.horizontal, 14).frame(minHeight: 44)
+                        .background(CourtStyle.raised, in: Capsule()).contentShape(Capsule())
+                }
+                .buttonStyle(.plain).fixedSize()
+                .accessibilityLabel("界内外回放")
+                .accessibilityIdentifier("court.speedboard.challenge")
             }
-            .buttonStyle(.plain).fixedSize()
-            .accessibilityIdentifier("court.speedboard.challenge")
         }
     }
     @ViewBuilder private var hawkEyeButton: some View {
-        if let model, model.role == .server { HawkEyeButton(model: model).fixedSize() }
+        if let model, model.canUseHawkEye { HawkEyeButton(model: model).fixedSize() }
     }
     @ViewBuilder private var closeButton: some View {
         #if os(macOS)
@@ -523,3 +529,11 @@ private struct SpeedBoardFullScreenButton: NSViewRepresentable {
     }
 }
 #endif
+
+/// The challenge overlay when the board has a model (the Mac's board window and the full-screen board).
+private struct OptionalChallengeOverlay: ViewModifier {
+    let model: WorkspaceModel?
+    func body(content: Content) -> some View {
+        if let model { content.courtChallengeOverlay(model: model) } else { content }
+    }
+}

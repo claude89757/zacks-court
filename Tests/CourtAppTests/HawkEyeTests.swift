@@ -116,4 +116,108 @@ final class HawkEyeTests: XCTestCase {
         XCTAssertEqual(again.camera.hawkEye, doubles, "Kept across a camera restart")
         await again.close()
     }
+
+    // MARK: Challenges
+
+    private func shot(_ pts: Double, bounce: (x: Double, y: Double)?, hitY: Double = 22, stroke: TennisStrokeKind = .forehand) -> TennisShotEvent {
+        var row = TennisShotEvent(streamID: UUID(), sourcePTS: pts, stroke: stroke, confidence: 0)
+        row.hit = TennisCourtPoint(x: c, y: hitY, z: 1)
+        if let bounce {
+            row.bounce = TennisBounceEstimate(sourcePTS: pts + 0.6, xMeters: bounce.x, yMeters: bounce.y, confidence: 0)
+            row.bounce?.sigmaXMeters = 0.02; row.bounce?.sigmaYMeters = 0.05
+        }
+        return row
+    }
+
+    func testChallengePicksTheNewestBounceUnlessANewerShotIsFresh() {
+        let a = shot(10, bounce: (c, 5)), b = shot(12, bounce: (c, 20), hitY: 1), late = shot(14, bounce: nil)
+        XCTAssertEqual(HawkEye.challengeTarget([a, b], latestPTS: 13)?.id, b.id, "The newest bounced shot")
+        XCTAssertEqual(HawkEye.challengeTarget([a, b, late], latestPTS: 15)?.id, late.id, "A shot a moment old may still get its bounce")
+        XCTAssertEqual(HawkEye.challengeTarget([a, b, late], latestPTS: 20)?.id, b.id, "Too old to wait for")
+        XCTAssertEqual(HawkEye.challengeTarget([a, b, late], latestPTS: nil)?.id, b.id, "Nothing analysed: nothing on its way")
+        XCTAssertEqual(HawkEye.challengeTarget([late], latestPTS: 30)?.id, late.id, "No bounce at all: the newest, refused later")
+        XCTAssertNil(HawkEye.challengeTarget([], latestPTS: 1))
+        XCTAssertEqual(HawkEye.previousBounced(before: late.id, in: [b, a, late])?.id, b.id)
+        XCTAssertNil(HawkEye.previousBounced(before: a.id, in: [a, b]))
+    }
+
+    func testChallengeJudgesBothHalvesWithItsFormat() throws {
+        let start = HawkEyeChallenge(format: .singles)
+        // far half, settings off: a challenge still judges it
+        let far = HawkEye.judgeChallenge(start, for: shot(1, bounce: (c, 24.3), hitY: 1), waiting: false)
+        XCTAssertEqual(far.judgement?.call, .out); XCTAssertEqual(far.judgement?.farHalf, true); XCTAssertNil(far.reason)
+        // the doubles alley is in only by doubles lines
+        let alley = c + HawkEye.singlesHalfWidth + 0.5
+        XCTAssertEqual(HawkEye.judgeChallenge(start, for: shot(1, bounce: (alley, 6)), waiting: false).judgement?.call, .out)
+        XCTAssertEqual(HawkEye.judgeChallenge(HawkEyeChallenge(format: .doubles), for: shot(1, bounce: (alley, 6)), waiting: false).judgement?.call, .in)
+        // no call for a ball that stayed on the hitter's half, nor without a bounce
+        XCTAssertEqual(HawkEye.judgeChallenge(start, for: shot(1, bounce: (c, 20)), waiting: false).reason, HawkEyeChallenge.sameHalfReason)
+        let waiting = HawkEye.judgeChallenge(start, for: shot(1, bounce: nil), waiting: true)
+        XCTAssertEqual(waiting.pending, true); XCTAssertNil(waiting.judgement)
+        let gone = HawkEye.judgeChallenge(waiting, for: shot(1, bounce: nil), waiting: false)
+        XCTAssertNil(gone.pending); XCTAssertEqual(gone.reason, HawkEyeChallenge.noBounceReason)
+        XCTAssertEqual(start.id, gone.id, "Same challenge as it settles")
+    }
+
+    /// The camera takes a challenge, stores it on the row (not on the call of its time), keeps it when
+    /// the analysis sends the row again, and finishes a pending one when the bounce arrives. Injected
+    /// rows: the flow only, not accuracy.
+    @MainActor func testCameraChallengesTheNewestShotAndKeepsTheResult() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("court-challenge-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let rig = CameraRig(root: root)
+        do {
+            XCTAssertEqual(rig.camera.challenge(), "还没有可以挑战的击球。")
+            rig.source.start()
+            try await waitFor { rig.camera.capturing && rig.camera.streamID != nil && rig.pipeline.currentCounters.latestPTS != nil }
+            rig.camera.startSession(title: "挑战")
+            let stream = try XCTUnwrap(rig.camera.streamID)
+            let pts = try XCTUnwrap(rig.pipeline.currentCounters.latestPTS)
+            var long = shot(pts, bounce: (c, -0.4), hitY: 22); long.streamID = stream
+            rig.camera.testingDeliver(WorkspaceIntegrationTests.snapshot(stream, [long]))
+            try await waitFor { rig.camera.session?.tennisEvents?.contains { $0.id == long.id } == true }
+            try await Task.sleep(for: .seconds(HawkEye.challengeBounceWait + 0.5))   // no newer shot pending
+
+            XCTAssertNil(rig.camera.challenge(format: .doubles))
+            XCTAssertEqual(rig.camera.hawkEye.format, .doubles, "The format sticks for line calls too")
+            XCTAssertFalse(rig.camera.hawkEye.enabled, "Challenging does not turn line calls on")
+            var row = try XCTUnwrap(rig.camera.session?.tennisEvents?.first { $0.id == long.id })
+            let first = try XCTUnwrap(row.challenge)
+            XCTAssertEqual(first.judgement?.call, .out); XCTAssertEqual(first.judgement?.line, .baseline)
+            XCTAssertNil(row.bounce?.hawkEye, "The call of its time stays as it was (off)")
+            XCTAssertEqual(rig.camera.latestChallenge, HawkEyeChallengeRef(shot: long.id, challenge: first.id))
+            let coded = try JSONDecoder().decode(TennisShotEvent.self, from: JSONEncoder().encode(row))
+            XCTAssertEqual(coded.challenge, first, "Saved and sent with the row")
+
+            // the analysis sends the row again: the challenge stays
+            rig.camera.testingDeliver(WorkspaceIntegrationTests.snapshot(stream, [long]))
+            try await Task.sleep(for: .milliseconds(200))
+            row = try XCTUnwrap(rig.camera.session?.tennisEvents?.first { $0.id == long.id })
+            XCTAssertEqual(row.challenge, first)
+
+            // a fresh shot without its bounce yet: pending, then judged when the bounce lands
+            let now = try XCTUnwrap(rig.pipeline.currentCounters.latestPTS)
+            var fresh = shot(now, bounce: nil, hitY: 22); fresh.streamID = stream
+            rig.camera.testingDeliver(WorkspaceIntegrationTests.snapshot(stream, [fresh]))
+            try await waitFor { rig.camera.session?.tennisEvents?.contains { $0.id == fresh.id } == true }
+            XCTAssertNil(rig.camera.challenge())
+            XCTAssertEqual(rig.camera.latestChallenge?.shot, fresh.id)
+            XCTAssertEqual(rig.camera.session?.tennisEvents?.first { $0.id == fresh.id }?.challenge?.pending, true)
+            fresh.bounce = TennisBounceEstimate(sourcePTS: now + 0.6, xMeters: c, yMeters: 3, confidence: 0)
+            rig.camera.testingDeliver(WorkspaceIntegrationTests.snapshot(stream, [fresh]))
+            try await waitFor { rig.camera.session?.tennisEvents?.first { $0.id == fresh.id }?.challenge?.judgement != nil }
+            XCTAssertEqual(rig.camera.session?.tennisEvents?.first { $0.id == fresh.id }?.challenge?.judgement?.call, .in)
+            XCTAssertNil(rig.camera.session?.tennisEvents?.first { $0.id == fresh.id }?.challenge?.pending)
+            XCTAssertEqual(rig.camera.challenge(shot: UUID()), "找不到这一拍，可能已不在当前记录里。")
+        } catch { await rig.close(); throw error }
+        await rig.close()
+    }
+
+    @MainActor private func waitFor(timeout: Double = 10, _ predicate: () -> Bool) async throws {
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while !predicate() {
+            guard ProcessInfo.processInfo.systemUptime < deadline else { XCTFail("timed out"); throw CancellationError() }
+            try await Task.sleep(for: .milliseconds(40))
+        }
+    }
 }
