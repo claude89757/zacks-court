@@ -2604,3 +2604,14 @@ iPhone 录像（原样不变形，没有真值；`independent-live` 和 App 机�
 检查：`swift build` 通过；`swift run court-check` 通过；`swift test` 304 项，0 失败，18 项跳过（需要 S家链、S家模型、外部视频或显式开启的用例）。只改了 CourtCore 里的一句机位文案，没改 iOS 界面和工程，没跑模拟器编译。
 
 没有验证：iPhone 上逐帧预测和每 0.4 秒精修的耗时与发热（只在 Mac 上量过）；真实球场上手持拍摄（没有实拍，合成晃动只有纯转动，没有平移、卷帘快门和运动模糊）；手持时界内外和球速的误差（球场滞后零点几秒，误差会比三脚架大）；iPhone 报告的镜头内参能否作为约束（11-01 录像的倍率没核实，没用）。
+
+## 2026-11-04 1.1 (2) 发版构建
+
+环境：这台 Mac（M4 Pro），Xcode 当前版本，`origin/main` bf33281（含 PR #6 球场跟踪、#7 去掉手动标定、#9 手持识别）。
+
+- 构建号升到 2：1.1 (1) 已于同日上传（main 12d763c），之后合入 PR #9，需要重打。
+- `scripts/reference-chain.sh status` 为 `off`；`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 后以 Release 归档，导出 App Store 包（手动签名），归档后还原 `Info.plist`。
+- 解包检查：只有 `IndependentModels/tracknetv3-base-v1` 和 `tracknetv3-base-fp16-v1`，没有 `AnalysisModels`；二进制里没有 `LocalReferenceChain`；有 PR #9 的机位文案「画面在晃动，尽量拿稳」；版本 1.1，构建号 2。
+- 1.1 的「新功能」四种语言补上「手持拍摄也能自动识别」；`asc metadata validate` 0 个问题。TestFlight 的说明文字和 Beta 审核备注写在 `docs/app-store/testflight.md`。
+
+没有验证：这次只改了文字和构建号，没跑 `swift build` / `court-check` / `swift test`（PR #9 合入时已跑）；没在真机上装 1.1 (2)；手持识别在真实球场上的效果（见上一节）。
