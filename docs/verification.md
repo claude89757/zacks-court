@@ -2837,6 +2837,17 @@ PR #21 合入 main（`d9524b1`）后从新的 main 打 1.1 (6)：`scripts/refere
 - 没在真机上复现相机压力升高；改后真机上相机压力达到 `fair` 也会进入 L1，「已放慢」可能比以前更常出现，这是设计里写好的行为，但实际频率没测。
 - 这次的「已放慢」原因仍未确认（机位不记录热状态与降载，另提了任务补机位端诊断记录）。
 
+## 2026-11-05 TestFlight 1.1 (7)：相机压力触发降载
+
+PR #22 合入 main（`bda5abd`）后从新的 main 打 1.1 (7)：`scripts/reference-chain.sh status` 为 `off`，`asc builds next-build-number` 返回 7，`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 生成工程，Release 归档并手动导出（Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」），之后还原 `Info.plist`。
+
+- 解包检查：只有 `tracknetv3-base-fp16-v1`、`tracknetv3-base-v1`，没有 `AnalysisModels`，`LocalReferenceChain` 0 处；`CFBundleShortVersionString` 1.1、`CFBundleVersion` 7；签名 Apple Distribution，TeamIdentifier=A2YR8HBQKY。
+- 上传：`asc builds upload` 后构建 `178d9da8` 为 `VALID`；zh-Hans 的「测试什么」写成 1.1 (7) 的说明（相机负载触发降载、原因文案，以及请测试者在看到「已放慢」时记下提示和手机状态）。
+- 内测组「Zacks Court 内测」：`internalBuildState` 为 `IN_BETA_TESTING`。
+- 公测组「Zacks Court 公测」：构建 7 已加入该组，`externalBuildState` 为 `READY_FOR_BETA_SUBMISSION`；Beta 审核提交仍被构建 2 的 Beta 审核挡住（「Another build in the same train is already in beta review」），等它审完再用 `asc builds add-groups --submit` 提交最新构建。
+
+没有验证：没装到真机上；构建 7 没有重跑 `swift test`（代码与 PR #22 相同，本机检查在提 PR 前跑过）；公测组还没拿到构建 7。
+
 ## 2026-11-05 现场诊断：机位采集日志与一键诊断包
 
 为什么：用户在球场上实测（手机不在这台 Mac 旁边），反馈「球场识别很差」，但单手机使用时机位什么都不记，开始记录之前架机位、等球场的那段也没有记录，没法诊断。上一节「已放慢」查不出原因，也是因为机位不记录热状态与降载；采集日志每秒记下温度、相机压力和降载等级与原因，这一项一并补上。设计见 [camera-side-analysis.md](camera-side-analysis.md) 第 14 节。
