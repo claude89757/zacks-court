@@ -2769,3 +2769,13 @@ dt001 的原因：
 - 内测组 `IN_BETA_TESTING`。公测组已加入，但 Beta 审核提交仍被构建 2 的 Beta 审核挡住（`WAITING_FOR_REVIEW`），等它审完再提交构建 5。
 
 没有验证：没装到真机上。
+
+## 2026-11-04 App Store 1.1 改用 1.1 (5)
+
+用户要求正式版也更新到最新代码。1.1 (3) 的审核提交 `a8434131` 还在 `WAITING_FOR_REVIEW`（苹果没开始审），步骤同 1.1 (2) 换 1.1 (3)：
+- `asc review submissions-cancel` 撤回 `a8434131`，版本变为 `DEVELOPER_REJECTED`。
+- 「新功能」四种语言加了挑战一条，球场识别一条改写为「从第一张画面开始认球场，不用等手机静止」；没写秒数，也没写「挂网」，因为这两点只有 Mac 上的合成晃动数据。`asc metadata validate` 通过；`metadata plan` 只改 4 个 `whatsNew`，批准后 `apply` 4/4 成功。
+- `asc versions attach-build` 关联构建 `83460abd`（1.1 (5)，main 05b0fcc，`VALID`）；`asc review doctor` 只报旧提交已空（预期）；`asc review submit` 新提交 `361112b4`，1.1 为 `WAITING_FOR_REVIEW`。
+- 描述、关键词、截图、审核备注都没改。构建本身没有重打，是 TestFlight 那一个。
+
+没有验证：1.1 (5) 没装到真机上；撤回后审核要重新排队。

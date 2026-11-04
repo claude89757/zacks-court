@@ -6,7 +6,7 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 
 **1.0 已上架，免费**：2026-11-03 过审，但付费 App 协议、税务和银行一直没生效，175 个地区都是 `CANNOT_SELL`。2026-11-04 用户决定先改免费，改价后 175 个地区全部 `AVAILABLE`。
 
-**1.1 计划（2026-11-04 决定）：改成免费**，测速、界内外、录像这些基本功能全部免费；以后再规划收费的视频剪辑订阅（自动续期订阅，需要付费 App 协议、税务和银行）。**1.1 (2) 已于 2026-11-04 提交审核**（`WAITING_FOR_REVIEW`，过审后自动发布）；同一个构建在 TestFlight 内测组可装，公测组在等 Beta 审核。见第 6 节。
+**1.1 计划（2026-11-04 决定）：改成免费**，测速、界内外、录像这些基本功能全部免费；以后再规划收费的视频剪辑订阅（自动续期订阅，需要付费 App 协议、税务和银行）。**1.1 (5) 于 2026-11-04 提交审核**（提交 `361112b4`，`WAITING_FOR_REVIEW`，过审后自动发布；之前的 1.1 (2)、1.1 (3) 都在苹果开始审核前撤回换成了新构建）；同一个构建在 TestFlight 内测组可装，公测组在等 Beta 审核。见第 6 节。
 
 | 项目 | 状态 |
 | --- | --- |
@@ -117,7 +117,7 @@ asc status --app 6827224757                     # 发布状态总览
   - zh-Hans `d2c00019-6ef2-8eb5-8022-a0e8be458eaf`（creative-1.1-zh-Hans）
   - zh-Hant `50400019-6ef2-8eb5-8025-5480b09ff30c`（creative-1.1-zh-Hant）
   - en-US 和 en-GB 共用 `82c00019-6ef2-8eb5-8000-fcbcfa78ef4d`（creative-1.1-en）
-- **还没提交、没挂到版本上**：1.1 的审核提交（`422c5c95`）还开着，同一平台同时只能有一个审核提交；也不能改正在审核的版本。接下来：
+- **还没提交、没挂到版本上**：1.1 的审核提交（现在是 `361112b4`）还开着，同一平台同时只能有一个审核提交；也不能改正在审核的版本。接下来：
   1. 前提：1.1 的审核提交已关闭（过审或被拒，`asc review submissions list --app 6827224757`）。
   2. 单独提交素材审核：`asc review submissions-create --app 6827224757 --platform IOS`，把三张图逐个加进去（`asc review items add --submission <ID> --item-type appAssetLibraryImages --item-id <图片 ID>`），再 `asc review submissions-submit --id <ID> --confirm`。
   3. 前提：三张图都是 `APPROVED`（`asc asset-library images list --library-id 6827224757`），且 1.1 已上线。
@@ -131,7 +131,7 @@ asc status --app 6827224757                     # 发布状态总览
 - **2026-11-10 前续费开发者会员**。协议、发布证书和描述文件都到这天为止，过期后不能上传。
 
 实际顺序（App Store Connect 的改动不用逐步问用户，由顾问模型把关）：
-1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号现在是 `3`：1.1 (1) 于 2026-11-04 上传后，又合入了手持拍摄的球场识别（PR #9），重新打了 1.1 (2) 并提交审核；同日在苹果开始审核前撤回，换成带错球场修复（PR #13、#14）的 1.1 (3) 重新提交。之后每次合入 PR 都打一个新的 TestFlight 构建：1.1 (4)（PR #16 挑战）、1.1 (5)（PR #18 第一帧锁定球场）只进 TestFlight，App Store 审核仍是 1.1 (3)。
+1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号现在是 `3`：1.1 (1) 于 2026-11-04 上传后，又合入了手持拍摄的球场识别（PR #9），重新打了 1.1 (2) 并提交审核；同日在苹果开始审核前撤回，换成带错球场修复（PR #13、#14）的 1.1 (3) 重新提交。之后每次合入 PR 都打一个新的 TestFlight 构建：1.1 (4)（PR #16 挑战）、1.1 (5)（PR #18 第一帧锁定球场）只进 TestFlight。同日晚上用户要求正式版也用最新代码：撤回 1.1 (3) 的提交 `a8434131`（苹果还没开始审），推送四种语言新增挑战和更快球场识别的「新功能」，关联 1.1 (5)，重新提交（`361112b4`）。
 2. 确认 `scripts/reference-chain.sh status` 是 `off`，然后 `COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，Release 归档并导出（手动签名，Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」）。解开 IPA 逐个检查：只有两个 TrackNetV3，没有 `AnalysisModels`。然后上传。
 3. 「新功能」已写完（2026-11-04，包括 PR #6 球场跟踪和 PR #7 去掉手动标定）。建 1.1 版本（`asc versions create --app 6827224757 --version 1.1 --release-type AFTER_APPROVAL`）。推送四种语言的文字，其中 zh-Hant、en-GB 是新增的本地化，如果 `metadata apply` 不新建本地化，先用 `asc localizations create` 建。
 4. 截图：新版本会沿用 1.0 的 5 张旧截图，先删掉，再上传各语言目录里的新图。
