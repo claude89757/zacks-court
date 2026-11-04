@@ -61,6 +61,8 @@ public struct IndependentCourtCalibration: Sendable, Codable {
         public var fromKeypoints = 0
         /// Refined candidates dropped for putting the camera more than `maxBehindBaseline` back.
         public var tooFarBack = 0
+        /// Distinct search candidates skipped before refinement for the same reason.
+        public var startsTooFarBack = 0
     }
 
     public internal(set) var camera: IndependentPinholeCamera?
@@ -108,7 +110,8 @@ public struct IndependentCourtCalibration: Sendable, Codable {
 /// 3. every 2 transverse x 2 longitudinal lines with ITF labels gives a homography and a closed-form
 ///    pinhole camera (principal point at the image centre); plausible cameras are ranked by how well all
 ///    model lines cover the evidence;
-/// 4. the 4 best distinct cameras are refined: sub-pixel line profiles and a 7-parameter LM, 3 passes;
+/// 4. the 4 best distinct cameras within `maxBehindBaseline` of the near baseline (the 4 best overall when
+///    none is) are refined: sub-pixel line profiles and a 7-parameter LM, 3 passes;
 /// 5. refinements that put the camera more than `maxBehindBaseline` behind the near baseline are dropped;
 ///    the best remaining one is checked and refused with reasons when it is not trustworthy;
 /// 6. when it is refused only because the lines do not fit tightly enough (or the focal length is
@@ -267,7 +270,12 @@ public enum IndependentCourtCalibrator {
             return (p, others.max().map { p.q - $0 }, reasons)
         }
 
-        let refined = (keyStarts + distinct.prefix(options.refinedCandidates)).compactMap { attempt($0, from: $0.parameters) }
+        // the refinement slots go to starts that already stand inside the back fence; behind it a start is
+        // almost always a mislabelled line (floor lettering, another court) and would crowd out the court
+        let inFence = distinct.filter { -$0.centre.y <= options.maxBehindBaseline }
+        out.counts.startsTooFarBack = distinct.count - inFence.count
+        let starts = inFence.isEmpty ? Array(distinct.prefix(options.refinedCandidates)) : Array(inFence.prefix(options.refinedCandidates))
+        let refined = (keyStarts + starts).compactMap { attempt($0, from: $0.parameters) }
         out.counts.refined = refined.count
         guard !refined.isEmpty else { out.timings.refine = lap(); out.refusals = [.refinementFailed]; return finish() }
         func plausible(_ t: Tried) -> Bool { -t.C.y <= options.maxBehindBaseline }
