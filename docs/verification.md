@@ -2714,3 +2714,15 @@ dt001 的原因：
 - 浏览器手动检查：`court-probe web` 在这台 Mac 上用自研实时链回放 1080.mov，在内置浏览器里用配对码连上。状态栏点「⚑ 挑战」→ 先问单打或双打 → 自动打开第 18 拍的回放，结论「IN · 界内 · 发球 · 单打边线」；点「不是这一拍？挑战上一拍」→ 第 8 拍「OUT」，写「远端半场，误差较大」；全屏测速牌上的「⚑ 挑战」挑到一个没过网的拍，显示「这一拍没有过网，不判界内外」和「挑战上一拍」；关闭后测速牌出现「▶ 回放」。
 
 没有验证：真机（iPhone 机位 + Mac 或 iPhone 看板）上的挑战与多屏同时回放；App 端的语音；iPhone UI 测试只编译、没跑；判定精度（挑战用的是同一套单机位估计，远端误差更大）。
+
+## 2026-11-04 TestFlight 1.1 (4)：带挑战的内测和公测构建
+
+起因：用户要求以后每次合入 PR 后都更新内测和公测构建。这次从 main 41f6c9b（PR #16 挑战）打 1.1 (4)。App Store 审核仍是 1.1 (3)，不换。
+
+- 构建：`asc builds next-build-number` 返回 4，`CURRENT_PROJECT_VERSION` 改为 4；`scripts/reference-chain.sh status` 为 `off`；`COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，Release 归档（不签名）后手动签名导出（Apple Distribution，描述文件「Zacks Court App Store 20261027」），之后还原 `Info.plist`。这次只改了构建号和文档，完整的 Release 归档已经编过同一份工程，所以没再单跑无模型的模拟器编译；代码检查见上面「挑战」一节。
+- 解包检查：只有 `IndependentModels/tracknetv3-base-v1` 和 `tracknetv3-base-fp16-v1`，没有 `AnalysisModels`；二进制里 `LocalReferenceChain` 0 处，含挑战的 `court.hawkeye.challenge.previous`；版本 1.1，构建号 4。
+- `asc builds upload --wait`：build `3efee58a` 处理完成（`VALID`，`usesNonExemptEncryption` false）；加了 zh-Hans「测试什么」（[testflight.md](app-store/testflight.md)）。
+- 内测组：自动拿到，`IN_BETA_TESTING`。
+- 公测组：已加入，但 Beta 审核提交被拒，同一版本的构建 2 从 11-03 起还在 Beta 审核队列（`WAITING_FOR_REVIEW`）；构建 2 审完后再提交构建 4（`asc builds add-groups --build-id 3efee58a-fa9f-4058-ac0e-68e5483bdc6f --group 5ce8912f-4d0c-4670-9ebf-1e1a061cc20f --submit --confirm`）。
+
+没有验证：1.1 (4) 没装到真机上。
