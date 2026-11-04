@@ -243,6 +243,11 @@ struct CameraWorkspace: View {
                 if session.state != .active {
                     disabledReason(session.state == .paused ? "暂停中不能标记，点「继续」后可标记。" : "记录进行中才能标记。")
                 }
+                // 挑战 and 界内外 on the camera itself: one phone at the baseline is enough.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { ChallengeButton(model: model); HawkEyeButton(model: model); Spacer(minLength: 0) }
+                    VStack(alignment: .leading, spacing: 10) { ChallengeButton(model: model); HawkEyeButton(model: model) }
+                }
             } else {
                 if let summary = model.finishedRecord {
                     CourtSessionSummaryCard(summary: summary, viewDetails: { model.reloadHistory(); history = HistoryTarget(record: summary.sessionID) },

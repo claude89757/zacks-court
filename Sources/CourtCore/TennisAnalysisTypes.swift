@@ -66,6 +66,8 @@ public struct TennisShotEvent: Codable, Equatable, Identifiable, Sendable {
     public var origin: String?
     /// Fitted ball position at the hit (optional; the in-house chain only). Picks a serve's service box.
     public var hit: TennisCourtPoint?
+    /// A challenge of this shot's call (optional; set by the camera, docs/hawk-eye.md §7).
+    public var challenge: HawkEyeChallenge?
     public init(id: UUID = UUID(), streamID: UUID, sourcePTS: Double, endPTS: Double? = nil, stroke: TennisStrokeKind, confidence: Double, speedKPH: Double? = nil, speedReason: String? = nil, bounce: TennisBounceEstimate? = nil, sampleCount: Int = 1) {
         self.id = id; self.streamID = streamID; self.sourcePTS = sourcePTS; self.endPTS = endPTS; self.stroke = stroke; self.confidence = confidence; self.speedKPH = speedKPH; self.speedReason = speedReason; self.bounce = bounce; self.sampleCount = sampleCount
         self.speedReasonCode = speedReason.map(TennisReason.classify)
@@ -122,7 +124,7 @@ public struct TennisBounceRequest: @unchecked Sendable {
 // decoding stays synthesized (unknown keys such as the display text are ignored).
 extension TennisShotEvent {
     enum CodingKeys: String, CodingKey {
-        case id, streamID, sourcePTS, endPTS, stroke, confidence, speedKPH, speedReason, speedReasonCode, bounce, sampleCount, origin, hit
+        case id, streamID, sourcePTS, endPTS, stroke, confidence, speedKPH, speedReason, speedReasonCode, bounce, sampleCount, origin, hit, challenge
     }
     enum DisplayKeys: String, CodingKey { case speedReasonText, placementReasonText }
     public func encode(to encoder: Encoder) throws {
@@ -140,6 +142,7 @@ extension TennisShotEvent {
         try container.encode(sampleCount, forKey: .sampleCount)
         try container.encodeIfPresent(origin, forKey: .origin)
         try container.encodeIfPresent(hit, forKey: .hit)
+        try container.encodeIfPresent(challenge, forKey: .challenge)
         guard encoder.userInfo[.courtDisplayText] as? Bool == true else { return }
         var display = encoder.container(keyedBy: DisplayKeys.self)
         try display.encodeIfPresent(speedReasonText, forKey: .speedReasonText)

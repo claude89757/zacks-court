@@ -31,6 +31,7 @@
     <section class="bar" aria-label="机位状态" data-testid="court.web.status">
       <div id="camera-name" class="camera-name"></div>
       <div id="chips" class="chips"></div>
+      <button id="challenge-open" class="hawkeye-button challenge-button" data-challenge aria-label="挑战最近一拍" data-testid="court.challenge" hidden>⚑ 挑战</button>
       <button id="hawkeye-open" class="hawkeye-button" data-testid="court.hawkeye.toggle" hidden>界内外</button>
       <div id="warnings" class="warnings"></div>
     </section>
@@ -148,7 +149,8 @@
         <button role="radio" aria-checked="false" data-mode="serve" aria-label="发球球速" data-testid="court.speedboard.mode.serve">发球</button>
       </div>
       <span class="board-live"><span id="board-dot" class="board-dot"></span><span id="board-live">等待数据</span></span>
-      <button id="board-challenge" class="hawkeye-button" data-testid="court.speedboard.challenge" hidden>▶ 界内外回放</button>
+      <button id="board-challenge-go" class="hawkeye-button challenge-button" data-challenge aria-label="挑战最近一拍" data-testid="court.speedboard.challenge.go" hidden>⚑ 挑战</button>
+      <button id="board-challenge" class="hawkeye-button" aria-label="界内外回放" data-testid="court.speedboard.challenge" hidden>▶ 回放</button>
       <button id="board-hawkeye" class="hawkeye-button" data-testid="court.speedboard.hawkeye" hidden>界内外</button>
       <button id="board-close" class="board-close" aria-label="关闭测速牌" data-testid="court.speedboard.close">✕</button>
     </div>
@@ -180,10 +182,11 @@
       <div class="board-bottom"><span id="serve-status">等待发球</span><span title="发球按模型与回合上下文判断">模型估算</span></div>
       <p class="board-lock">浏览器不能阻止锁屏：长时间看板请在系统设置里关闭自动锁屏。</p>
     </div>
-    <!-- Hawk-Eye challenge replay (mirrors HawkEyeChallengeView): drawn from the model's estimates. -->
+    <!-- Challenge and line-call replay (mirrors HawkEyeChallengeView): drawn from the model's estimates.
+         app.js moves it to the page or the full-screen board, whichever is showing. -->
     <div id="challenge" class="challenge" hidden data-testid="court.hawkeye.challenge" aria-label="界内外回放">
       <div class="challenge-top">
-        <strong>界内外回放</strong><span id="challenge-number" class="muted"></span>
+        <strong id="challenge-heading">界内外回放</strong><span id="challenge-number" class="muted"></span>
         <span class="spacer"></span>
         <button id="challenge-prev" aria-label="上一个判定">‹</button>
         <button id="challenge-next" aria-label="下一个判定">›</button>
@@ -197,6 +200,11 @@
           <span id="challenge-shout" class="hawkeye-shout">OUT</span>
           <span class="hawkeye-text"><strong id="challenge-call"></strong><span id="challenge-detail" class="muted small"></span><span id="challenge-margin" class="muted small"></span></span>
         </div>
+        <div id="challenge-unjudged" class="challenge-unjudged" hidden data-testid="court.hawkeye.unjudged">
+          <div class="challenge-word">CHALLENGE</div><div id="challenge-unjudged-sub" class="muted"></div>
+          <p class="challenge-reason"><span id="challenge-spinner" class="spinner" aria-hidden="true"></span><span id="challenge-reason"></span></p>
+          <button id="challenge-unjudged-prev" class="challenge-prev-shot" data-previous data-testid="court.hawkeye.challenge.previous" hidden>↶ 不是这一拍？挑战上一拍</button>
+        </div>
         <p id="challenge-empty" class="notice" hidden>还没有判过界内外的拍。开启界内外后，近端（或全场）有落点的拍会出现在这里。</p>
       </div>
       <div id="challenge-foot" class="shot challenge-foot"></div>
@@ -209,6 +217,16 @@
     <span class="hawkeye-text"><strong id="hawkeye-title">界内外</strong><span id="hawkeye-detail" class="muted small"></span></span>
   </button>
   <button id="hawkeye-sound" class="hawkeye-sound" hidden data-testid="court.hawkeye.sound.unlock">🔈 点此开启 Out! 语音</button>
+
+  <dialog id="challenge-ask" class="sheet narrow" data-testid="court.challenge.ask">
+    <h2>挑战：按单打还是双打边线判？</h2>
+    <p class="muted small">机位重新判最近一拍，所有屏幕一起播放回放。本场只问一次。</p>
+    <div class="row">
+      <button class="primary" data-challenge-format="singles" data-testid="court.challenge.format.singles">单打</button>
+      <button class="primary" data-challenge-format="doubles" data-testid="court.challenge.format.doubles">双打</button>
+      <button id="challenge-ask-cancel">取消</button>
+    </div>
+  </dialog>
 
   <dialog id="hawkeye-ask" class="sheet narrow" data-testid="court.hawkeye.ask">
     <h2>开启界内外：本场是单打还是双打？</h2>

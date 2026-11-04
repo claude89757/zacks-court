@@ -86,7 +86,8 @@ WebSocket 文本帧是一个 JSON 信封：`{"kind": "<WireKind>", "body": <原 
 - **回执按发起者路由**：服务器记住「命令 ID → 客户端」，`reply` 只发给发起它的那个浏览器；原生看板收不到浏览器请求的回执，反之亦然。回执的 `ok` 按命令执行后的实际状态判断（例如两个浏览器同时点暂停，第二个收到「会话已暂停」而不是静默成功）。
 - **每连接积压上限**：与 `CourtConnection` 同一规则，某个浏览器的发送积压超过 8 MB 就断开它，它重连后拿到全量补发；慢平板不会吃光机位内存，也不影响其他看板。
 - **一致性**：重连时机位全量补发，与原生看板同一套逻辑；浏览器按稳定 ID upsert。
-- **界内外**：机位 `hello.capabilities` 含 `hawkEye` 时页面显示「界内外」按钮（状态栏与测速牌），开启时先选单打或双打，经 `control.hawkEye` 发给机位，以 `status.hawkEye` 的回显为准。判定在机位上做，随逐拍行的 `bounce.hawkEye` 到达；页面对每拍只提醒一次，补发（`resync`）里的旧拍不提醒。出界时用 `speechSynthesis` 说「Out!」：浏览器要求先点一下页面，开启界内外的那一下会顺便解锁，刷新后显示「点此开启 Out! 语音」。语音开关存在本浏览器。全屏测速牌上有「界内外回放」：在 canvas 上按和 App 相同的几何回放判过的拍（`app.js` 里的 `replayScene` 对应 `HawkEyeReplay.swift`），下面用 `/api/clip` 播放这一拍的视频；回放打开时新的判定卡片不遮挡它，语音照常。规则见 [hawk-eye.md](hawk-eye.md)。
+- **界内外**：机位 `hello.capabilities` 含 `hawkEye` 时页面显示「界内外」按钮（状态栏与测速牌），开启时先选单打或双打，经 `control.hawkEye` 发给机位，以 `status.hawkEye` 的回显为准。判定在机位上做，随逐拍行的 `bounce.hawkEye` 到达；页面对每拍只提醒一次，补发（`resync`）里的旧拍不提醒。出界时用 `speechSynthesis` 说「Out!」：浏览器要求先点一下页面，开启界内外的那一下会顺便解锁，刷新后显示「点此开启 Out! 语音」。语音开关存在本浏览器。全屏测速牌上有「回放」：在 canvas 上按和 App 相同的几何回放判过或挑战过的拍（`app.js` 里的 `replayScene` 对应 `HawkEyeReplay.swift`），下面用 `/api/clip` 播放这一拍的视频；回放打开时新的判定卡片不遮挡它，语音照常。规则见 [hawk-eye.md](hawk-eye.md)。
+- **挑战**：机位声明 `challenge` 能力时，状态栏和测速牌标题行有「⚑ 挑战」，发 `control`（`command: "challenge"`，带 `format`，「挑战上一拍」时再带 `shot`）。界内外关着时第一次挑战先问单打或双打，本场只问一次（存在本页的存储里）。结果随逐拍行的 `challenge` 到达：页面第一次看到某个挑战（不是 `resync` 补发的）就打开回放，盖在页面或全屏测速牌上；落点还在算时显示原因并转圈，到了自动换成回放；走到结论时说「Out!」或「In.」，每个挑战一次。规则见 [hawk-eye.md](hawk-eye.md) 第 7 节。
 
 ## 6. 低清预览：JPEG
 

@@ -22,6 +22,8 @@ public struct WireHello: Codable, Sendable {
     public static let clips = "clips"
     /// Camera makes line calls with the settings of `WireControl.Command.hawkEye`.
     public static let hawkEye = "hawkEye"
+    /// Camera takes challenges (`WireControl.Command.challenge`) and stores them on shot rows.
+    public static let challenge = "challenge"
     public init(role: PeerRole, device: String, hardware: String, app: String, modelVersion: String? = nil, session: CourtSession? = nil, capabilities: [String]? = nil) {
         self.role = role; self.device = String(device.prefix(80)); self.hardware = String(hardware.prefix(40))
         self.app = String(app.prefix(40)); self.modelVersion = modelVersion; self.session = session
@@ -121,6 +123,11 @@ public struct WireControl: Codable, Sendable {
         /// Line-call settings `hawkEye` (only to a camera whose hello lists `WireHello.hawkEye`). The
         /// camera echoes them in `CameraStatus.hawkEye`.
         case hawkEye
+        /// Challenge a shot's line call (only to a camera whose hello lists `WireHello.challenge`):
+        /// `shot`, or the newest shot when nil; `format` the lines to use when Hawk-Eye was never set.
+        /// The camera stores the result on the row (`TennisShotEvent.challenge`) and sends the row to
+        /// every display, which plays the replay.
+        case challenge
     }
     public var id = UUID()
     public var command: Command
@@ -138,6 +145,9 @@ public struct WireControl: Codable, Sendable {
     public var far: TennisHandedness?
     /// hawkEye: the settings to use from now on.
     public var hawkEye: HawkEyeSettings?
+    /// challenge: the shot (nil: the newest) and the singles/doubles lines to judge it by.
+    public var shot: UUID?
+    public var format: HawkEyeFormat?
     public var enabled: Bool?
     public var offset: Int64?
     public var replyTo: UUID?

@@ -212,8 +212,8 @@ select { width: 100%; }
 }
 @keyframes hawkeye-in { from { transform: translateY(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
 
-/* Hawk-Eye challenge replay, inside the board so it stays in full screen. */
-.challenge { position: absolute; inset: 0; z-index: 25; background: var(--bg); display: flex; flex-direction: column;
+/* Challenge replay: fixed above the page and the board; app.js keeps it inside a full-screen board. */
+.challenge { position: fixed; inset: 0; z-index: 30; background: var(--bg); display: flex; flex-direction: column;
   padding: max(12px, env(safe-area-inset-top)) max(12px, 2vw) max(12px, env(safe-area-inset-bottom)); }
 .challenge-top { display: flex; align-items: center; gap: 8px; }
 .challenge-top .spacer { flex: 1; }
@@ -237,3 +237,11 @@ select { width: 100%; }
 .challenge-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 8px; }
 .challenge-foot video { width: 100%; max-height: 32vh; }
 .challenge-stage { min-height: 38vh; }
+.challenge-button { border-color: var(--warning); color: var(--warning); }
+.challenge-unjudged { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; text-align: center; padding: 20px; }
+.challenge-reason { display: flex; align-items: center; gap: 10px; font-size: 1.2rem; font-weight: 600; margin: 0; }
+.challenge-prev-shot { min-height: 44px; border-radius: 999px; padding: 0 16px; }
+.spinner { width: 18px; height: 18px; border: 3px solid rgba(255, 255, 255, 0.3); border-top-color: #fff; border-radius: 50%; }
+@media (prefers-reduced-motion: no-preference) { .spinner { animation: spin 0.9s linear infinite; } }
+@keyframes spin { to { transform: rotate(360deg); } }

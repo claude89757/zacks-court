@@ -189,7 +189,7 @@ function receive(message) {
       break;
     case "status": state.status = body; agree(body); hawkStatus(body); break;
     case "session": applySession(body); break;
-    case "analysis": hawkRows(body); applyAnalysis(body); break;
+    case "analysis": hawkRows(body); applyAnalysis(body); challengeRows(body); break;
     case "control":
       if (body.command === "reply") {
         const waiter = state.waiters.get(body.replyTo);
@@ -636,9 +636,10 @@ function unlockVoice() {
   speechSynthesis.speak(silent);
   state.hawkEye.unlocked = true;
 }
-function sayOut() {
+function sayOut() { say("Out!"); }
+function say(text) {
   if (!state.hawkEye.voice || !("speechSynthesis" in window)) return;
-  const utterance = new SpeechSynthesisUtterance("Out!");
+  const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "en-GB"; utterance.rate = 1; utterance.pitch = 1.1; utterance.volume = 1;
   speechSynthesis.cancel();
   speechSynthesis.speak(utterance);
@@ -692,9 +693,11 @@ function renderHawkEye() {
   $("hawkeye-far-note").textContent = settings.farHalf ? "远端落点看得斜，误差是近端的几倍，远端的判定更常显示「压线附近」。" : "只判近端半场：远端的落点误差大，默认不判。";
   $("hawkeye-voice").checked = state.hawkEye.voice;
   $("hawkeye-pending").hidden = !state.hawkEye.pending;
-  $("board-challenge").hidden = !(settings.enabled || dashboardRows().some((row) => row.bounce?.hawkEye));
+  $("board-challenge").hidden = !dashboardRows().some((row) => lineCall(row) || row.challenge);
+  for (const button of document.querySelectorAll("[data-challenge]")) button.hidden = !(challengeSupported() && state.connected);
   const chip = $("hawkeye-sound");
-  chip.hidden = !(supported && settings.enabled && state.hawkEye.voice && !state.hawkEye.unlocked && "speechSynthesis" in window);
+  // Challenges are called out too, so a page that can see them offers the unlock even with 界内外 off.
+  chip.hidden = !(supported && (settings.enabled || challengeSupported()) && state.hawkEye.voice && !state.hawkEye.unlocked && "speechSynthesis" in window);
   const host = document.fullscreenElement || document.body;
   if (!chip.hidden && chip.parentElement !== host) host.appendChild(chip);
 }
@@ -712,8 +715,8 @@ const v3 = {
   norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
 };
 
-function replayScene(event) {
-  const b = event.bounce, j = b?.hawkEye;
+function replayScene(event, judgement) {
+  const b = event.bounce, j = judgement || lineCall(event);
   if (!j || !Number.isFinite(b.xMeters) || !Number.isFinite(b.yMeters)) return null;
   const x = b.xMeters, y = b.yMeters, c = HE.centreX, far = y > HE.netY;
   const bounce = [x, y, HE.ball];
@@ -787,9 +790,11 @@ function replayTiming(hasFlight) {
   return { title, flightEnd, zoomEnd, markEnd, total: markEnd + 0.3 };
 }
 
-const challenge = { shots: [], index: 0, started: 0, frame: null, scene: null, running: false };
+const challenge = { shots: [], index: 0, started: 0, frame: null, scene: null, running: false, focus: null };
+/// A challenge's verdict replaces the live call (docs/hawk-eye.md §7).
+function lineCall(row) { return row.challenge?.judgement || row.bounce?.hawkEye || null; }
 function judgedShots() {
-  return dashboardRows().map((row, i) => ({ number: i + 1, shot: row })).filter((e) => e.shot.bounce?.hawkEye);
+  return dashboardRows().map((row, i) => ({ number: i + 1, shot: row })).filter((e) => lineCall(e.shot) || e.shot.challenge);
 }
 function cssColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#fff"; }
 function callColor(call) { return cssColor(call === "out" ? "--recording" : call === "in" ? "--green" : "--warning"); }
@@ -849,47 +854,157 @@ function paintReplay(scene, t) {
 
 function showChallenge(keepIndex) {
   $("hawkeye-call").hidden = true;   // a banner raised before opening would cover the replay's buttons
+  const overlay = $("challenge");
+  // A full-screen board shows only its own subtree; otherwise the replay covers the page.
+  const host = document.fullscreenElement || document.body;
+  if (overlay.parentElement !== host) host.appendChild(overlay);
+  overlay.hidden = false;
   challenge.shots = judgedShots();
-  if (!keepIndex) challenge.index = challenge.shots.length - 1;
+  if (challenge.focus) {
+    const i = challenge.shots.findIndex((e) => e.shot.id === challenge.focus);
+    if (i >= 0) challenge.index = i;
+  } else if (!keepIndex) challenge.index = challenge.shots.length - 1;
+  challenge.index = Math.max(0, Math.min(challenge.index, challenge.shots.length - 1));
   const current = challenge.shots[challenge.index];
-  const scene = current && replayScene(current.shot);
-  $("challenge-empty").hidden = Boolean(scene);
+  const shot = current?.shot, challenged = Boolean(shot?.challenge);
+  const scene = current && replayScene(shot);
+  const unjudged = Boolean(current && !scene && challenged);
+  $("challenge-heading").textContent = challenged ? "挑战" : "界内外回放";
+  $("challenge-empty").hidden = Boolean(current);
+  $("challenge-unjudged").hidden = !unjudged;
   $("challenge-canvas").hidden = !scene;
   $("challenge-prev").disabled = challenge.index <= 0;
   $("challenge-next").disabled = challenge.index >= challenge.shots.length - 1;
-  $("challenge-number").textContent = current ? `#${current.number}` : "";
+  $("challenge-number").textContent = current ? `第 ${current.number} 拍` : "";
   const foot = $("challenge-foot");
   foot.innerHTML = "";
   challenge.scene = scene;
-  if (!scene) { $("challenge-title").hidden = true; $("challenge-verdict").hidden = true; return; }
+  cancelAnimationFrame(challenge.frame);
+  if (!scene) {
+    $("challenge-title").hidden = true; $("challenge-verdict").hidden = true;
+    if (unjudged) {
+      const pending = shot.challenge.pending === true;
+      $("challenge-unjudged-sub").textContent = `挑战 · 第 ${current.number} 拍`;
+      $("challenge-spinner").hidden = !pending;
+      $("challenge-reason").textContent = shot.challenge.reason || "这一拍没找到落点，无法判定界内外";
+      $("challenge-unjudged-prev").hidden = pending || !previousBounced(shot);
+      foot.innerHTML = clipButton(shot);
+    }
+    return;
+  }
   const j = scene.j, look = CALLS[j.call] || CALLS.close;
-  $("challenge-sub").textContent = `界内外回放 · 第 ${current.number} 拍`;
+  $("challenge-sub").textContent = `${challenged ? "挑战" : "界内外回放"} · 第 ${current.number} 拍`;
   const verdict = $("challenge-verdict");
   verdict.className = `challenge-verdict ${j.call}`; verdict.style.setProperty("--call", look.color);
   $("challenge-shout").textContent = look.shout;
-  $("challenge-call").textContent = look.text + (j.serve ? " · 发球" : "");
+  $("challenge-call").textContent = look.text + (j.serve ? " · 发球" : "") + (challenged ? ` · ${FORMATS[j.format] || "单打"}边线` : "");
   $("challenge-detail").textContent = hawkDetail(j);
-  $("challenge-margin").textContent = `模型估计，不是判罚 · 误差范围 ±${Math.round(j.marginM * 100)} 厘米`;
-  $("challenge-canvas").setAttribute("aria-label", `第 ${current.number} 拍界内外回放：${look.text}，${hawkDetail(j)}`);
-  const session = isOpen(state.session) ? state.session.id : null;
-  foot.innerHTML = (session ? `<button data-clip="${esc(current.shot.id)}" data-session="${esc(session)}">看这一拍的视频</button>` : "")
-    + `<span class="muted small">${current.shot.hit ? "轨迹按击球点和落点估算" : "这条链没有击球点，只回放落点"}</span>`;
+  $("challenge-margin").textContent = `${j.farHalf ? "远端半场，误差较大 · " : ""}模型估计，不是判罚 · 误差范围 ±${Math.round(j.marginM * 100)} 厘米`;
+  $("challenge-canvas").setAttribute("aria-label", `第 ${current.number} 拍${challenged ? "挑战" : "界内外回放"}：${look.text}，${hawkDetail(j)}`);
+  const previous = challenged && previousBounced(shot);
+  foot.innerHTML = clipButton(shot)
+    + (previous ? `<button data-previous data-testid="court.hawkeye.challenge.previous">↶ 不是这一拍？挑战上一拍</button>` : "")
+    + `<span class="muted small">${shot.hit ? "轨迹按击球点和落点估算" : "这条链没有击球点，只回放落点"}</span>`;
   challenge.started = performance.now();
   const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  cancelAnimationFrame(challenge.frame);
+  const timing = replayTiming(Boolean(scene.flight));
   const step = () => {
     const t = reduce ? 99 : (performance.now() - challenge.started) / 1000;
-    challenge.running = !$("challenge").hidden && paintReplay(scene, t);
+    challenge.running = !overlay.hidden && paintReplay(scene, t);
+    if (!overlay.hidden && t >= timing.markEnd) announceChallenge(shot);
     if (challenge.running) challenge.frame = requestAnimationFrame(step);
   };
   step();
 }
-$("board-challenge").addEventListener("click", () => { showCall(null); $("challenge").hidden = false; showChallenge(false); });
-$("challenge-close").addEventListener("click", () => { $("challenge").hidden = true; cancelAnimationFrame(challenge.frame); $("challenge-foot").innerHTML = ""; });
+function clipButton(shot) {
+  const session = isOpen(state.session) ? state.session.id : null;
+  return session ? `<button data-clip="${esc(shot.id)}" data-session="${esc(session)}">看这一拍的视频</button>` : "";
+}
+function closeChallenge() {
+  $("challenge").hidden = true; challenge.focus = null;
+  cancelAnimationFrame(challenge.frame); $("challenge-foot").innerHTML = "";
+}
+
+// MARK: Challenges (docs/hawk-eye.md §7): any screen asks, the camera judges, every screen replays.
+
+const CHALLENGE_FORMATS_KEY = "court.web.challenge.formats";
+function loadFormats() { try { return JSON.parse(load(CHALLENGE_FORMATS_KEY) || "{}") || {}; } catch { return {}; } }
+state.challenges = { seen: new Set(), spoken: new Set(), formats: loadFormats(), shot: null };
+function challengeSupported() { return (state.camera?.capabilities || []).includes("challenge"); }
+const challengeFormatKey = () => (isOpen(state.session) ? state.session.id : "recent");
+/// The live line-call format when 界内外 is on; otherwise the one asked for this session.
+function challengeFormat() {
+  const settings = hawkSettings();
+  return settings.enabled ? settings.format : state.challenges.formats[challengeFormatKey()];
+}
+function previousBounced(shot) {
+  const rows = dashboardRows(), i = rows.findIndex((row) => row.id === shot.id);
+  for (let k = i - 1; k >= 0; k -= 1) {
+    if (Number.isFinite(rows[k].bounce?.xMeters) && Number.isFinite(rows[k].bounce?.yMeters)) return rows[k];
+  }
+  return null;
+}
+function askChallenge(shot) {
+  unlockVoice();
+  if (!challengeSupported()) { toast(state.connected ? "机位的 App 版本不支持挑战，请更新机位。" : "连接机位后才能挑战。"); return; }
+  state.challenges.shot = shot || null;
+  const format = challengeFormat();
+  if (format) sendChallenge(format); else $("challenge-ask").showModal();
+}
+async function sendChallenge(format) {
+  const fields = { format };
+  if (state.challenges.shot) fields.shot = state.challenges.shot;
+  state.challenges.shot = null;
+  const reply = await command("challenge", fields);
+  if (reply.ok === false) toast(reply.message || "机位没有受理这次挑战。");
+}
+for (const button of document.querySelectorAll("[data-challenge]")) button.addEventListener("click", () => askChallenge(null));
+for (const button of document.querySelectorAll("#challenge-ask [data-challenge-format]")) {
+  button.addEventListener("click", () => {
+    $("challenge-ask").close();
+    const format = button.dataset.challengeFormat;
+    state.challenges.formats[challengeFormatKey()] = format;
+    save(CHALLENGE_FORMATS_KEY, JSON.stringify(state.challenges.formats));
+    sendChallenge(format);
+  });
+}
+$("challenge-ask-cancel").addEventListener("click", () => { state.challenges.shot = null; $("challenge-ask").close(); });
+
+/// A challenge not seen before opens the replay on every screen; a catch-up only remembers them.
+/// The open challenge redraws when its row changes (the pending result arrives).
+function challengeRows(message) {
+  const seen = state.challenges.seen;
+  let open = null, refresh = false;
+  for (const row of message.events || []) {
+    const c = row.challenge;
+    if (!c) continue;
+    if (message.resync) { seen.add(c.id); continue; }
+    if (!seen.has(c.id)) { seen.add(c.id); open = row; continue; }
+    if (!$("challenge").hidden && challenge.focus === row.id) refresh = true;
+  }
+  if (open) { showCall(null); challenge.focus = open.id; showChallenge(false); }
+  else if (refresh) showChallenge(true);
+}
+/// The verdict is called out once per challenge, when the replay reaches it; never for 「压线附近」.
+function announceChallenge(shot) {
+  const c = shot.challenge, j = c?.judgement;
+  if (!j || j.call === "close" || state.challenges.spoken.has(c.id)) return;
+  state.challenges.spoken.add(c.id);
+  say(j.call === "out" ? "Out!" : "In.");
+}
+
+$("board-challenge").addEventListener("click", () => { showCall(null); challenge.focus = null; showChallenge(false); });
+$("challenge-close").addEventListener("click", closeChallenge);
 $("challenge-again").addEventListener("click", () => showChallenge(true));
-$("challenge-prev").addEventListener("click", () => { challenge.index = Math.max(0, challenge.index - 1); showChallenge(true); });
-$("challenge-next").addEventListener("click", () => { challenge.index = Math.min(challenge.shots.length - 1, challenge.index + 1); showChallenge(true); });
+$("challenge-prev").addEventListener("click", () => { challenge.focus = null; challenge.index = Math.max(0, challenge.index - 1); showChallenge(true); });
+$("challenge-next").addEventListener("click", () => { challenge.focus = null; challenge.index = Math.min(challenge.shots.length - 1, challenge.index + 1); showChallenge(true); });
 $("challenge-foot").addEventListener("click", (event) => { const button = event.target.closest("button[data-clip]"); if (button) playClip(button); });
+// 「不是这一拍？挑战上一拍」: the camera picked the newest shot, the disputed one may be earlier.
+$("challenge").addEventListener("click", (event) => {
+  if (!event.target.closest("button[data-previous]")) return;
+  const current = challenge.shots[challenge.index]?.shot, previous = current && previousBounced(current);
+  if (previous) askChallenge(previous.id);
+});
 // A resize (rotation, split screen) redraws the finished replay at the new size; a running one picks it up itself.
 if (typeof ResizeObserver === "function") new ResizeObserver(() => { if (!$("challenge").hidden && challenge.scene && !challenge.running) paintReplay(challenge.scene, 99); }).observe($("challenge"));
 
@@ -907,8 +1022,8 @@ $("board-open").addEventListener("click", () => {
 function closeBoard() {
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   $("board").hidden = true;
-  $("challenge").hidden = true; cancelAnimationFrame(challenge.frame);
-  for (const id of ["toast", "hawkeye-call", "hawkeye-sound"]) if ($(id).parentElement !== document.body) document.body.appendChild($(id));
+  closeChallenge();
+  for (const id of ["toast", "hawkeye-call", "hawkeye-sound", "challenge"]) if ($(id).parentElement !== document.body) document.body.appendChild($(id));
   state.wakeLock?.release().catch(() => {}); state.wakeLock = null;
   showLockHint();
 }
