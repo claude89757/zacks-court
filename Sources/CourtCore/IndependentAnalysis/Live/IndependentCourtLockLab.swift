@@ -19,14 +19,18 @@ public final class IndependentCourtLockLab {
         public var motionLookback: Double
         public var shakePixels: Double, trackPixels: Double
         public var stillTrackInterval: Double?
+        public var movingInterval: Double?
+        public var predictTracking = true
         public init() {
             let o = IndependentLiveCourt.Options()
             sampleInterval = o.sampleInterval; frames = o.frames; firstAttemptFrames = o.firstAttemptFrames
             retryFrames = o.retryFrames; motionPixels = o.motionPixels; motionLookback = o.motionLookback
             shakePixels = o.shakePixels; trackPixels = o.trackPixels; stillTrackInterval = o.stillTrackInterval
+            movingInterval = o.movingInterval; predictTracking = o.predictTracking
         }
         public static func before20261104() -> Self {
-            var s = Self(); s.firstAttemptFrames = 9; s.retryFrames = 4; s.motionPixels = nil; s.stillTrackInterval = nil; return s
+            var s = Self(); s.firstAttemptFrames = 9; s.retryFrames = 4; s.motionPixels = nil; s.stillTrackInterval = nil
+            s.movingInterval = nil; s.predictTracking = false; return s
         }
     }
 
@@ -73,7 +77,8 @@ public final class IndependentCourtLockLab {
         o.simulatedLatencyScale = settings.latencyScale
         o.motionPixels = settings.motionPixels; o.motionLookback = settings.motionLookback
         o.shakePixels = settings.shakePixels; o.trackPixels = settings.trackPixels
-        o.stillTrackInterval = settings.stillTrackInterval
+        o.stillTrackInterval = settings.stillTrackInterval; o.movingInterval = settings.movingInterval
+        o.predictTracking = settings.predictTracking
         court = IndependentLiveCourt(options: o)
     }
 
@@ -154,7 +159,7 @@ extension IndependentCourtLockLab {
     public static func fit(_ pixels: CVPixelBuffer, camera: IndependentPinholeCamera, movedPixels: Double) -> FrameFit? {
         let began = ProcessInfo.processInfo.systemUptime
         guard let sample = IndependentLiveCourt.sample(pixels), let image = try? IndependentLiveCourt.median([sample]) else { return nil }
-        guard let refined = IndependentCourtCalibrator.refine(image, start: [camera.f] + camera.rvec + camera.tvec) else {
+        guard let refined = IndependentCourtCalibrator.refine(image, start: IndependentCourtCalibrator.parameters(camera)) else {
             return FrameFit(fits: false, lines: 0, nearTransverse: 0, rms: nil, movedPixels: nil, seconds: ProcessInfo.processInfo.systemUptime - began)
         }
         let used = refined.linesUsed

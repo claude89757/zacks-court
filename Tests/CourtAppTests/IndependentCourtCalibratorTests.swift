@@ -24,6 +24,33 @@ final class IndependentCourtCalibratorTests: XCTestCase {
         XCTAssertLessThan(maximum, 1.5, "max reference-point error in px")
         XCTAssertLessThan(try XCTUnwrap(result.fitRMS), 0.5)
         XCTAssertLessThan(try XCTUnwrap(result.focalLengthSD), 3)
+        XCTAssertNil(result.principalOffset, "a centred camera keeps the centred fit")
+    }
+
+    /// A phone filming a screen whose picture sits 85 px right of the image centre (iPhone, 2026-11-04):
+    /// the centred fit leaves every line a few px off and is refused; stage 6 frees the horizontal
+    /// principal coordinate and finds the camera with the same gates.
+    func testFindsCameraWithOffCentrePrincipalPoint() throws {
+        let c = Self.camera
+        let shifted = IndependentPinholeCamera(f: c.f, rvec: c.rvec, tvec: c.tvec, principal: [1045, 540])
+        let image = try CourtRenderer(camera: shifted).render()
+        var centredOnly = IndependentCourtCalibrator.Options()
+        centredOnly.freePrincipalPixels = nil
+        XCTAssertFalse(IndependentCourtCalibrator.calibrate(image, options: centredOnly).found)
+
+        let result = IndependentCourtCalibrator.calibrate(image)
+        XCTAssertTrue(result.found, "refusals: \(result.refusals)")
+        XCTAssertEqual(try XCTUnwrap(result.principalOffset), 85, accuracy: 5)
+        let cam = try XCTUnwrap(result.camera)
+        XCTAssertEqual(cam.principal[0], 960 + result.principalOffset!, accuracy: 1e-9)
+        XCTAssertEqual(cam.f, c.f, accuracy: 0.01 * c.f)
+        XCTAssertLessThan(simd_length(cam.centre - c.centre), 0.1)
+        let (mean, maximum) = Self.referencePointError(cam, shifted)
+        XCTAssertLessThan(mean, 0.5, "mean reference-point error in px")
+        XCTAssertLessThan(maximum, 1.5, "max reference-point error in px")
+        // refining from the found camera keeps its principal point (the live tracker's path)
+        let again = try XCTUnwrap(IndependentCourtCalibrator.refine(image, start: IndependentCourtCalibrator.parameters(cam)))
+        XCTAssertEqual(again.camera.principal[0], cam.principal[0], accuracy: 2)
     }
 
     /// With the near baseline painted over, focal length and distance trade off; the solve must refuse
@@ -190,8 +217,9 @@ struct CourtRenderer {
 
     func render(masked: ((Int, Int) -> Bool)? = nil) throws -> IndependentCourtImage {
         let R = camera.rotation, t = camera.translation, f = camera.f
-        let H = simd_double3x3(rows: [SIMD3(f * R[0][0] + 960 * R[0][2], f * R[1][0] + 960 * R[1][2], f * t.x + 960 * t.z),
-                                      SIMD3(f * R[0][1] + 540 * R[0][2], f * R[1][1] + 540 * R[1][2], f * t.y + 540 * t.z),
+        let cx = camera.principal[0], cy = camera.principal[1]
+        let H = simd_double3x3(rows: [SIMD3(f * R[0][0] + cx * R[0][2], f * R[1][0] + cx * R[1][2], f * t.x + cx * t.z),
+                                      SIMD3(f * R[0][1] + cy * R[0][2], f * R[1][1] + cy * R[1][2], f * t.y + cy * t.z),
                                       SIMD3(R[0][2], R[1][2], t.z)])
         let Hi = H.inverse
         let n = width * height

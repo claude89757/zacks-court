@@ -5,7 +5,7 @@ import Foundation
 import simd
 
 /// `court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios a,b] [--seed N] [--latency K]
-/// [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]`
+/// [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]`
 /// (`--before`: the search as it was before the motion check; `--anyway`: run without a steady solve,
 /// to see only whether the court locks and how much the picture moves.)
 ///
@@ -37,7 +37,7 @@ enum CourtLockCommand {
     }
 
     static func run(_ args: [String]) throws {
-        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]") }
+        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]") }
         let video = URL(fileURLWithPath: args[1]), out = URL(fileURLWithPath: args[2])
         func value(_ flag: String) -> String? { args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
         let start = value("--start").flatMap(Double.init) ?? 0, duration = value("--duration").flatMap(Double.init) ?? 45
@@ -52,6 +52,8 @@ enum CourtLockCommand {
         if let v = value("--lookback").flatMap(Double.init) { settings.motionLookback = v }
         if let v = value("--shake").flatMap(Double.init) { settings.shakePixels = v }
         if let v = value("--still-track") { settings.stillTrackInterval = v == "off" ? nil : Double(v) }
+        if let v = value("--moving") { settings.movingInterval = v == "off" ? nil : Double(v) }
+        if args.contains("--no-predict") { settings.predictTracking = false }
 
         // Reference: the steady solve of the first 20 s of the stretch (25 samples, 0.8 s apart).
         var reference: IndependentPinholeCamera?, refusals: [String] = []
@@ -157,9 +159,9 @@ enum CourtLockCommand {
                      roll: rng.sign() * rng.uniform(0.2, 0.5) * degree)
         }
         // Hand-held shake: three sinusoids per axis (0.5-3 Hz), fading out while easing into the new pose.
-        func shake(from a: Rotation, to b: Rotation, t0: Double, t1: Double) -> (Double) -> Rotation {
+        func shake(from a: Rotation, to b: Rotation, t0: Double, t1: Double, scale: Double = 1) -> (Double) -> Rotation {
             var waves: [[(Double, Double, Double)]] = []
-            for amplitude in [1.2, 1.0, 0.5] {          // pan, tilt, roll in degrees
+            for amplitude in [1.2 * scale, 1.0 * scale, 0.5 * scale] {          // pan, tilt, roll in degrees
                 waves.append((0..<3).map { _ in (amplitude * degree * rng.uniform(0.4, 1.0), rng.uniform(0.5, 3.0), rng.uniform(0, 2 * .pi)) })
             }
             return { t in
@@ -189,6 +191,12 @@ enum CourtLockCommand {
                 let a = w.map { $0.0 * sin(2 * .pi * $0.1 * t + $0.2) }
                 return (Rotation(pan: p.pan + a[0], tilt: p.tilt + a[1], roll: p.roll + a[2]), true)
             }
+        case "handheld", "shaky":
+            // a phone held in the hand the whole time, never settling, scored as if still: the same kind of
+            // shake as while mounting, at 15% (a steady hold, peaks around 40 px per second) or 40% (a shaky
+            // hold, peaks around 110 px per second)
+            let s = shake(from: Rotation(), to: Rotation(), t0: 0, t1: .infinity, scale: name == "shaky" ? 0.4 : 0.15)
+            return Scenario(name: name) { t in (s(t), true) }
         case "bump":
             let p = pose(), s = shake(from: Rotation(), to: p, t0: 15, t1: 17)
             return Scenario(name: name) { t in t < 15 ? (Rotation(), true) : t < 17 ? (s(t), false) : (p, true) }

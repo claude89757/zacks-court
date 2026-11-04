@@ -71,6 +71,9 @@ public struct IndependentCourtCalibration: Sendable, Codable {
     public internal(set) var rankScore: Double?
     public internal(set) var margin: Double?
     public internal(set) var evidenceThreshold: Float?
+    /// Horizontal principal coordinate minus the image centre, px, when the camera was found only with
+    /// it free (a phone filming a screen, or a cropped video); nil for the usual centred fit.
+    public internal(set) var principalOffset: Double?
     public internal(set) var timings = Timings()
     public internal(set) var counts = Counts()
 
@@ -96,7 +99,13 @@ public struct IndependentCourtCalibration: Sendable, Codable {
 ///    pinhole camera (principal point at the image centre); plausible cameras are ranked by how well all
 ///    model lines cover the evidence;
 /// 4. the 4 best distinct cameras are refined: sub-pixel line profiles and a 7-parameter LM, 3 passes;
-/// 5. the best refinement is checked and refused with reasons when it is not trustworthy.
+/// 5. the best refinement is checked and refused with reasons when it is not trustworthy;
+/// 6. when it is refused only because the lines do not fit tightly enough (or the focal length is
+///    unstable), the candidates are refined again with the horizontal principal coordinate free and
+///    checked by the same gates. One ground plane fixes only two of f, cx, cy; with cy at the image centre
+///    the other two are determined (moving cy by 30 px moves cx by about 1 px and f by about 1%). A
+///    camera filmed straight on matches the centred fit within a pixel or two; a phone filming a screen
+///    whose picture is off-centre, or a cropped video, does not, and is found here instead.
 /// Calibration only: it says nothing about speed or landing accuracy.
 public enum IndependentCourtCalibrator {
     public struct Options: Sendable {
@@ -106,6 +115,8 @@ public enum IndependentCourtCalibrator {
         public var refinedCandidates = 4
         public var passes: [Double] = [10, 6, 6]
         public var baselineWidth = IndependentCourtModel.baselineWidth
+        /// Largest |cx - centre| accepted in stage 6; nil turns stage 6 off.
+        public var freePrincipalPixels: Double? = 200
         public init() {}
     }
 
@@ -191,47 +202,64 @@ public enum IndependentCourtCalibrator {
         guard !search.candidates.isEmpty else { out.refusals = [.noPlausibleCombination]; return finish() }
 
         struct Tried { var x: [Double]; var fit: RefinedCamera; var C: SIMD3<Double>; var fitRMS: Double; var rscore: Double; var q: Double; var start: IndependentCourtHypothesis }
-        var tried = [Tried]()
-        for c in distinct.prefix(options.refinedCandidates) {
-            let start = c.parameters
+        func attempt(_ c: IndependentCourtHypothesis, from start: [Double]) -> Tried? {
             guard let rc = refineCamera(evidence, start: start, options: options) else {
                 trace?.attempts.append(Attempt(start: start, result: nil, linesUsed: [], perLineRMS: [:], focalLengthSD: .nan, fitRMS: .nan,
                                                refinedScore: .nan, nearTransverse: 0, dropped: [], failure: "too few refined lines"))
-                continue
+                return nil
             }
             let fitRMS = (rc.use.map { pow(rc.per[$0.rawValue]!, 2) }.reduce(0, +) / Double(rc.use.count)).squareRoot()
             let H = IndependentCourtSearch.homography(f: rc.x[0], R: rotation(rc.x), t: SIMD3(rc.x[4], rc.x[5], rc.x[6]),
-                                                      cx: Double(width) / 2, cy: Double(height) / 2)
+                                                      cx: principalX(rc.x), cy: Double(height) / 2)
             let rs = IndependentCourtSearch.score(H, hit: evidence.hit, width: evidence.halfWidth, height: evidence.halfHeight)
             let nTrans = rc.use.filter(\.isNearTransverse).count
             let q = rs + 0.3 * Double(rc.use.count) - 2.0 * max(0, fitRMS - 1.0) + (nTrans >= 2 ? 2.0 : 0.0)
-            tried.append(Tried(x: rc.x, fit: rc, C: centre(rc.x), fitRMS: fitRMS, rscore: rs, q: q, start: c))
             trace?.attempts.append(Attempt(start: start, result: rc.x, linesUsed: rc.use, perLineRMS: rc.per, focalLengthSD: rc.fSD,
                                            fitRMS: fitRMS, refinedScore: rs, nearTransverse: nTrans, dropped: rc.dropped, failure: nil))
+            return Tried(x: rc.x, fit: rc, C: centre(rc.x), fitRMS: fitRMS, rscore: rs, q: q, start: c)
         }
-        out.counts.refined = tried.count
-        out.timings.refine = lap()
-        guard !tried.isEmpty else { out.refusals = [.refinementFailed]; return finish() }
+        /// Rank the refinements, pick one and list the reasons to refuse it.
+        func judge(_ all: [Tried]) -> (pick: Tried, margin: Double?, reasons: [IndependentCourtCalibration.Refusal]) {
+            let tried = NumPy.stableOrder(all.map { -$0.q }).map { all[$0] }
+            var pick = 0
+            // court in front of the camera: a near-equal candidate whose camera is > 4 m more central wins
+            for k in 1..<max(1, tried.count) where tried[k].q >= tried[pick].q - 1.0 && abs(tried[k].C.x) < abs(tried[pick].C.x) - 4 {
+                pick = k
+            }
+            let p = tried[pick]
+            let others = tried.indices.filter { $0 != pick && simd_length(tried[$0].C - p.C) > 0.3 }.map { tried[$0].q }
+            let x = p.x, use = p.fit.use
+            var reasons = [IndependentCourtCalibration.Refusal]()
+            if p.fitRMS > 1.5 { reasons.append(.fitResidualHigh) }
+            if p.fit.use.filter(\.isNearTransverse).count < 2 { reasons.append(.onlyOneTransverseLine) }
+            if use.count < 5 { reasons.append(.tooFewLines) }
+            if !(500 < x[0] && x[0] < 3500) { reasons.append(.focalLengthImplausible) }
+            if !(0.4 < p.C.z && p.C.z < 8) { reasons.append(.cameraHeightImplausible) }
+            if p.fit.fSD > 3.0 { reasons.append(.focalLengthUnstable) }
+            if p.rscore < 4 { reasons.append(.coverageLow) }
+            return (p, others.max().map { p.q - $0 }, reasons)
+        }
 
-        tried = NumPy.stableOrder(tried.map { -$0.q }).map { tried[$0] }
-        var pick = 0
-        // court in front of the camera: a near-equal candidate whose camera is > 4 m more central wins
-        for k in 1..<max(1, tried.count) where tried[k].q >= tried[pick].q - 1.0 && abs(tried[k].C.x) < abs(tried[pick].C.x) - 4 {
-            pick = k
+        let tried = distinct.prefix(options.refinedCandidates).compactMap { attempt($0, from: $0.parameters) }
+        out.counts.refined = tried.count
+        guard !tried.isEmpty else { out.timings.refine = lap(); out.refusals = [.refinementFailed]; return finish() }
+        var (p, margin, reasons) = judge(tried)
+        // stage 6: only the fit itself failed; try again with the horizontal principal coordinate free
+        if let limit = options.freePrincipalPixels, reasons.contains(where: { $0 == .fitResidualHigh || $0 == .focalLengthUnstable }) {
+            let free = tried.compactMap { t in attempt(t.start, from: Array(t.x.prefix(7)) + [Double(width) / 2]) }
+                .filter { abs(principalX($0.x) - Double(width) / 2) <= limit }
+            if !free.isEmpty {
+                let second = judge(free)
+                if second.reasons.isEmpty {
+                    (p, margin, reasons) = second
+                    out.principalOffset = principalX(p.x) - Double(width) / 2
+                }
+            }
         }
-        let p = tried[pick]
-        let others = tried.indices.filter { $0 != pick && simd_length(tried[$0].C - p.C) > 0.3 }.map { tried[$0].q }
+        out.timings.refine = lap()
         out.searchScore = p.start.score; out.refinedScore = p.rscore; out.rankScore = p.q
-        out.margin = others.max().map { p.q - $0 }
+        out.margin = margin
         let x = p.x, use = p.fit.use
-        var reasons = [IndependentCourtCalibration.Refusal]()
-        if p.fitRMS > 1.5 { reasons.append(.fitResidualHigh) }
-        if p.fit.use.filter(\.isNearTransverse).count < 2 { reasons.append(.onlyOneTransverseLine) }
-        if use.count < 5 { reasons.append(.tooFewLines) }
-        if !(500 < x[0] && x[0] < 3500) { reasons.append(.focalLengthImplausible) }
-        if !(0.4 < p.C.z && p.C.z < 8) { reasons.append(.cameraHeightImplausible) }
-        if p.fit.fSD > 3.0 { reasons.append(.focalLengthUnstable) }
-        if p.rscore < 4 { reasons.append(.coverageLow) }
         let cam = camera(x)
         if reasons.isEmpty { out.camera = cam } else { out.rejectedCamera = cam }
         out.refusals = reasons
@@ -273,10 +301,11 @@ public enum IndependentCourtCalibrator {
         return result
     }
 
-    /// Refine from an explicit start vector (f, rvec, tvec): the parity check's entry into stage 5.
+    /// Refine from an explicit start vector (f, rvec, tvec, and optionally cx; see `parameters(_:)`): the
+    /// parity check's entry into stage 5, and the live tracker's.
     public static func refine(_ image: IndependentCourtImage, start: [Double], options: Options = Options())
         -> (camera: IndependentPinholeCamera, linesUsed: [IndependentCourtLine], perLineRMS: [String: Double], focalLengthSD: Double)? {
-        guard image.width == width, image.height == height, start.count == 7 else { return nil }
+        guard image.width == width, image.height == height, start.count == 7 || start.count == 8 else { return nil }
         let ev = IndependentCourtEvidence(image)
         guard let rc = refineCamera(ev, start: start, options: options) else { return nil }
         return (camera(rc.x), rc.use, rc.per, rc.fSD)
@@ -290,6 +319,15 @@ public enum IndependentCourtCalibrator {
     static func centre(_ x: [Double]) -> SIMD3<Double> { -(rotation(x).transpose * SIMD3(x[4], x[5], x[6])) }
 
     static func camera(_ x: [Double]) -> IndependentPinholeCamera {
-        IndependentPinholeCamera(f: x[0], rvec: Array(x[1...3]), tvec: Array(x[4...6]), principal: [Double(width) / 2, Double(height) / 2])
+        IndependentPinholeCamera(f: x[0], rvec: Array(x[1...3]), tvec: Array(x[4...6]), principal: [principalX(x), Double(height) / 2])
+    }
+
+    /// Horizontal principal coordinate of a parameter vector: the 8th value when present, else the centre.
+    static func principalX(_ x: [Double]) -> Double { x.count > 7 ? x[7] : Double(width) / 2 }
+
+    /// Start vector (f, rvec, tvec[, cx]) that refines from `camera`; cx is added only when it is off-centre.
+    public static func parameters(_ camera: IndependentPinholeCamera) -> [Double] {
+        let base = [camera.f] + camera.rvec + camera.tvec
+        return camera.principal[0] == Double(width) / 2 ? base : base + [camera.principal[0]]
     }
 }

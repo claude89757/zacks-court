@@ -113,9 +113,10 @@ final class IndependentLiveCourtTests: XCTestCase {
         try bgra(try CourtRenderer(camera: camera, poleSpacing: 100_000).render(masked: { _, y in y < 300 }))
     }
 
-    /// A still picture is not motion and a turned mount is; while the picture shakes nothing is sampled
-    /// and a found camera is dropped, then the court is found again at the new pose once still.
-    func testShakingPictureDropsTheCameraUntilStillAgain() throws {
+    /// A still picture is not motion and a turned mount is. With hand-held tracking off (`movingInterval`
+    /// nil, the behaviour before 2026-11-04 evening) nothing is sampled while the picture shakes and a found
+    /// camera is dropped, then the court is found again at the new pose once still.
+    func testShakingPictureWithoutHandHeldTrackingDropsTheCamera() throws {
         func render(_ camera: IndependentPinholeCamera) throws -> CVPixelBuffer { try uncluttered(camera) }
         let a = try render(Self.cameraA)
         // turned about 1 degree (about 20 px), and about 0.06 degree (about 1 px)
@@ -132,6 +133,7 @@ final class IndependentLiveCourtTests: XCTestCase {
         // The flat rendered court has few edges, so the measure tops out near 6 px however far the mount
         // turns (real footage reads 15-30 px when handled): the threshold is lowered to make this a knock.
         options.shakePixels = 4.5
+        options.movingInterval = nil
         let court = IndependentLiveCourt(options: options)
         var pts = 100.0, changes = [IndependentLiveCourt.Change](), moving = 0
         func feed(_ frame: CVPixelBuffer, seconds: Double) {
@@ -163,6 +165,58 @@ final class IndependentLiveCourtTests: XCTestCase {
         XCTAssertFalse(sparse.moving, "nothing recent to compare with counts as still")
         pts += 0.2; _ = sparse.offer(c, pts: pts); sparse.drain()
         XCTAssertLessThan(IndependentLiveCourt.distance(try XCTUnwrap(sparse.camera, "sampling resumed and found the court"), turned), 1.5)
+    }
+
+    /// A phone held in the hand: the picture shakes, yet the found camera is followed on single frames.
+    /// A 1 degree jump (about 20 px, twice the refinement window) is predicted from the picture's shift and
+    /// tracked, not dropped. A 6 degree swing (about 120 px) is past prediction: the camera is dropped and
+    /// single frames are searched again while the picture still shakes, without waiting for it to stop.
+    func testHandHeldPictureKeepsTheCourt() throws {
+        var options = IndependentLiveCourt.Options()
+        options.sampleInterval = 0.1; options.firstAttemptFrames = 1; options.retryFrames = 1
+        options.movingInterval = 0.1
+        options.shakePixels = 4.5               // the flat rendered court reads at most about 6 px (see above)
+        let court = IndependentLiveCourt(options: options)
+        func pose(_ x: Double) -> IndependentPinholeCamera { .lookingAt(SIMD3(x, 9, 0), from: SIMD3(0.3, -6.4, 3.2), f: 1150) }
+        var pts = 100.0, changes = [IndependentLiveCourt.Change](), shaking = 0
+        func feed(_ frame: CVPixelBuffer, seconds: Double) {
+            for _ in 0..<Int((seconds / 0.1).rounded()) {
+                pts += 0.1
+                if let change = court.offer(frame, pts: pts) { changes.append(change) }
+                court.drain()
+                if court.motion == .shaking { shaking += 1 }
+            }
+        }
+        feed(try uncluttered(pose(0)), seconds: 1.2)
+        guard case .found? = changes.first else { return XCTFail("court not found: \(court.latest?.refusals ?? [])") }
+        feed(try uncluttered(pose(0.27)), seconds: 0.6)
+        XCTAssertGreaterThan(shaking, 0, "the turn reads as a shake")
+        XCTAssertFalse(changes.contains(.lost), "a hand-held turn inside the tracking range keeps the court: \(changes)")
+        XCTAssertLessThan(IndependentLiveCourt.distance(try XCTUnwrap(court.camera), pose(0.27)), 2)
+
+        // a 6 degree swing (about 120 px) is past prediction: dropped, then found again while still shaking
+        let far = pose(0.27 + 1.7)
+        shaking = 0
+        feed(try uncluttered(far), seconds: 0.6)
+        XCTAssertTrue(changes.contains(.lost), "\(changes)")
+        guard case .found(let again)? = changes.last else { return XCTFail("not found again while shaking: \(changes)") }
+        XCTAssertGreaterThan(shaking, 0, "found again before the picture counted as still")
+        XCTAssertLessThan(IndependentLiveCourt.distance(again, far), 2)
+    }
+
+    /// The camera turn measured on the motion thumbnails predicts the turned camera to within a pixel
+    /// or two, for small and large (2 degree) turns.
+    func testTurnOfTheCameraIsMeasuredFromThePicture() throws {
+        let a = Self.cameraA
+        let ta = try XCTUnwrap(IndependentLiveCourt.thumbnail(try uncluttered(a)))
+        for (pan, tilt) in [(1.0, -0.4), (-2.2, 0.6), (0.15, 0.1)] {
+            let b = IndependentLiveCourt.turned(a, pan: pan * .pi / 180, tilt: tilt * .pi / 180)
+            let tb = try XCTUnwrap(IndependentLiveCourt.thumbnail(try uncluttered(b)))
+            let turn = try XCTUnwrap(IndependentLiveCourt.turn(ta, tb, camera: a))
+            let predicted = IndependentLiveCourt.turned(a, pan: turn.x, tilt: turn.y)
+            XCTAssertGreaterThan(IndependentLiveCourt.distance(a, b), 0.9 * abs(pan) * .pi / 180 * a.f)
+            XCTAssertLessThan(IndependentLiveCourt.distance(predicted, b), 2, "pan \(pan) tilt \(tilt) -> \(turn * 180 / .pi)")
+        }
     }
 
     /// A hand-held or loosely propped phone keeps turning slowly. The found camera is followed by refining

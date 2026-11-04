@@ -57,7 +57,7 @@ enum CourtCalibrateCommand {
               + " refusals=\(result.refusals.map(\.rawValue).joined(separator: ","))"
               + (c.map { String(format: " f=%.1f", $0.f) } ?? "")
               + (C.map { String(format: " C=(%.2f,%.2f,%.2f)", $0.x, $0.y, $0.z) } ?? "")
-              + (result.fitRMS.map { String(format: " rms=%.2f", $0) } ?? "")
+              + (result.fitRMS.map { String(format: " rms=%.2f", $0) } ?? "") + (result.principalOffset.map { String(format: " cx_offset=%.1f", $0) } ?? "")
               + String(format: " seconds=%.3f", result.timings.total))
     }
 
