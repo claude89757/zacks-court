@@ -38,6 +38,8 @@ public final class IndependentCourtLockLab {
 
     public struct Event: Codable, Sendable {
         public let pts: Double, kind: String, errorPixels: Double, still: Bool
+        /// The camera in use after the change (nil once lost), so a run can be drawn back onto the video.
+        public var camera: IndependentPinholeCamera?
     }
 
     /// A stretch of the stream where the camera was either moving or still.
@@ -110,7 +112,7 @@ public final class IndependentCourtLockLab {
         if let change {
             let kind: String
             switch change { case .found: kind = "found"; case .moved: kind = "moved"; case .lost: kind = "lost" }
-            events.append(Event(pts: pts, kind: kind, errorPixels: error ?? .nan, still: still))
+            events.append(Event(pts: pts, kind: kind, errorPixels: error ?? .nan, still: still, camera: court.camera))
         }
         previous = (pts, error)
     }
