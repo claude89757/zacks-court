@@ -16,6 +16,8 @@ App 只有三项核心功能，研究、打磨和验收都围绕它们：
 
 对拉的动作类别、对拉球速、远端界内外、App 看板与浏览器看板、测速牌等都保留并照常维护（不回退、不删），但不为它们安排新的研究或功能。新提议如果不服务这三项，先问用户。
 
+**以后的亮点是双机位联动**（用户 2026-11-05）：两台机位手机一起拍同一片球场，值得以后迭代，现在不排期，开工前先和用户定方案。**不用雷达**（用户 2026-11-03 决定、2026-11-05 确认）：球场实测和评估都不靠雷达测速枪，不要再把雷达写进计划。
+
 ## 仓库结构
 
 | 路径 | 内容 |
@@ -55,7 +57,7 @@ swift build                      # 共享包与 Mac 可执行文件（不打包�
 - `COURT_MODEL_SET` 选择打包的模型集：`independent`（默认，上架版本只用这一种）只带自研；`both` 带 S家与自研两套，App 启动页可切换，默认 S家，选择按设备保存（`CourtAnalysisBackend`，旧版本存的 `swing` 读作 S家）；`sjia` 只带 S家（旧名 `swing` 照样认）。`both` 与 `sjia` 都需要本地的 S家模型和 S家链代码；Mac 输出分别为 `build/Zacks Court.app`、`build/both/`、`build/sjia/`。选自研时 `AnalysisModelLocator` 返回空，任何路径都不加载 S家权重。各模型的替代方案与阶段见 [docs/model-replacement-design.md](docs/model-replacement-design.md)。
 - `COURT_MODEL_SET=independent` 为 Mac/iOS 构建选择自研资源，排除 S家 `AnalysisModels`。`scripts/prepare-independent-app-models.sh` 从 `assets/independent-model-weights/` 校验并暂存两个固定的 MIT TrackNetV3 包：`tracknetv3-base-v1`（FP32，约45MB，离线分析，与 Python 逐位一致）和 `tracknetv3-base-fp16-v1`（FP16，约23MB，机位实时链在神经网络引擎上用，只按容差与 FP32 对照）；清单/许可在 `assets/independent-models/<id>/`，`IndependentBallModelAssets.Variant` 分别固定两个清单摘要。可用 `COURT_INDEPENDENT_MODEL_SOURCE` 显式指定 FP32 的同一固定字节源包，不下载模型。机位选自研时 `CameraSideAnalyzer(independent:)` 跑实时链（`IndependentLiveEngine`）；实时链用 `IndependentLiveCourt` 自动识别球场（`IndependentCourtCalibrator`，无学习权重），记录中每分钟复查；`court-analyze independent-live VIDEO MODEL_DIR auto|CAMERA.json OUT.json` 用本地视频按 NV12 模拟机位跑同一条链（旁边另写 `OUT.trace.json`，记下规则的全部输入；只改规则时用 `court-analyze independent-replay OUT.trace.json NEW.json` 重放，不必重跑模型，规则不变时与实时链逐行相同），`court-analyze court-calibrate MEDIAN.png… OUT.json` 单独求解中位图，`court-analyze court-lock VIDEO OUT.json` 把三脚架视频按已知的相机转动晃动后量自动识别多久锁定、锁得对不对。模型 `.bin/.mlmodel` 使用 Git LFS。
 - 资源选择不等于启用独立测速后端，也不认证精度。`CourtModelSet` 标识资源模式，独立与 code-only 模式不得通过环境变量回退加载私有模型；`COURT_CODE_ONLY=1` 优先排除两套资源。旧目录中的原研究 README 与 manifest 保持固定摘要，当前原生预处理/集成状态另记在 `docs/speed-model-training.md`。
-- 自研模型的开发和训练不安排人工标注（用户 2026-10-30）：训练标签和评估参考都要自动产生（物理拟合的伪标签、我们自己的离线老师、单一动作练习段、雷达等仪器读数），不要计划人工标注，也不要问谁来标注。
+- 自研模型的开发和训练不安排人工标注（用户 2026-10-30）：训练标签和评估参考都要自动产生（物理拟合的伪标签、我们自己的离线老师、单一动作练习段、量好坐标的标记这类实测读数），不要计划人工标注，也不要问谁来标注。
 - 研究、对比或改进自研模型（对齐并超越 S家）时，先读项目 skill [.claude/skills/inhouse-model-research/SKILL.md](.claude/skills/inhouse-model-research/SKILL.md)：目标、打分脚本 `compare_rows.py`、开发 / 留出视频分组，以及记录差距和已试方法的 `references/frontier.md`（每轮研究结束后更新）。
 - S家 App 的版本会更新，引用参照数据时写清是哪一天、哪台机器上的 S家 App 导出的，App 里的 S家链（本地模型）和 S家 App 的输出也不能混称。
 
