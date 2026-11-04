@@ -126,6 +126,9 @@ final class IndependentLiveCourt {
     /// Last measured displacement in full-resolution pixels, for evaluation.
     private(set) var lastMotion: Double?
     private var thumbnails: [(pts: Double, image: Thumbnail)] = []
+    /// The motion thumbnail of the frame last offered (nil when it had no full-resolution copy or the
+    /// motion check is off), so the engine can tell whether the picture left its ball background.
+    private(set) var frameThumbnail: Thumbnail?
     private var anchor: Thumbnail?
     private var movedSinceLaunch = false
     /// The last camera fitted on a frame (`camera` may be a prediction from it), that frame's thumbnail,
@@ -201,6 +204,7 @@ final class IndependentLiveCourt {
             thumbnail = t
             change = checkMotion(t, pts: pts)       // first, so a solve that saw a shake is ignored
         }
+        frameThumbnail = thumbnail
         let latency = options.simulatedLatencyScale, launched = launchedAt
         if let outcome = mailbox.take(if: { o in latency.map { pts >= launched + o.seconds * $0 } ?? true }) {
             inFlight = false

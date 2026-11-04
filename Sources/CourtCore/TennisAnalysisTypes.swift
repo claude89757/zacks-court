@@ -77,6 +77,31 @@ public struct TennisShotEvent: Codable, Equatable, Identifiable, Sendable {
         speedReason = detail; speedReasonCode = detail.map(TennisReason.classify)
     }
 }
+extension TennisShotEvent {
+    /// The row with every NaN or infinite number made unknown. JSON has no NaN, so one such value from
+    /// a degenerate fit or line call would make the whole record fail to save (2026-11-05: a hand-held
+    /// camera showed 「记录保存失败：未能写入数据，因为它的格式不正确」).
+    public var finiteOnly: TennisShotEvent {
+        func ok(_ values: Double...) -> Bool { values.allSatisfy(\.isFinite) }
+        func ok(_ judgement: HawkEyeJudgement?) -> Bool { judgement.map { ok($0.distanceM, $0.marginM) } ?? true }
+        var row = self
+        if !ok(row.confidence) { row.confidence = 0 }
+        if let v = row.endPTS, !ok(v) { row.endPTS = nil }
+        if let v = row.speedKPH, !ok(v) { row.speedKPH = nil; row.speedReasonCode = row.speedReasonCode ?? .speedUnreliable }
+        if let h = row.hit, !ok(h.x, h.y, h.z) { row.hit = nil }
+        if var b = row.bounce {
+            if !ok(b.confidence) { b.confidence = 0 }
+            if let p = b.imagePoint, !ok(p.x, p.y) { b.imagePoint = nil }
+            if !ok(b.xMeters ?? 0, b.yMeters ?? 0) { b.xMeters = nil; b.yMeters = nil; b.hawkEye = nil }
+            if !ok(b.sigmaXMeters ?? 0, b.sigmaYMeters ?? 0) { b.sigmaXMeters = nil; b.sigmaYMeters = nil }
+            if !ok(b.hawkEye) { b.hawkEye = nil }
+            row.bounce = ok(b.sourcePTS) ? b : nil
+        }
+        if var c = row.challenge, !ok(c.judgement) { c.judgement = nil; row.challenge = c }
+        return row
+    }
+}
+
 public struct TennisAnalysisSnapshot: Codable, Sendable {
     public var streamID: UUID
     public var pts: Double

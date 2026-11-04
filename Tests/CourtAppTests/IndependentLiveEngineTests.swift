@@ -97,6 +97,47 @@ final class IndependentLiveEngineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(engine.stats.ballResets, 1)
     }
 
+    /// The ball model compares frames with a median background. Once the picture has moved away from
+    /// the view that background was taken from (a hand-held phone), the background is built again
+    /// instead of every lamp and line counting as different; a still picture keeps it.
+    func testBackgroundIsRebuiltWhenThePictureMovesAwayFromIt() throws {
+        let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let staged = repository.appendingPathComponent(".local/IndependentModels/tracknetv3-base-fp16-v1")
+        guard FileManager.default.fileExists(atPath: staged.appendingPathComponent("manifest.json").path) else {
+            throw XCTSkip("Run scripts/prepare-independent-app-models.sh to stage the FP16 package")
+        }
+        func textured(shift: Int) throws -> CVPixelBuffer {
+            let b = try nv12(y: 0, cb: 128, cr: 128)
+            CVPixelBufferLockBaseAddress(b, []); defer { CVPixelBufferUnlockBaseAddress(b, []) }
+            let row = CVPixelBufferGetBytesPerRowOfPlane(b, 0)
+            let y = CVPixelBufferGetBaseAddressOfPlane(b, 0)!.assumingMemoryBound(to: UInt8.self)
+            for r in 0..<1080 { for c in 0..<1920 {        // edges in both directions, moved diagonally
+                y[r * row + c] = UInt8(126 + 50 * sin(Double(c + shift) / 37) + 50 * sin(Double(r + shift) / 37))
+            } }
+            return b
+        }
+        let engine = try IndependentLiveEngine(configuration: .init(assets: try IndependentBallModelAssets.load(directory: staged, variant: .fp16), automaticCourt: true))
+        let still = try textured(shift: 0), moved = try textured(shift: 32)
+        let measured = IndependentLiveCourt.motion(try XCTUnwrap(IndependentLiveCourt.thumbnail(still)), try XCTUnwrap(IndependentLiveCourt.thumbnail(moved)))
+        XCTAssertGreaterThan(measured, IndependentLiveEngine.backgroundMovedPixels)
+        let stream = UUID(), small = [UInt8](repeating: 90, count: 512 * 288 * 3)
+        func run(_ frames: Range<Int>, _ full: CVPixelBuffer) throws {
+            for k in frames {
+                _ = try engine.process(small: small, full: k % 12 == 0 ? full : nil, pts: 10 + Double(k) / 60, streamID: stream,
+                                       sourceWidth: 1920, sourceHeight: 1080)
+            }
+        }
+        try run(0..<120, still)
+        XCTAssertEqual(engine.stats.backgroundRebuilds, 0, "a still picture keeps its background")
+        XCTAssertGreaterThan(engine.stats.batches, 0)
+        try run(120..<132, moved)
+        XCTAssertEqual(engine.stats.backgroundRebuilds, 1, "45 px away from the background's view")
+        let resets = engine.stats.ballResets
+        try run(132..<300, moved)
+        XCTAssertEqual(engine.stats.backgroundRebuilds, 1, "the new background was taken from the new view")
+        XCTAssertEqual(engine.stats.ballResets, resets)
+    }
+
     /// The in-house rules need person boxes, so load shedding slows person frames instead of stopping
     /// them: 5 Hz normally, 3 Hz at L1 (people off), 2 Hz at L2 (bounces off too).
     func testLoadSheddingSlowsPersonFramesInsteadOfStoppingThem() throws {

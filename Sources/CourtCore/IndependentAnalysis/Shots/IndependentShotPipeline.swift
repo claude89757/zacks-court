@@ -251,19 +251,25 @@ public enum IndependentShotPipeline {
     }
 
     /// App rows: every detected hit, with a speed only when it passed the bounce-anchored gate.
+    /// Rows carry finite numbers only: a value a degenerate fit left NaN or infinite is unknown (nil), so
+    /// it can never block saving the record (JSON has no NaN; 2026-11-05 a camera showed 「记录保存失败」).
     public static func rows(from shots: [IndependentShotResult], streamID: UUID, ptsOffset: Double = 0) -> [TennisShotEvent] {
-        shots.map { s in
-            let speed = s.reportedSpeedKmh
+        func finite(_ values: [Double]?, count: Int) -> [Double]? {
+            guard let values, values.count >= count, values.prefix(count).allSatisfy(\.isFinite) else { return nil }
+            return values
+        }
+        return shots.map { s in
+            let speed = s.reportedSpeedKmh.flatMap { $0.isFinite ? $0 : nil }
             var row = TennisShotEvent(streamID: streamID, sourcePTS: (s.contactT ?? s.tHit) + ptsOffset, stroke: IndependentStrokeRules.kind(s.stroke),
                                       confidence: 0, speedKPH: speed, speedReason: speed == nil ? reasonText(s) : nil, sampleCount: s.nObs)
             if speed == nil { row.speedReasonCode = reasonCode(s) }
-            if let g = s.bounceGround, let t = s.tBounce {
+            if let g = finite(s.bounceGround, count: 2), let t = s.tBounce, t.isFinite {
                 row.bounce = TennisBounceEstimate(sourcePTS: t + ptsOffset, xMeters: IndependentCourt.courtX(fromCentred: g[0]), yMeters: g[1],
                                                   confidence: 0, reason: "模型估计，不是判罚")
                 row.bounce?.reasonCode = .estimate
-                if let sg = s.bounceSigma { row.bounce?.sigmaXMeters = sg[0]; row.bounce?.sigmaYMeters = sg[1] }
+                if let sg = finite(s.bounceSigma, count: 2) { row.bounce?.sigmaXMeters = sg[0]; row.bounce?.sigmaYMeters = sg[1] }
             }
-            if let h = s.fitHit, h.count >= 3 { row.hit = TennisCourtPoint(x: IndependentCourt.courtX(fromCentred: h[0]), y: h[1], z: h[2]) }
+            if let h = finite(s.fitHit, count: 3) { row.hit = TennisCourtPoint(x: IndependentCourt.courtX(fromCentred: h[0]), y: h[1], z: h[2]) }
             row.origin = "independent"
             return row
         }
