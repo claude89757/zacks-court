@@ -326,15 +326,16 @@ public final class CameraSessionController {
         return session?.tennisEvents ?? []
     }
 
-    /// Rows with the line call of their time and their challenge brought up to date.
+    /// Rows with the line call of their time and their challenge brought up to date, finite numbers only
+    /// (every row reaches the record through here, and a NaN would stop it from saving).
     private func annotated(_ rows: [TennisShotEvent]) -> [TennisShotEvent] {
-        HawkEye.annotate(rows, settings: hawkEye).map { row in
-            guard let c = challenges[row.id] else { return row }
+        HawkEye.annotate(rows.map(\.finiteOnly), settings: hawkEye).map { row in
+            guard let c = challenges[row.id] else { return row.finiteOnly }
             var row = row
             let waiting = c.pending == true
             let judged = HawkEye.judgeChallenge(c, for: row, waiting: waiting)
             challenges[row.id] = judged; row.challenge = judged
-            return row
+            return row.finiteOnly
         }
     }
 
@@ -345,7 +346,7 @@ public final class CameraSessionController {
         let waiting = waiting ?? latest.map { $0 - base.sourcePTS <= HawkEye.challengeBounceWait } ?? false
         c = HawkEye.judgeChallenge(c, for: base, waiting: waiting)
         challenges[base.id] = c
-        var row = base; row.challenge = c
+        var row = base; row.challenge = c; row = row.finiteOnly
         if let id = session?.id, session?.tennisEvents?.contains(where: { $0.id == row.id }) == true {
             session?.updateKnownTennisEvents([row]); dirty = true
             sendRows([row], sessionID: id)
@@ -1102,8 +1103,11 @@ public final class CameraSessionController {
 
     private func persist() {
         guard let session, let store else { return }
-        do { try store.save(session); dirty = false; lastSave = ProcessInfo.processInfo.systemUptime }
-        catch { self.error = "记录保存失败：\(error.localizedDescription)。检查存储空间后重试。" }
+        do {
+            try store.save(session); dirty = false; lastSave = ProcessInfo.processInfo.systemUptime
+            if SaveFailure.isMessage(error) { error = nil }      // a later save got everything onto disk
+        }
+        catch { self.error = SaveFailure.message(error) }
     }
 
     private func tick() {

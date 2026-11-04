@@ -336,6 +336,19 @@ public final class IndependentLiveEngine {
     private var catchUpPending = false
     /// Last frame time at which the picture was moving: candidates from before it are never caught up.
     private var movedUntil = -Double.infinity
+    /// The view the ball model's median background was taken from (motion thumbnail of the first full
+    /// frame after it was built). The model finds the ball as what differs from that background, so
+    /// once the phone has turned away from it every lamp, line and ball lying on the court differs
+    /// too and long false flights follow (a hand-held phone filming a screen, 2026-11-05: 57 of 57 rows,
+    /// analysis 10 s behind). Then the background is built again and nothing is stitched across.
+    private var backgroundView: IndependentLiveCourt.Thumbnail?
+    /// Displacement from the background's view that rebuilds it, in the court module's motion measure
+    /// (`IndependentLiveCourt.motion`, median normal flow; it reads real moves smaller: a 23 px diagonal
+    /// move of a test pattern reads about 5). A still tripod reads at most 3.4 a second apart; on
+    /// double-test-003 (12 minutes, tripod) 6 never fired and all 589 rows stayed the same.
+    static let backgroundMovedPixels = 6.0
+    /// How often the background was rebuilt because the picture moved.
+    public private(set) var backgroundRebuilds = 0
     /// Seconds of candidates kept while the court is unknown, analysed once it is found.
     static let pendingSeconds = 30.0
     /// Diagnostics: every batch of ball candidates (analysis queue).
@@ -402,6 +415,7 @@ public final class IndependentLiveEngine {
             case .lost: use(nil)
             }
         }
+        if full != nil, let view = court?.frameThumbnail { checkBackground(view) }
         if full != nil, let court, court.moving, configuration.camera == nil {
             // ball positions seen while the phone moves and no court is known belong to no single pose:
             // never caught up later (a court being tracked keeps them)
@@ -424,6 +438,18 @@ public final class IndependentLiveEngine {
         guard pts - lastUpdate >= configuration.updateInterval else { return nil }
         lastUpdate = pts
         return update(now: pts)
+    }
+
+    /// Full frames with a motion thumbnail: remembers the view of a fresh background and, when the
+    /// picture has moved more than `backgroundMovedPixels` from it, starts a new warm-up. While the phone
+    /// keeps moving this repeats and no shot is found: unknown stays empty rather than counting false
+    /// flights. Rows already published stay as they are (frozen).
+    private func checkBackground(_ view: IndependentLiveCourt.Thumbnail) {
+        guard ball.backgroundReady else { backgroundView = nil; return }
+        guard let reference = backgroundView else { backgroundView = view; return }
+        guard IndependentLiveCourt.motion(reference, view) > Self.backgroundMovedPixels else { return }
+        ball.reset(); shots.reset(); backgroundView = nil; backgroundRebuilds += 1
+        traceObserver?(.reset)
     }
 
     /// End of a segment: settle every remaining shot.
@@ -486,12 +512,15 @@ public final class IndependentLiveEngine {
     public struct Stats: Sendable {
         public var batches: Int, inferenceSeconds: Double, personSamples: Int, personSeconds: Double, ballResets: Int, published: Int, candidates: Int
         public var courtSolves = 0, courtSolveSeconds = 0.0, courtSamples = 0, courtFound = 0, courtMoved = 0, courtLost = 0
+        /// Ball backgrounds rebuilt because the picture moved away from them (counted in `ballResets` too).
+        public var backgroundRebuilds = 0
         /// The court right now, for the camera's field log (nil with neither automatic nor given court).
         public var court: CameraCourtDiagnostics?
     }
     public var stats: Stats {
         var s = Stats(batches: ball.batches, inferenceSeconds: ball.inferenceSeconds, personSamples: personsStage.samples, personSeconds: personsStage.seconds,
                       ballResets: ball.resets, published: shots.published.count, candidates: candidates)
+        s.backgroundRebuilds = backgroundRebuilds
         if let c = court?.stats {
             s.courtSolves = c.solves; s.courtSolveSeconds = c.solveSeconds; s.courtSamples = c.samples
             s.courtFound = c.found; s.courtMoved = c.moved; s.courtLost = c.lost

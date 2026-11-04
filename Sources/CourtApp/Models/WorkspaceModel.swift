@@ -240,10 +240,16 @@ struct LinkStats {
         if cameraBusy { return "机位正在保存录像与分析…" }
         return nil
     }
+    /// Whether live analysis has models here. The S家 locator is nil by design in the in-house build, so
+    /// the in-house backend counts its own bundled models (until 2026-11-05 the camera's 分析 page said
+    /// 「分析模型尚未就绪」 on every App Store build while the in-house chain was running).
     var analysisModelsAvailable: Bool {
         if role == .server, let status = cameraStatus { return status.analysis.available || status.analysis.reason == nil }
+        if analysisBackend == .independent { return CourtAnalysisBackend.bundled().contains(.independent) }
         return AnalysisModelLocator.directory != nil
     }
+    /// Offline backfill runs the S家 models only (`OfflineBackfill`), never the in-house ones.
+    var backfillModelsAvailable: Bool { AnalysisModelLocator.directory != nil }
     var tennisAnalysisStatus: String {
         if let tennisAnalysisError { return tennisAnalysisError }
         if role == .server {
@@ -1216,13 +1222,16 @@ struct LinkStats {
     }
 
     private func save(_ value: CourtSession) {
-        do { try store?.save(value) } catch { self.error = "记录保存失败：\(error.localizedDescription)。检查存储空间后重试。" }
+        do { try store?.save(value) } catch { self.error = SaveFailure.message(error) }
     }
 
     private func persistSession() {
         guard let session, let store else { return }
-        do { try store.save(session); persisted = true; lastCheckpoint = Date(); mirrorDirty = false }
-        catch { persisted = false; self.error = "记录保存失败：\(error.localizedDescription)。检查存储空间后重试。" }
+        do {
+            try store.save(session); persisted = true; lastCheckpoint = Date(); mirrorDirty = false
+            if SaveFailure.isMessage(error) { error = nil }      // a later save got everything onto disk
+        }
+        catch { persisted = false; self.error = SaveFailure.message(error) }
     }
 
     private func tick() {

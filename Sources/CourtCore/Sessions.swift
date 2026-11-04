@@ -290,3 +290,15 @@ public final class SessionStore {
         }
     }
 }
+
+/// The 「记录保存失败」 notice: one wording on the camera and the display, and recognisable so a later
+/// successful save can take it down again.
+public enum SaveFailure {
+    static let prefix = "记录保存失败："
+    public static func message(_ error: Error) -> String {
+        var reason = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let last = reason.last, "。.！!".contains(last) { reason.removeLast() }   // no 「。。」
+        return prefix + reason + "。检查存储空间后重试。"
+    }
+    public static func isMessage(_ text: String?) -> Bool { text?.hasPrefix(prefix) == true }
+}

@@ -56,4 +56,31 @@ final class TennisSessionTests: XCTestCase {
         XCTAssertEqual(restored.events.first?.kind, .point)
         XCTAssertEqual(restored.recordings.count, 0)
     }
+
+    /// A NaN or infinite number in a row (a degenerate fit) becomes unknown, so the record still saves;
+    /// a failed save says why once, without 「。。」.
+    func testNonFiniteRowValuesBecomeUnknownAndTheRecordSaves() throws {
+        let stream = UUID()
+        var row = TennisShotEvent(streamID: stream, sourcePTS: 12, stroke: .forehand, confidence: .nan, speedKPH: .infinity)
+        row.hit = TennisCourtPoint(x: 1, y: .nan, z: 1)
+        row.bounce = TennisBounceEstimate(sourcePTS: 12.6, xMeters: 4, yMeters: 8, confidence: 0)
+        row.bounce?.sigmaXMeters = .nan; row.bounce?.sigmaYMeters = 0.2
+        row.bounce?.hawkEye = HawkEyeJudgement(call: .in, distanceM: -.infinity, marginM: 0.1, line: .sideline, format: .singles, serve: false, farHalf: false)
+        XCTAssertThrowsError(try JSONEncoder().encode(row), "JSON has no NaN")
+        let clean = row.finiteOnly
+        XCTAssertNil(clean.speedKPH); XCTAssertEqual(clean.speedReasonCode, .speedUnreliable)
+        XCTAssertNil(clean.hit); XCTAssertEqual(clean.confidence, 0)
+        XCTAssertEqual(clean.bounce?.xMeters, 4, "a finite bounce position stays")
+        XCTAssertNil(clean.bounce?.sigmaXMeters); XCTAssertNil(clean.bounce?.hawkEye)
+        var session = CourtSession(title: "NaN")
+        session.recordTennisAnalysis(TennisAnalysisSnapshot(streamID: stream, pts: 14, processedFrames: 20, inferenceMilliseconds: 10, events: [clean],
+                                                            calibration: .init(), modelVersion: "test", limitations: []), minimumPTS: 0)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("court-nan-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        XCTAssertNoThrow(try SessionStore(directory: directory).save(session))
+
+        let failure = SaveFailure.message(NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "未能写入数据，因为它的格式不正确。"]))
+        XCTAssertEqual(failure, "记录保存失败：未能写入数据，因为它的格式不正确。检查存储空间后重试。")
+        XCTAssertTrue(SaveFailure.isMessage(failure)); XCTAssertFalse(SaveFailure.isMessage("别的提示"))
+    }
 }

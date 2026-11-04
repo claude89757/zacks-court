@@ -324,7 +324,9 @@ struct SessionDetail: View {
 
     /// Why offline backfill cannot start, in the order the button checks it.
     private var backfillBlocker: String? {
-        if !model.analysisModelsAvailable { return "这台设备没有分析模型，无法离线补算。" }
+        if !model.backfillModelsAvailable {
+            return model.analysisBackend == .independent ? "自研模型还不支持离线补算。" : "这台设备没有分析模型，无法离线补算。"
+        }
         switch session.state {
         case .active, .paused: return "结束记录后可补算。"
         case .interrupted: return "这次记录意外中断，在机位上结束并保存后可补算。"
