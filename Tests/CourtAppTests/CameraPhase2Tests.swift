@@ -34,6 +34,32 @@ final class CameraPhase2Tests: XCTestCase {
         XCTAssertEqual(CameraLoadPolicy.target(thermal: "nominal", pressure: "shutdown", lowPower: false).level, 4)
     }
 
+    /// The camera reports AVFoundation's raw pressure values (seen on iPhone18,2 as
+    /// `AVCaptureSystemPressureLevelNominal`); the policy must act on them, not only on short names.
+    func testLoadPolicyReadsTheCameraRawPressureValues() {
+        for (raw, level) in [("AVCaptureSystemPressureLevelNominal", 0), ("AVCaptureSystemPressureLevelFair", 1),
+                             ("AVCaptureSystemPressureLevelSerious", 2), ("AVCaptureSystemPressureLevelCritical", 3),
+                             ("AVCaptureSystemPressureLevelShutdown", 4)] {
+            XCTAssertEqual(CameraLoadPolicy.target(thermal: "nominal", pressure: raw, lowPower: false).level, level, raw)
+        }
+        XCTAssertEqual(CameraLoadPolicy.target(thermal: "nominal", pressure: "AVCaptureSystemPressureLevelFair", lowPower: false).reason?.hasPrefix("机位相机负载偏高"), true)
+        // Recovery keeps naming camera pressure, not heat, as the cause.
+        var policy = CameraLoadPolicy()
+        XCTAssertTrue(policy.update(thermal: "nominal", pressure: "AVCaptureSystemPressureLevelShutdown", lowPower: false, now: 0))
+        XCTAssertEqual(policy.level, 4)
+        XCTAssertFalse(policy.update(thermal: "nominal", pressure: "AVCaptureSystemPressureLevelNominal", lowPower: false, now: 1))
+        XCTAssertTrue(policy.update(thermal: "nominal", pressure: "AVCaptureSystemPressureLevelNominal", lowPower: false, now: 61))
+        XCTAssertEqual(policy.level, 3)
+        XCTAssertEqual(policy.reason?.hasPrefix("机位相机负载过高"), true, policy.reason ?? "nil")
+        // Heat-driven shedding still reads as heat while recovering.
+        var heat = CameraLoadPolicy()
+        heat.update(thermal: "serious", pressure: "AVCaptureSystemPressureLevelFair", lowPower: false, now: 0)
+        heat.update(thermal: "nominal", pressure: nil, lowPower: false, now: 1)
+        heat.update(thermal: "nominal", pressure: nil, lowPower: false, now: 61)
+        XCTAssertEqual(heat.level, 1)
+        XCTAssertEqual(heat.reason?.hasPrefix("机位偏暖"), true, heat.reason ?? "nil")
+    }
+
     @MainActor func testCriticalLoadPausesAnalysisRecordsAGapAndKeepsRecording() async throws {
         let rig = CameraRig(root: makeRoot("court-shed"))
         rig.camera.appliesLoadPolicy = false
