@@ -18,6 +18,7 @@ import simd
 /// - `settle`: shaking for the first 8 s (hand-held mounting), then still at a new rotation.
 /// - `bump`: still for 15 s, knocked for 2 s, then still at another rotation.
 /// - `wobble`: a fixed rotation plus about 2 px of slow sway throughout (counted as still).
+/// - `net`: a phone hung on the net or a fence: slow sway plus a damped 5-10 Hz shiver every 2-6 s.
 /// - `drift`: slow continuous turning of about 5 px per second throughout (counted as still).
 /// "Right" means within the tolerance of the rotated steady solve, not physical truth.
 enum CourtLockCommand {
@@ -37,7 +38,7 @@ enum CourtLockCommand {
     }
 
     static func run(_ args: [String]) throws {
-        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway] [--keypoints MODEL.mlpackage]") }
+        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble,drift,handheld,shaky,net] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway] [--keypoints MODEL.mlpackage]") }
         let video = URL(fileURLWithPath: args[1]), out = URL(fileURLWithPath: args[2])
         func value(_ flag: String) -> String? { args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
         let start = value("--start").flatMap(Double.init) ?? 0, duration = value("--duration").flatMap(Double.init) ?? 45
@@ -201,6 +202,18 @@ enum CourtLockCommand {
             // hold, peaks around 110 px per second)
             let s = shake(from: Rotation(), to: Rotation(), t0: 0, t1: .infinity, scale: name == "shaky" ? 0.4 : 0.15)
             return Scenario(name: name) { t in (s(t), true) }
+        case "net":
+            // a phone hung on the net or a fence: slow sway of the net plus a damped 5-10 Hz shiver after
+            // each ball that hits it (every 2-6 s, 0.2-0.5 degrees, dying out in about a second)
+            let p = pose(), sway = (0..<3).map { _ in (rng.uniform(0.05, 0.12) * degree, rng.uniform(0.2, 0.6), rng.uniform(0, 2 * .pi)) }
+            var hits: [(t: Double, a: Double, f: Double, axis: Int, phase: Double)] = []
+            var t = rng.uniform(1, 4)
+            while t < 400 { hits.append((t, rng.uniform(0.2, 0.5) * degree, rng.uniform(5, 10), Int(rng.next() % 2), rng.uniform(0, 2 * .pi))); t += rng.uniform(2, 6) }
+            return Scenario(name: name) { t in
+                var a = sway.map { $0.0 * sin(2 * .pi * $0.1 * t + $0.2) }
+                for h in hits where t >= h.t && t < h.t + 3 { a[h.axis] += h.a * exp(-(t - h.t) / 0.3) * sin(2 * .pi * h.f * (t - h.t) + h.phase) }
+                return (Rotation(pan: p.pan + a[0], tilt: p.tilt + a[1], roll: p.roll + a[2]), true)
+            }
         case "bump":
             let p = pose(), s = shake(from: Rotation(), to: p, t0: 15, t1: 17)
             return Scenario(name: name) { t in t < 15 ? (Rotation(), true) : t < 17 ? (s(t), false) : (p, true) }

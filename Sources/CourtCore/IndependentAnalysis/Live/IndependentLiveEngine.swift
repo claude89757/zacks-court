@@ -464,11 +464,13 @@ public final class IndependentLiveEngine {
     /// What the camera screen says about the court. Unknown stays unknown: no camera, no mapping.
     var courtState: TennisCourtCalibrationState {
         guard configuration.camera != nil else {
-            if court?.moving == true {
-                return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
-                                                   reason: "正在识别球场 · 画面在晃动，尽量拿稳")
-            }
+            // A slight sway is normal (a phone hung on a fence): it is searched frame by frame, and the
+            // reason shown is what the last frame lacked. Only a real shake is named.
             let refusal = court?.latest?.refusals.first?.message
+            if court?.shaking == true, refusal == nil {
+                return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
+                                                   reason: "正在识别球场 · 画面晃动较大，逐帧识别中")
+            }
             return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
                                                reason: refusal.map { "正在识别球场 · " + $0 } ?? "正在识别球场")
         }

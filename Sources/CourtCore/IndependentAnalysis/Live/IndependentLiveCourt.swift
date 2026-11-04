@@ -16,8 +16,12 @@ import simd
 ///   window is kept, so a median never mixes two poses. A single 60 fps frame is sharp even when the
 ///   phone is held in the hand (about 7 ms exposure), so the court is followed and searched on single
 ///   frames every `movingInterval` instead of waiting for the phone to be still.
-/// - Searching: the first solve once `firstAttemptFrames` still samples are in (about 3 s), then after
-///   every `retryFrames` new ones, over the last `frames` samples (the prototype used 25 over 20 s). A
+/// - Searching: the first solve on the first sample (a single 60 fps frame finds the court on every
+///   window of the normal match videos), then after every `retryFrames` new ones, over the median of
+///   the last `frames` samples (the prototype used 25 over 20 s). A camera found on fewer than
+///   `earlyRecheckFrames` samples is re-checked on a median of that many still samples right away
+///   (about 3 s later), so a rough first frame is replaced as soon as the old median wait would have
+///   given its answer. A
 ///   sample that drifted from the window's first one restarts the window. While the picture drifts a
 ///   still window never comes, so single samples are solved (same gates).
 /// - Tracking: a found camera is refined on single frames, every `movingInterval` while the picture
@@ -34,8 +38,11 @@ final class IndependentLiveCourt {
     struct Options: Sendable {
         var sampleInterval = 0.8
         var frames = 25
-        var firstAttemptFrames = 4
+        /// 1 (2026-11-04 evening): lock on the first frame instead of waiting about 3 s for 4 still samples.
+        var firstAttemptFrames = 1
         var retryFrames = 2
+        /// A camera found on fewer samples than this gets its first re-check on a median of this many.
+        var earlyRecheckFrames = 4
         var recheckInterval = 60.0
         var recheckFrames = 15
         var movedPixels = 3.0
@@ -101,6 +108,7 @@ final class IndependentLiveCourt {
     private var windowRestarted = false
     private var newSamples = 0
     private var nextRecheck = Double.infinity
+    private var recheckNeeded: Int?
     private var misfits = 0
     private(set) var inFlight = false
     private var launchedAt = 0.0
@@ -108,6 +116,8 @@ final class IndependentLiveCourt {
     /// How much the picture moved over the last `motionLookback` seconds (motion check on).
     private(set) var motion = Motion.still
     var moving: Bool { motion != .still }
+    /// Above `shakePixels`: hand-held, being mounted or knocked (a slow drift or sway does not count).
+    var shaking: Bool { motion == .shaking }
     /// Last measured displacement in full-resolution pixels, for evaluation.
     private(set) var lastMotion: Double?
     private var thumbnails: [(pts: Double, image: Thumbnail)] = []
@@ -137,14 +147,14 @@ final class IndependentLiveCourt {
 
     /// A camera set from outside (fixed): kept, and re-checked from `pts` on.
     func adopt(_ camera: IndependentPinholeCamera?, pts: Double) {
-        self.camera = camera; fitted = camera; predictedInUse = false; latest = nil; misfits = 0
+        self.camera = camera; fitted = camera; predictedInUse = false; latest = nil; misfits = 0; recheckNeeded = nil
         samples.removeAll(); newSamples = 0; resetMotion()
         nextRecheck = camera == nil ? .infinity : pts + options.recheckInterval
     }
 
     /// The framing changed (zoom): the old camera no longer matches the picture, so search again.
     func restart() {
-        camera = nil; fitted = nil; predictedInUse = false; latest = nil; misfits = 0
+        camera = nil; fitted = nil; predictedInUse = false; latest = nil; misfits = 0; recheckNeeded = nil
         samples.removeAll(); newSamples = 0; lastSample = -.infinity; nextRecheck = .infinity; resetMotion()
     }
 
@@ -197,7 +207,8 @@ final class IndependentLiveCourt {
         launchThumbnail = thumbnail
         if samples.count > options.frames { samples.removeFirst(samples.count - options.frames) }
         if let current = camera {
-            guard samples.count >= options.recheckFrames else { return change }
+            guard samples.count >= (recheckNeeded ?? options.recheckFrames) else { return change }
+            recheckNeeded = nil
             launch(samples, current: current, track: false, pts: pts)
             lastTrack = pts
             samples.removeAll()          // a re-check holds no frames once its median is taken
@@ -308,7 +319,10 @@ final class IndependentLiveCourt {
             latest = calibration
             guard let found = calibration.camera else { return nil }
             camera = found; predictedInUse = false; misfits = 0; samples.removeAll(); lastTrack = pts; cameraThumbnail = launchThumbnail; fitted = found
-            nextRecheck = pts + options.recheckInterval; stats.found += 1
+            if inFlightFrames < options.earlyRecheckFrames {
+                nextRecheck = pts; recheckNeeded = options.earlyRecheckFrames      // confirm on a median soon
+            } else { nextRecheck = pts + options.recheckInterval; recheckNeeded = nil }
+            stats.found += 1
             return .found(found)
         }
         nextRecheck = pts + options.recheckInterval
