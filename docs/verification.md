@@ -2808,3 +2808,14 @@ dt001 的原因：
 - 没装到真机上；这次只改回放画法，不改界内外判定，也不证明判定精度。
 - 预览视频是模拟器上录的演示数据，没上传 App Store Connect（计划随 1.2），也没过苹果的预览视频规格检查（只按文档里的尺寸、帧率、时长、音轨自查）。
 - 没在 iPhone 13/14 这类小屏或旧机型上看回放的实际帧率与发热。
+
+## 2026-11-04 TestFlight 1.1 (6)：环绕镜头的界内外回放
+
+PR #21 合入 main（`d9524b1`）后从新的 main 打 1.1 (6)：`scripts/reference-chain.sh status` 为 `off`，`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 生成工程，Release 归档并手动导出（Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」），之后还原 `Info.plist`。
+
+- 解包检查：没有 `AnalysisModels`，`LocalReferenceChain` 0 处；`CFBundleShortVersionString` 1.1、`CFBundleVersion` 6；TeamIdentifier=A2YR8HBQKY。
+- 上传：`asc builds upload` 后构建 `d26c889b` 为 `VALID`；zh-Hans 的「测试什么」写成 1.1 (6) 的说明（回放镜头、球印、App 与浏览器一致，以及要重点试的项）。
+- 内测组「Zacks Court 内测」是「所有构建」组（`hasAccessToAllBuilds`），构建 6 不用再加，成为内测组最新构建。
+- 公测组「Zacks Court 公测」：构建 6 已加入该组，但 Beta 审核提交被构建 2 的 Beta 审核挡住——`589586fd` 从 2026-11-03 19:01（太平洋时间）起一直是 `WAITING_FOR_REVIEW`，已超过一天。ASC API 不能取消 Beta 审核（`betaAppReviewSubmissions` 只有 GET 和 POST），只能等它审完，再用 `asc builds add-groups --submit` 提交构建 6。
+
+没有验证：没装到真机上；构建 6 没有重跑 `swift test`（代码与 PR #21 完全相同，本机检查在提 PR 前跑过）；公测组还没拿到构建 6，它的 Beta 审核还没提交。
