@@ -5,7 +5,8 @@ One row per shot the app recorded, in ledger order, split into blocks by the ses
 (press 「待复核」 or 「精彩」 at the start of each block, see docs/field-test-plan.md). Each row names
 the recording and the second inside it. Nobody labels shots by hand: ref_stroke is filled from the
 block name when the block is a single-stroke drill (「正手」, 「发球近端」 ...), and the other reference
-columns take instrument readings only (radar ref_speed_kph, measured targets ref_x_m / ref_y_m).
+columns take instrument readings only (measured targets ref_x_m / ref_y_m; ref_speed_kph stays empty,
+since field tests use no radar).
 Then run scripts/field-test-report.py on the sheet.
 
     scripts/field-test-sheet.py SESSION.json --blocks "发球近端,发球远端,底线对拉" -o sheet.csv
