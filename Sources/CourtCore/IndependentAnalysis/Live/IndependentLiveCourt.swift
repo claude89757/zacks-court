@@ -93,6 +93,11 @@ final class IndependentLiveCourt {
 
     struct Stats: Sendable {
         var launches = 0, solves = 0, solveSeconds = 0.0, samples = 0, found = 0, moved = 0, lost = 0
+        /// Longest and latest solve or tracking step on the utility queue, seconds (field diagnostics).
+        var maxSolveSeconds = 0.0, lastSolveSeconds: Double?
+        mutating func timed(_ seconds: Double) {
+            solves += 1; solveSeconds += seconds; maxSolveSeconds = max(maxSolveSeconds, seconds); lastSolveSeconds = seconds
+        }
     }
 
     static let width = IndependentCourtCalibrator.width, height = IndependentCourtCalibrator.height
@@ -145,6 +150,28 @@ final class IndependentLiveCourt {
 
     var searching: Bool { camera == nil }
 
+    /// What the camera's field log records about the court once a second: state, motion, the solve in
+    /// use (or the last refused one while searching) and solve times. A few numbers, no image.
+    var diagnostics: CameraCourtDiagnostics {
+        var d = CameraCourtDiagnostics(state: camera == nil ? .searching : .found)
+        if options.motionPixels != nil, let lastMotion {
+            d.motion = switch motion { case .still: .still; case .drifting: .drifting; case .shaking: .shaking }
+            d.motionPixels = (lastMotion * 10).rounded() / 10
+        }
+        if let latest {
+            d.lines = latest.linesUsed.count; d.rmsPixels = latest.fitRMS.map { ($0 * 100).rounded() / 100 }
+            d.quality = latest.quality?.rawValue
+            if camera == nil, !latest.refusals.isEmpty { d.refusals = latest.refusals.map(\.rawValue) }
+        }
+        d.geometry(of: camera ?? latest?.rejectedCamera)
+        let ms = { (seconds: Double) in (seconds * 1000).rounded() / 1000 }
+        d.solves = stats.solves; d.solveSeconds = ms(stats.solveSeconds); d.maxSolveSeconds = ms(stats.maxSolveSeconds)
+        d.lastSolveSeconds = stats.lastSolveSeconds.map(ms)
+        d.found = stats.found; d.moved = stats.moved; d.lost = stats.lost; d.samples = stats.samples
+        d.solving = inFlight
+        return d
+    }
+
     /// A camera set from outside (fixed): kept, and re-checked from `pts` on.
     func adopt(_ camera: IndependentPinholeCamera?, pts: Double) {
         self.camera = camera; fitted = camera; predictedInUse = false; latest = nil; misfits = 0; recheckNeeded = nil
@@ -177,7 +204,7 @@ final class IndependentLiveCourt {
         let latency = options.simulatedLatencyScale, launched = launchedAt
         if let outcome = mailbox.take(if: { o in latency.map { pts >= launched + o.seconds * $0 } ?? true }) {
             inFlight = false
-            if movedSinceLaunch { stats.solves += 1; stats.solveSeconds += outcome.seconds }
+            if movedSinceLaunch { stats.timed(outcome.seconds) }
             else if let applied = apply(outcome, pts: pts) { change = applied }
             movedSinceLaunch = false
         }
@@ -297,7 +324,7 @@ final class IndependentLiveCourt {
     }
 
     private func apply(_ outcome: Outcome, pts: Double) -> Change? {
-        stats.solves += 1; stats.solveSeconds += outcome.seconds
+        stats.timed(outcome.seconds)
         if outcome.track {
             guard let current = camera else { return nil }        // dropped meanwhile
             if let tracked = outcome.tracked {

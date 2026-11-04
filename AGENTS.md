@@ -20,14 +20,14 @@ App 只有三项核心功能，研究、打磨和验收都围绕它们：
 
 | 路径 | 内容 |
 | --- | --- |
-| `Sources/CourtCore` | 平台无关核心：协议 v2（`Wire`、`WireMessages`）、配对与 TLS 连接（`CourtServer`、自动重连的 `CameraLink`、点对点选项与 `LinkPath`）、H.264 编解码、会话与持久化、录像；机位端 `CameraMediaPipeline`（录像/预览/分析分流）、`CameraSideAnalyzer`（选帧器与独立触地定位队列）、`CameraSessionController`（机位会话权威）、`CameraLoadPolicy`（分级降载）、`RecordingTransfer`、`OfflineBackfill`、`ClipExport`（单拍片段，不重新编码）；浏览器看板服务端 `WebDisplayServer`（HTTP/1.1 + WebSocket、令牌/配对码认证、`/api/*`）与 `WebDisplay`（凭据、JSON 信封、帧格式），页面在 `Web/`（SwiftPM 资源，无构建步骤）；人员检测、S家链接口 `ReferenceChain`（实现只在本地，见下文「分析模型」）、历史查询；测试用的 `SyntheticFrameSource`、`FileFrameSource` |
+| `Sources/CourtCore` | 平台无关核心：协议 v2（`Wire`、`WireMessages`）、配对与 TLS 连接（`CourtServer`、自动重连的 `CameraLink`、点对点选项与 `LinkPath`）、H.264 编解码、会话与持久化、录像；机位端 `CameraMediaPipeline`（录像/预览/分析分流）、`CameraSideAnalyzer`（选帧器与独立触地定位队列）、`CameraSessionController`（机位会话权威）、`CameraLoadPolicy`（分级降载）、`RecordingTransfer`、`OfflineBackfill`、`ClipExport`（单拍片段，不重新编码）、`CameraDiagnostics`（机位采集日志与记录的诊断包）；浏览器看板服务端 `WebDisplayServer`（HTTP/1.1 + WebSocket、令牌/配对码认证、`/api/*`）与 `WebDisplay`（凭据、JSON 信封、帧格式），页面在 `Web/`（SwiftPM 资源，无构建步骤）；人员检测、S家链接口 `ReferenceChain`（实现只在本地，见下文「分析模型」）、历史查询；测试用的 `SyntheticFrameSource`、`FileFrameSource` |
 | `Sources/CourtApp` | 共享 SwiftUI 界面与媒体层：`Views/`、`Models/`（`WorkspaceModel` 看板镜像与角色外观、`RecognitionStatus` 识别状态、`CameraStandby` 值守屏、`CameraAutopilot` 开发用实机自检）、`Media/`（相机采集、`CameraModel`、预览、扫码、Phase 0 测量） |
 | `Sources/CourtMac` | Mac App 入口与辅助窗口（测速牌、落点看板、实时画面） |
 | `apps/iphone` | iOS 入口、XcodeGen 规格 `project.yml`、资源目录、UI 测试 `ZacksCourtUITests` |
 | `Sources/CourtProbe` | `court-probe`：v2 自检（错误密钥 + 机位↔看板回环），以及把合成画面或本地视频当作机位、连到已配对 App 的模拟机位；`web` 模式让这台 Mac 当机位、开浏览器看板 |
 | `Sources/CourtAnalyze` | `court-analyze`：用同一流式引擎离线分析本地视频 |
 | `Tests/CourtCoreTests` | `court-check` 可执行检查（协议 v2、配对、会话、人员检测、机位媒体管线的真实编解码） |
-| `Tests/CourtAppTests` | `swift test`：浏览器看板（`WebDisplayTests`，测试扮演浏览器）、模型/几何/轨迹门控、机位端分析、识别状态、值守屏、机位↔看板 TLS 集成（采用、镜像、断线补发、冲突、后台）、降载、回传、离线补算、单拍片段、连接方式与点对点设置、历史查询、预览响应；可选的实机看板测试 |
+| `Tests/CourtAppTests` | `swift test`：浏览器看板（`WebDisplayTests`，测试扮演浏览器）、模型/几何/轨迹门控、机位端分析、识别状态、值守屏、机位↔看板 TLS 集成（采用、镜像、断线补发、冲突、后台）、降载、回传、离线补算、单拍片段、连接方式与点对点设置、历史查询、预览响应、现场诊断（采集日志、诊断包）；可选的实机看板测试 |
 | `scripts/` | 构建、模型准备、iOS 工程生成、UI 验收、图标导出；球场实测的记录表生成与对照（`field-test-sheet.py`、`field-test-report.py`，只用 Python 标准库） |
 | `assets/` | 分析模型集合与品牌素材 |
 | `docs/` | 设计、验证记录、实机清单、研究记录、README 图片 |
@@ -134,7 +134,7 @@ python3 scripts/field-test-report.py --self-test
 - **浏览器看板是连接方向的例外**：App 看板监听、机位连过去；浏览器不能监听也不会 TLS-PSK，所以机位监听浏览器（默认开启，是主推方式；侧栏顶部「连接」打开全屏连接页，开关与 App 看板扫码配对都在那一页）。走明文 HTTP：令牌只放在二维码 URL 的 `#` 后、以 HMAC 挑战应答证明，`/api/*` 用每连接访问码；这比 TLS-PSK 弱，界面与 README 必须照实说明。浏览器发来的控制命令与 App 看板走同一个 `apply`，回执只回发起者；浏览器不能用 `transfer`/`clip` 命令，文件一律走 HTTP，录像下载在记录中拒绝。浏览器预览取分析器已复制的最新帧，在独立队列编 JPEG，不碰相机缓冲。
 - **新功能按能力协商**：协议 v2 内新增的命令只发给在 `hello.capabilities` 里声明支持的对端（目前机位声明 `clips`），新字段一律可选，旧 v2 版本照常解码。
 - **点对点直连可关闭**：看板默认在点对点 Wi-Fi 上监听（票据 `peerToPeer`），设置随设备保存；早期票据没有该标记，按关闭处理。点对点 Bonjour 尝试有 3 秒 `.waiting` 宽限，其他连接仍立即失败并退避。
-- 数据只存本机；配对链接含临时密钥，不写入日志、截图或提交。看板在机位拥有的会话进行中把机位每秒状态写入 `<会话ID>-status.jsonl`（诊断记录，不含画面；断线时写一行 `connected: false`），会话本身仍以机位为准。
+- 数据只存本机；配对链接含临时密钥，不写入日志、截图或提交。看板在机位拥有的会话进行中把机位每秒状态写入 `<会话ID>-status.jsonl`（诊断记录，不含画面；断线时写一行 `connected: false`），会话本身仍以机位为准。机位自己在采集时每秒写 `Sessions/Diagnostics/capture-*.jsonl`（球场识别、温度、负载，不含画面，保留 14 天，不分有没有看板）；记录详情「导出 › 诊断包（不含录像）」把记录 JSON、日志、前后的采集日志和中文摘要打成一个 zip，用户自己选择分享到哪里。球场实测的问题先要诊断包和录像，不凭描述猜（见 [docs/camera-side-analysis.md](docs/camera-side-analysis.md) 第 14 节）。
 
 ## 界面约定
 

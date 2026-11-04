@@ -365,6 +365,13 @@ struct SessionDetail: View {
         let json = model.sessionFileURL(session), analysis = model.analysisFileURL(session), status = model.statusFileURL(session)
         let exists = { (url: URL) in FileManager.default.fileExists(atPath: url.path) }
         return Menu {
+            // One file to send back from a field test: record, logs, the camera's capture logs, a summary.
+            if exists(json) {
+                ShareLink(item: DiagnosticPackage(session: session, storageDirectory: model.storageDirectory),
+                          preview: SharePreview("Zacks Court 诊断包")) {
+                    Label("诊断包（不含录像）", systemImage: "stethoscope")
+                }
+            }
             if exists(json) { ShareLink(item: json) { Label("记录 JSON", systemImage: "doc.text") } }
             if exists(analysis) { ShareLink(item: analysis) { Label("辅助检测日志", systemImage: "point.topleft.down.to.point.bottomright.curvepath") } }
             // Display only: the camera's 1 Hz status as this display received it.

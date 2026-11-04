@@ -2847,3 +2847,27 @@ PR #22 合入 main（`bda5abd`）后从新的 main 打 1.1 (7)：`scripts/refere
 - 公测组「Zacks Court 公测」：构建 7 已加入该组，`externalBuildState` 为 `READY_FOR_BETA_SUBMISSION`；Beta 审核提交仍被构建 2 的 Beta 审核挡住（「Another build in the same train is already in beta review」），等它审完再用 `asc builds add-groups --submit` 提交最新构建。
 
 没有验证：没装到真机上；构建 7 没有重跑 `swift test`（代码与 PR #22 相同，本机检查在提 PR 前跑过）；公测组还没拿到构建 7。
+
+## 2026-11-05 现场诊断：机位采集日志与一键诊断包
+
+为什么：用户在球场上实测（手机不在这台 Mac 旁边），反馈「球场识别很差」，但单手机使用时机位什么都不记，开始记录之前架机位、等球场的那段也没有记录，没法诊断。上一节「已放慢」查不出原因，也是因为机位不记录热状态与降载；采集日志每秒记下温度、相机压力和降载等级与原因，这一项一并补上。设计见 [camera-side-analysis.md](camera-side-analysis.md) 第 14 节。
+
+改动：
+- 自动球场报出诊断数据（`IndependentLiveCourt.diagnostics` → 引擎 → `CameraSideAnalyzer.Metrics.court` → `status.analysis.court`，可选字段）：在用或最近被拒的求解（线数、对齐误差、拒绝原因、焦距、机高、离底线多远）、画面运动、求解次数与总 / 最长 / 最近耗时、找到 / 移动 / 丢失次数。
+- 机位采集时每秒写 `Sessions/Diagnostics/capture-*.jsonl`（`CameraCaptureLog`），每次采集一个文件，保留 14 天；存储页算进「诊断日志」并能清理。看板写的 `-status.jsonl` 也多了 `court` 和机位页上的球场文字。
+- 存储页「诊断日志」的说明改成「辅助检测、机位状态和机位采集日志」。
+- 记录详情「导出」菜单第一项「诊断包（不含录像）」：选好分享目标后打成 zip（记录 JSON、日志、记录前 30 分钟到结束后 1 分钟的采集日志、中文摘要 `README.txt`），不含录像和配对密钥。
+- `court-probe live` 在输出旁边写同样的 `.diagnostics.zip`。
+
+跑了什么（Mac M4 Pro，macOS 26.6.2，Xcode 27.0，Swift 6.4）：
+- `swift build` 通过；`swift run court-check` 通过。
+- 新增 `CameraDiagnosticsTests` 3 项：合成画面的机位（`CameraRig`）开记录跑约 2 秒，一次采集一个文件，`start` / 每秒带会话 ID 的 `status` / 关闭时 `stop`；诊断包 zip 里有记录 JSON、`README.txt` 和这个采集文件，没有 `.mov`，临时目录删掉；摘要按造好的日志写出「开始后约 4 秒认出球场」、拒绝原因与秒数、「记录中 5 秒，有球场 5 秒（100%）」、机高、App 版本和最高温度，两小时前的采集文件不放进包；采集日志算诊断日志、不算残留，清理后下一行带着 `start` 行重新开文件。`IndependentLiveCourtTests/testFindsKeepsMovesAndLosesTheCourt` 加了诊断数据的检查（找到时状态、线数、机高和离底线距离对得上渲染相机，丢失后是 searching、带拒绝原因、丢失 1 次）。
+- 全量 `swift test`：318 项，18 项跳过（都要显式开启的环境，例如模型目录、真机、外部视频），0 失败，用时 644 秒。
+- 真实视频走整条机位链（Mac 回放，不是 iPhone）：本机一段 1080p60 单打开发视频截 75 秒，`COURT_PROBE_INDEPENDENT=<FP16 模型> court-probe live`：80 行、界内外 10 个，诊断包里有记录 JSON、辅助检测日志、76 行的采集日志（56 KB，约每小时 2.7 MB）和摘要：第 1 秒内认出球场，记录中 74 秒都有球场，画面静止，求解和跟踪 75 次、最长 0.13 秒，机高约 3.1 米、底线后约 6.4 米、焦距 1401 像素、7 条线、对齐误差 0.36 像素，分析落后最多 0.19 秒，丢帧 0。
+- iOS：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 的 Debug 编译通过；在专用的 iPhone 17 Pro 模拟器（iOS 26.1，用完删除）上跑新 UI 用例 `testRecordDiagnosticPackageOpensTheShareSheet` 通过：记录详情「导出」菜单里有「诊断包（不含录像）」，点开出现系统分享面板，标题「Zacks Court 诊断包」，有「保存到"文件"」。之后还原了 `Info.plist`。
+
+没有验证：
+- iPhone 真机：采集日志的写入、手机上的求解耗时、在手机上实际打包并存到「文件」或发出去（模拟器上只打开了分享面板，没有选目标，打包本身是 Mac 上的单元测试）。
+- 球场实测：这一轮只是记录工具，不改识别，也不证明任何精度。
+- 看板那边的诊断包（只有记录 JSON 和看板写的 `-status.jsonl`，没有机位的采集日志）只在代码里，没单独跑。
+- 其余 UI 用例没有重跑（只在导出菜单里加了一项）。

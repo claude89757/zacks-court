@@ -1133,6 +1133,27 @@ final class WorkspaceUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    /// A record's 「导出」 menu offers the diagnostic package first; picking it opens the share sheet
+    /// (the package itself, a zip built when a destination is chosen, is checked in `CameraDiagnosticsTests`).
+    func testRecordDiagnosticPackageOpensTheShareSheet() throws {
+        let run = String(Int(Date().timeIntervalSince1970) % 100_000)
+        enterServer()
+        startTraining(title: "UI-QA-DIAG-" + run)
+        finishTraining()
+        tapReachable(app.buttons["历史记录"].firstMatch)
+        let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "UI-QA-DIAG-" + run)).firstMatch
+        XCTAssertTrue(makeSheetReachable(record)); record.tap()
+        let export = app.buttons["court.history.export"].firstMatch
+        XCTAssertTrue(makeSheetReachable(export)); export.tap()
+        let package = app.buttons["诊断包（不含录像）"].firstMatch
+        XCTAssertTrue(package.waitForExistence(timeout: 5), "The export menu lists the diagnostic package")
+        attach("diagnostics-01-export-menu")
+        package.tap()
+        let sheet = app.otherElements["ActivityListView"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10), "The share sheet opens for the package")
+        attach("diagnostics-02-share-sheet")
+    }
+
     /// History opens on the session list; filters are 44-point controls; a record can be deleted
     /// from its detail page and by swiping its row, each after a confirmation. UI-QA records only.
     func testHistorySessionListFiltersAndDelete() throws {

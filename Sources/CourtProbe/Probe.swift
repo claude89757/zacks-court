@@ -294,6 +294,15 @@ import VideoToolbox
         let p90 = lags.isEmpty ? Double.nan : lags[min(lags.count - 1, Int(Double(lags.count) * 0.9))]
         print("Rows \(rows.count), calls \(calls.count) (out \(calls.filter { $0["call"] as? String == "out" }.count), close \(calls.filter { $0["call"] as? String == "close" }.count)); call lag median \(String(format: "%.2f", median)) s, p90 \(String(format: "%.2f", p90)) s")
         await camera.shutdown()
+        camera.captureLog.flush()
+        if let session = camera.session {
+            // the same diagnostic package the App shares from the record (capture log, summary)
+            let zip = try DiagnosticBundle.build(session: session, storageDirectory: folder, into: output.deletingLastPathComponent())
+            let named = output.deletingPathExtension().appendingPathExtension("diagnostics.zip")
+            try? FileManager.default.removeItem(at: named)
+            try FileManager.default.moveItem(at: zip, to: named)
+            print("Diagnostic package: \(named.lastPathComponent)")
+        }
         try? FileManager.default.removeItem(at: folder)
     }
 

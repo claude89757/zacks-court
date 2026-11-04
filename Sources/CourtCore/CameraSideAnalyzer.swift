@@ -39,6 +39,8 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         /// Automatic court (in-house lane): solves, their seconds on the utility queue, frames sampled, and
         /// how often the court was found, moved or lost.
         public var courtSolves = 0, courtSolveSeconds = 0.0, courtSamples = 0, courtFound = 0, courtMoved = 0, courtLost = 0
+        /// The court right now (in-house lane), for the 1 Hz status and the camera's capture log.
+        public var court: CameraCourtDiagnostics?
         public init() {}
     }
     /// Milliseconds since the previous drain.
@@ -391,6 +393,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             metrics.ballCandidates = stats.candidates; metrics.publishedShots = stats.published
             metrics.courtSolves = stats.courtSolves; metrics.courtSolveSeconds = stats.courtSolveSeconds; metrics.courtSamples = stats.courtSamples
             metrics.courtFound = stats.courtFound; metrics.courtMoved = stats.courtMoved; metrics.courtLost = stats.courtLost
+            metrics.court = stats.court
         }
         let handler = snapshotHandler
         lock.unlock()

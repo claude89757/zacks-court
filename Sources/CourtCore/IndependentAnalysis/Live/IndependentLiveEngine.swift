@@ -486,6 +486,8 @@ public final class IndependentLiveEngine {
     public struct Stats: Sendable {
         public var batches: Int, inferenceSeconds: Double, personSamples: Int, personSeconds: Double, ballResets: Int, published: Int, candidates: Int
         public var courtSolves = 0, courtSolveSeconds = 0.0, courtSamples = 0, courtFound = 0, courtMoved = 0, courtLost = 0
+        /// The court right now, for the camera's field log (nil with neither automatic nor given court).
+        public var court: CameraCourtDiagnostics?
     }
     public var stats: Stats {
         var s = Stats(batches: ball.batches, inferenceSeconds: ball.inferenceSeconds, personSamples: personsStage.samples, personSeconds: personsStage.seconds,
@@ -493,6 +495,10 @@ public final class IndependentLiveEngine {
         if let c = court?.stats {
             s.courtSolves = c.solves; s.courtSolveSeconds = c.solveSeconds; s.courtSamples = c.samples
             s.courtFound = c.found; s.courtMoved = c.moved; s.courtLost = c.lost
+        }
+        if let court { s.court = court.diagnostics }
+        else if let camera = configuration.camera {
+            var fixed = CameraCourtDiagnostics(state: .fixed); fixed.geometry(of: camera); s.court = fixed
         }
         return s
     }

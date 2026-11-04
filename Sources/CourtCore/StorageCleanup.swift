@@ -10,7 +10,8 @@ public struct StorageUsage: Equatable, Sendable {
     public var recordingCount = 0
     /// Per-shot clips fetched from a camera (`Clips/`).
     public var clips: Int64 = 0
-    /// Detection and camera-status logs (`<id>-analysis.jsonl`, `<id>-status.jsonl`).
+    /// Detection and camera-status logs (`<id>-analysis.jsonl`, `<id>-status.jsonl`) and the camera's
+    /// capture logs (`Diagnostics/`).
     public var logs: Int64 = 0
     /// Session JSON (shots, marks) and small settings files.
     public var data: Int64 = 0
@@ -67,6 +68,7 @@ public final class StorageCleanup {
         for url in urls {
             let name = url.lastPathComponent
             if name == SessionStore.clipsFolder { usage.clips += Self.size(of: url); continue }
+            if name == DiagnosticBundle.folderName { usage.logs += Self.size(of: url); continue }
             let bytes = Self.size(of: url)
             switch Self.kind(of: name, listed: listed, ids: ids) {
             case .recording: usage.recordings += bytes; if name.hasSuffix(".mov") { usage.recordingCount += 1 }
@@ -155,13 +157,18 @@ public final class StorageCleanup {
         return freed
     }
 
-    /// Clears detection and camera-status logs of records not in use.
+    /// Clears detection and camera-status logs of records not in use, and the camera's capture logs
+    /// (a capture run still going starts its file again with its next line).
     @discardableResult public func clearLogs(inUse: Set<UUID>) throws -> Int64 {
         let busy = Set(inUse.map { $0.uuidString.lowercased() })
         var freed: Int64 = 0
         for url in (try? FileManager.default.contentsOfDirectory(at: store.directory, includingPropertiesForKeys: nil)) ?? [] {
             let name = url.lastPathComponent
             guard name.hasSuffix("-analysis.jsonl") || name.hasSuffix("-status.jsonl"), !busy.contains(String(name.prefix(36)).lowercased()) else { continue }
+            freed += Self.size(of: url); try Self.remove(url)
+        }
+        let captures = DiagnosticBundle.folder(in: store.directory)
+        for url in (try? FileManager.default.contentsOfDirectory(at: captures, includingPropertiesForKeys: nil)) ?? [] {
             freed += Self.size(of: url); try Self.remove(url)
         }
         return freed
