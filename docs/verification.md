@@ -2688,3 +2688,17 @@ dt001 的原因：
 检查：`swift build` 通过；`swift run court-check` 通过；`swift test` 311 项，0 失败，18 项跳过（需要 S家链、S家模型、外部视频或显式开启的用例）。没改 iOS 界面和工程，没跑模拟器编译。
 
 没有验证：真实球场上的新机位；iPhone 上的耗时和发热；dt002 那类夜场斜角机位仍认不出来；手持搬动阶段的短暂错球场没处理（下一步：用设备给出的视场角当焦距先验，见 frontier）。
+
+## 2026-11-04 1.1 换成构建 3 重新提交审核
+
+原因：1.1 (2)（main bf33281）没有 PR #13、#14 的错球场修复，在室内低机位、底线前地面有大字的场地上可能悄悄锁错球场，影响近端界内外和发球球速。苹果还没开始审（`WAITING_FOR_REVIEW`），用户决定换包。
+
+- 构建：`origin/main` 3cee4c5（含 PR #13、#14），`CURRENT_PROJECT_VERSION` 改为 3（`asc builds next-build-number` 返回 3）；`scripts/reference-chain.sh status` 为 `off`；`COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，Release 归档（不签名）后手动签名导出（Apple Distribution，描述文件「Zacks Court App Store 20261027」），之后还原 `Info.plist`。
+- 解包检查：只有 `IndependentModels/tracknetv3-base-v1` 和 `tracknetv3-base-fp16-v1`，没有 `AnalysisModels`；二进制里没有 `LocalReferenceChain`，有这次的 `startsTooFarBack`；版本 1.1，构建号 3。
+- `asc builds upload --wait`：build `9a5e96d5` 处理完成（`VALID`，`usesNonExemptEncryption` false）。
+- 先上传成功，再撤回：`asc review submissions-cancel` 撤回 1.1 (2) 的提交 `422c5c95`（版本变为 `DEVELOPER_REJECTED`）；`asc versions attach-build` 关联构建 3；`asc review doctor` 只报旧提交已空（预期）；`asc review submit` 新提交 `a8434131`，1.1 为 `WAITING_FOR_REVIEW`。商店文字、截图、审核备注都没改。
+- TestFlight：内测组自动拿到构建 3（`IN_BETA_TESTING`），加了 zh-Hans「测试什么」（[testflight.md](app-store/testflight.md)，多一条室内低机位）；已加进公测组，但 Beta 审核提交被拒（同一版本的构建 2 还在 Beta 审核中），构建 3 外部状态 `READY_FOR_BETA_SUBMISSION`，等构建 2 的 Beta 审核结束后再提交。
+
+检查：代码与 PR #14 合入时相同（`swift build`、`court-check`、`swift test` 311 项 0 失败 18 跳过，见上一节）；这次只改了构建号和文字，没重跑。
+
+没有验证：1.1 (3) 没装到真机上；错球场修复只在 Mac 上用录像验证过。
