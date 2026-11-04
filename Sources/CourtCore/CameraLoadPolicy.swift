@@ -16,12 +16,25 @@ public struct CameraLoadPolicy: Sendable {
     public private(set) var level = 0
     public private(set) var reason: String?
     private var belowSince: Double?
+    /// The last rise came from camera pressure rather than heat, so recovery keeps naming that cause.
+    private var byPressure = false
 
     public init() {}
 
+    /// Camera pressure as a short level name. The camera reports AVFoundation's raw value
+    /// (`AVCaptureSystemPressureLevelFair`, as seen on iPhone18,2); the short name (`fair`) is accepted too.
+    public static func pressureName(_ raw: String) -> String {
+        let prefix = "AVCaptureSystemPressureLevel"
+        return (raw.hasPrefix(prefix) ? String(raw.dropFirst(prefix.count)) : raw).lowercased()
+    }
+
+    static func thermalLevel(_ thermal: String) -> Int { ["fair": 1, "serious": 2, "critical": 3][thermal] ?? 0 }
+    static func pressureLevel(_ pressure: String?) -> Int {
+        pressure.flatMap { ["fair": 1, "serious": 2, "critical": 3, "shutdown": 4][pressureName($0)] } ?? 0
+    }
+
     public static func target(thermal: String, pressure: String?, lowPower: Bool) -> (level: Int, reason: String?) {
-        let thermalLevel = ["fair": 1, "serious": 2, "critical": 3][thermal] ?? 0
-        let pressureLevel = pressure.flatMap { ["fair": 1, "serious": 2, "critical": 3, "shutdown": 4][$0] } ?? 0
+        let thermalLevel = Self.thermalLevel(thermal), pressureLevel = Self.pressureLevel(pressure)
         let level = max(thermalLevel, pressureLevel, lowPower ? 1 : 0)
         // Name the actual cause: heat and camera pressure need different next steps.
         let heat = thermalLevel >= pressureLevel
@@ -43,13 +56,16 @@ public struct CameraLoadPolicy: Sendable {
         let target = Self.target(thermal: thermal, pressure: pressure, lowPower: lowPower)
         if target.level > level {
             level = target.level; reason = target.reason; belowSince = nil
+            byPressure = Self.pressureLevel(pressure) > Self.thermalLevel(thermal)
             return true
         }
         guard target.level < level else { belowSince = nil; return false }
         guard let since = belowSince else { belowSince = now; return false }
         guard now - since >= Self.recoverySeconds else { return false }
         level -= 1; belowSince = level > target.level ? now : nil
-        reason = Self.target(thermal: ["", "fair", "serious", "critical"][min(level, 3)], pressure: level == 4 ? "shutdown" : nil, lowPower: false).reason
+        let name = ["nominal", "fair", "serious", "critical", "shutdown"][level]
+        reason = (byPressure ? Self.target(thermal: "nominal", pressure: name, lowPower: false)
+                             : Self.target(thermal: name, pressure: nil, lowPower: false)).reason
         if level == 0 { reason = nil }
         return true
     }
