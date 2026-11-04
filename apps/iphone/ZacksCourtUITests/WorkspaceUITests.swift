@@ -1085,10 +1085,12 @@ final class WorkspaceUITests: XCTestCase {
         replay.tap()
         XCTAssertTrue(app.descendants(matching: .any)["court.hawkeye.replay"].firstMatch.waitForExistence(timeout: 5))
         for step in 0..<18 { save("replay-a-\(step)"); Thread.sleep(forTimeInterval: 0.4) }
-        let previous = app.buttons["上一个"].firstMatch
-        if previous.isEnabled {
+        // The same three replays as the store preview.
+        for pass in ["b", "c"] {
+            let previous = app.buttons["上一个"].firstMatch
+            guard previous.isEnabled else { break }
             previous.tap()
-            for step in 0..<18 { save("replay-b-\(step)"); Thread.sleep(forTimeInterval: 0.4) }
+            for step in 0..<18 { save("replay-\(pass)-\(step)"); Thread.sleep(forTimeInterval: 0.4) }
         }
         app.buttons["关闭"].firstMatch.tap()
         XCUIDevice.shared.orientation = .portrait

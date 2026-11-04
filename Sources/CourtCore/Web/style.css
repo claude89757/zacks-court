@@ -223,16 +223,19 @@ select { width: 100%; }
 .challenge-title { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center;
   background: rgba(19, 26, 22, 0.92); border-radius: var(--radius-card); padding: 18px 30px; }
 .challenge-word { font-size: clamp(2rem, 7vw, 3rem); font-weight: 900; letter-spacing: 0.15em; }
-.challenge-verdict { position: absolute; left: 12px; right: 12px; bottom: 12px; margin: 0 auto; max-width: 760px; display: flex;
-  align-items: center; gap: 16px; padding: 14px 18px; background: rgba(19, 26, 22, 0.94);
+/* The verdict sits across the top, compact: the overhead shot keeps the gap in the lower part. */
+.challenge-verdict { position: absolute; left: 10px; right: 10px; top: 10px; margin: 0 auto; max-width: 720px; display: flex;
+  align-items: center; gap: 12px; padding: 8px 12px; background: rgba(19, 26, 22, 0.94);
   border: 2px solid var(--call, var(--recording)); border-radius: var(--radius-card); }
+.challenge-verdict .hawkeye-shout { font-size: clamp(1.6rem, 6vw, 2.6rem); padding: 2px 14px; }
+.challenge-verdict .hawkeye-text { font-size: 1.05rem; }
 .challenge-verdict.out .hawkeye-shout { color: #fff; }
 .challenge-top strong { white-space: nowrap; }
-/* Narrow phones: a smaller verdict leaves the bounce mark visible above it. */
+/* Narrow phones: a smaller verdict leaves more of the overhead shot below it. */
 @media (max-width: 400px) {
-  .challenge-verdict { gap: 10px; padding: 10px 12px; }
-  .challenge-verdict .hawkeye-shout { font-size: 1.8rem; padding: 6px 12px; }
-  .challenge-verdict .hawkeye-text { font-size: 1rem; }
+  .challenge-verdict { gap: 8px; padding: 6px 10px; }
+  .challenge-verdict .hawkeye-shout { font-size: 1.5rem; padding: 2px 10px; }
+  .challenge-verdict .hawkeye-text { font-size: 0.95rem; }
 }
 .challenge-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 8px; }
 .challenge-foot video { width: 100%; max-height: 32vh; }

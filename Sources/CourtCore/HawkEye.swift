@@ -40,6 +40,8 @@ public enum HawkEyeLine: String, Codable, Sendable {
         case .serviceLine: return "发球线"; case .centreLine: return "中线"
         }
     }
+    /// Painted width, inward from the outer edge the call measures from (baselines 10 cm, the rest 5 cm).
+    public var paintedWidth: Double { self == .baseline ? 0.10 : 0.05 }
 }
 
 public struct HawkEyeJudgement: Codable, Equatable, Sendable {
@@ -58,12 +60,23 @@ public struct HawkEyeJudgement: Codable, Equatable, Sendable {
         self.call = call; self.distanceM = distanceM; self.marginM = marginM; self.line = line; self.format = format
         self.serve = serve; self.farHalf = farHalf
     }
+    /// The gap the eye sees between the footprint and the painted line, metres: out, beyond the line's
+    /// outer edge (the call's distance); in, inside its inner edge (`distanceM` reaches the footprint's
+    /// far side, so the gap is a ball and a line width less); 0 when an in footprint touches the line;
+    /// nil for a close call.
+    public var visibleGapM: Double? {
+        switch call {
+        case .out: return max(0, distanceM)
+        case .in: return max(0, -distanceM - 2 * HawkEye.ballRadius - line.paintedWidth)
+        case .close: return nil
+        }
+    }
     /// "出界 约 12 厘米 · 底线" style summary; close calls say how near the line the estimate fell.
     public var detailText: String {
-        let cm = Int((abs(distanceM) * 100).rounded())
+        let cm = Int(((visibleGapM ?? 0) * 100).rounded())
         switch call {
         case .out: return "出界约 \(cm) 厘米 · \(line.text)"
-        case .in: return "界内 · 距\(line.text)约 \(cm) 厘米"
+        case .in: return cm == 0 ? "界内 · 球印压在\(line.text)上" : "界内 · 距\(line.text)约 \(cm) 厘米"
         case .close: return "离\(line.text)不到 \(Int((marginM * 100).rounded())) 厘米，无法判定"
         }
     }
