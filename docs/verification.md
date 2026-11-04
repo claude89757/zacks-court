@@ -2628,6 +2628,17 @@ iPhone 录像（原样不变形，没有真值；`independent-live` 和 App 机�
 
 没有验证：网页上才能看的声明（法规与许可等，`review doctor` 不查，沿用 1.0 过审时的答案）；商店页面在各地区的实际显示；1.1 (2) 在真机上的安装和运行。
 
+## 2026-11-04 App Store 创意素材（产品页标题和搜索结果）
+
+环境：这台 Mac，Google Chrome 无头渲染（`scripts/render-creative-assets.sh`，CSS 2622×1475、缩放 2）。
+
+- 渲染四种语言的通用素材 `docs/app-store/creative-assets/<语言>/universal.png`：5244×2950，`sips` 报告 `hasAlpha: no`（截图先转 JPEG 再转回 PNG，去掉透明通道）。en-US 与 en-GB 逐字节相同。SHA-256：zh-Hans `7c1fb043…f986`，zh-Hant `37424e0a…9a40`，en `dbeedd53…c40b`。PNG 每张约 9 MB，不进 Git，用脚本重新生成。
+- 用 `sips -c` 裁出居中 21:9（5244×2247）和 3:2（4425×2950）逐张看：标题、球速卡、OUT 卡、落点和演示数据说明都在两种裁切之内。繁中逐字看过没有简体字；文案扫过禁用词（免费、Free、价格符号、网址、©、鹰眼、Hawk-Eye、电子裁判、umpire、referee、radar、雷达、测速仪、最准、竞品名），0 处。
+- 顾问模型审了设计和成品，通过。
+- 上传到素材库 3 张（zh-Hans、zh-Hant、en），苹果识别为规格 `i5244x2950a0`（16:9，通用，可用于 `PRODUCT_PAGE_HEADER_ASSET` 和 `APP_STORE_SEARCH_RESULTS_ASSET`），状态 `PREPARE_FOR_SUBMISSION`。
+
+没有做：没提交素材审核、没挂到任何版本（1.1 的审核提交还开着，同一平台同时只能有一个；也不改正在审核的版本），后续步骤写在 `docs/app-store/README.md` 第 6 节。没验证：苹果对通用素材的实际裁切位置（按居中估算）和 iOS 27 产品页上图标、名称、获取按钮叠在哪里，App Store Connect 的预览工具这边没登录，看不了。
+
 ## 2026-11-04 自动识别球场：关键点模型试验与错球场校验
 
 原因：用户问现在的球场识别能否像 S家一样总能兜底，并让顾问模型决定用哪种方法（只用现有素材或可商用的开源模型）。顾问选了自训练球场关键点模型（开源模型里没有可商用的：TennisCourtDetector 没有许可证），并定了停止条件：留出球场上不改善就停。
