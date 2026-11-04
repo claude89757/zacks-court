@@ -1,0 +1,68 @@
+<!doctype html>
+<!-- App Store creative asset (iOS 27+): one universal 16:9 image per locale, used for both the product
+     page header (cropped to 21:9) and search results (cropped to 3:2). Rendered at 2622×1475 CSS px with
+     device scale 2 → 5244×2950 PNG by scripts/render-creative-assets.sh. Open as universal.html?lang=en-US.
+     Everything that matters stays inside the crop-safe box (the 21:9 and 3:2 crops overlap in a centred
+     2212×1123 region; we keep text and the hero inside a smaller centred box). ?guides=1 draws both crops. -->
+<html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--lime:#C2F057;--ink:#fff;--muted:#B5C3BA;--faint:#7D8D84;--red:#E5483D}
+html,body{width:2622px;height:1475px;overflow:hidden}
+body{position:relative;color:var(--ink);font-family:-apple-system,"SF Pro Display","PingFang SC","PingFang TC",sans-serif;
+  background:radial-gradient(1500px 1000px at 50% 42%,#173a2a 0%,#0b1912 58%,#060d09 100%)}
+svg.court{position:absolute;left:0;top:0}
+.scrim{position:absolute;inset:0;background:linear-gradient(90deg,#060d09 0%,#060d09d9 22%,#060d0900 50%)}
+.copy{position:absolute;left:430px;top:400px;width:820px}
+.brand{display:flex;align-items:center;gap:26px;font-size:46px;font-weight:700;color:var(--muted);letter-spacing:.5px}
+.brand img{width:96px;height:96px;border-radius:22px}
+h1{margin-top:44px;font-size:150px;font-weight:800;line-height:1.08;letter-spacing:2px}
+h1 em{font-style:normal;color:var(--lime);display:block}
+.en h1{font-size:118px;letter-spacing:0;white-space:nowrap}
+.sub{margin-top:40px;font-size:52px;line-height:1.35;color:var(--muted);font-weight:500}
+.speed{position:absolute;left:1460px;top:330px;width:780px;background:#0a120ee6;border:3px solid #ffffff1f;border-radius:48px;padding:40px 52px 34px;box-shadow:0 40px 90px #000b}
+.speed .row{display:flex;justify-content:space-between;align-items:center}
+.chip{font-size:38px;font-weight:700;background:#ffffff1a;padding:12px 30px;border-radius:30px}
+.live{font-size:34px;color:var(--muted);font-weight:600}.live::before{content:"● ";color:var(--lime)}
+.num{display:flex;align-items:baseline;gap:18px;margin-top:6px}
+.num b{font-size:300px;font-weight:800;line-height:1;color:var(--lime);letter-spacing:-6px}
+.num span{font-size:56px;font-weight:600}
+.est{margin-top:8px;font-size:34px;color:var(--faint)}
+.call{position:absolute;left:1460px;top:900px;width:780px;display:flex;align-items:center;gap:36px;background:#121a16f2;border:4px solid var(--red);border-radius:40px;padding:28px 36px;box-shadow:0 30px 70px #000b}
+.badge{font:900 84px/1 -apple-system,sans-serif;background:var(--red);color:#fff;padding:20px 30px;border-radius:24px}
+.call b{display:block;font-size:50px}.call i{display:block;font-style:normal;margin-top:8px;font-size:34px;color:var(--muted)}
+.demo{position:absolute;right:382px;top:1150px;font-size:26px;color:var(--faint)}
+.guide{position:absolute;border:4px dashed;pointer-events:none}
+</style></head><body>
+<script>
+const q = new URLSearchParams(location.search);
+const lang = q.get("lang") || "zh-Hans";
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+fetch("captions.json").then((r) => r.json()).then((all) => {
+  const c = all[lang];
+  if (lang.startsWith("en")) document.body.classList.add("en");
+  // A court seen from behind the near baseline, the serve landing just past it (the call on the right).
+  const court = `<svg class="court" width="2622" height="1475" viewBox="0 0 2622 1475">
+    <defs><linearGradient id="floor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0E2921" stop-opacity=".35"/><stop offset=".6" stop-color="#0E2921" stop-opacity=".95"/></linearGradient>
+      <linearGradient id="trail" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C2F057" stop-opacity="0"/><stop offset="1" stop-color="#C2F057" stop-opacity=".95"/></linearGradient></defs>
+    <path d="M980 600 L1642 600 L2442 1290 L180 1290 Z" fill="url(#floor)"/>
+    <g fill="none" stroke="#ffffff4d" stroke-width="5"><path d="M980 600 L180 1290"/><path d="M1642 600 L2442 1290"/>
+      <path d="M1035 600 L335 1290"/><path d="M1587 600 L2287 1290"/><path d="M771 860 L1851 860"/><path d="M1311 600 L1311 860"/></g>
+    <path d="M238 1240 L2384 1240" stroke="#ffffffa0" stroke-width="10"/>
+    <path d="M960 600 L1662 600" stroke="#ffffffb0" stroke-width="8"/><path d="M960 560 L1662 560" stroke="#ffffff30" stroke-width="3"/>
+    <path d="M960 560 L960 600 M1662 560 L1662 600" stroke="#ffffff60" stroke-width="5"/>
+    <path d="M1150 330 C 1240 470, 1300 700, 1338 896" fill="none" stroke="url(#trail)" stroke-width="16" stroke-linecap="round"/>
+    <ellipse cx="1340" cy="905" rx="58" ry="17" fill="#E5483D55" stroke="#E5483D" stroke-width="4" stroke-dasharray="10 8"/>
+    <circle cx="1340" cy="905" r="13" fill="#E5483D"/></svg>`;
+  document.body.innerHTML = court + `<div class="scrim"></div>
+    <div class="copy"><div class="brand"><img src="logo.svg" alt="">Zacks Court</div>
+      <h1>${esc(c.line1)}<em>${esc(c.line2)}</em></h1><p class="sub">${esc(c.sub)}</p></div>
+    <div class="speed"><div class="row"><span class="chip">${esc(c.serve)}</span><span class="live">${esc(c.live)}</span></div>
+      <div class="num"><b>149</b><span>km/h</span></div><div class="est">${esc(c.est)}</div></div>
+    <div class="call"><div class="badge">OUT</div><div><b>${esc(c.out)}</b><i>${esc(c.outDetail)}</i></div></div>
+    <div class="demo">${esc(c.demo)}</div>` +
+    (q.get("guides") ? `<div class="guide" style="left:0;top:175.5px;width:2622px;height:1124px;border-color:#f0f"></div>
+      <div class="guide" style="left:205.5px;top:0;width:2211px;height:1475px;border-color:#0ff"></div>` : "");
+  document.title = "ready";
+});
+</script>
+</body></html>

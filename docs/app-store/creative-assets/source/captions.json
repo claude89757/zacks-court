@@ -1,0 +1,46 @@
+{
+  "zh-Hans": {
+    "line1": "发球测速",
+    "line2": "电子司线",
+    "sub": "一台 iPhone 架在场边就够了",
+    "serve": "发球",
+    "live": "实时",
+    "est": "模型估计",
+    "out": "出界",
+    "outDetail": "出界约 32 厘米 · 发球线",
+    "demo": "画面为演示数据"
+  },
+  "zh-Hant": {
+    "line1": "發球測速",
+    "line2": "電子司線",
+    "sub": "一台 iPhone 架在場邊就夠了",
+    "serve": "發球",
+    "live": "即時",
+    "est": "模型估計",
+    "out": "出界",
+    "outDetail": "出界約 32 公分 · 發球線",
+    "demo": "畫面為示範資料"
+  },
+  "en-US": {
+    "line1": "Serve speed.",
+    "line2": "Line calls.",
+    "sub": "Just one iPhone by the court.",
+    "serve": "Serve",
+    "live": "Live",
+    "est": "Model estimate",
+    "out": "Out",
+    "outDetail": "32 cm long · service line",
+    "demo": "Screens show demo data"
+  },
+  "en-GB": {
+    "line1": "Serve speed.",
+    "line2": "Line calls.",
+    "sub": "Just one iPhone by the court.",
+    "serve": "Serve",
+    "live": "Live",
+    "est": "Model estimate",
+    "out": "Out",
+    "outDetail": "32 cm long · service line",
+    "demo": "Screens show demo data"
+  }
+}
