@@ -88,22 +88,65 @@ public struct HawkEyeReplayScene: Equatable, Sendable {
         return (sx, sy)
     }
 
-    // MARK: Camera path
+    // MARK: Camera path (mirrored in app.js `replayScene` / `replayCamera`)
 
-    /// The wide view: high behind the hitter's end, the whole court in frame.
+    /// Along the judged line (outward turned a quarter left).
+    public var along: SIMD3<Double> { SIMD3(-outward.y, outward.x, 0) }
+    /// Horizontal direction the ball travelled to the bounce (outward without a flight).
+    public var travel: SIMD3<Double> {
+        guard let start = flight?.first else { return outward }
+        let d = SIMD3(bounce.x - start.x, bounce.y - start.y, 0)
+        return simd_length(d) > 1e-6 ? simd_normalize(d) : outward
+    }
+    /// Midway between the mark and the judged line: where the close view looks.
+    public var focus: SIMD3<Double> { (lineAnchor + SIMD3(bounce.x, bounce.y, 0)) / 2 }
+    /// The footprint keeps the ball radius across the line (the distance the call measured) and skids
+    /// only along it, longer the more the ball travelled along the line.
+    public var footprint: (along: Double, across: Double) {
+        (HawkEye.ballRadius * (1 + 0.9 * abs(simd_dot(travel, along))), HawkEye.ballRadius)
+    }
+
+    /// The wide view: high behind the hitter's end, a little to the side away from the bounce, the whole
+    /// court in frame.
     public var wideCamera: HawkEyeCamera {
-        let y = fromNear ? -10.5 : HawkEye.length + 10.5
-        return HawkEyeCamera(position: SIMD3(HawkEye.centreX, y, 7.5), target: SIMD3(HawkEye.centreX, HawkEye.netY, 0), fovDegrees: 46)
+        let y = fromNear ? -10.5 : HawkEye.length + 10.5, side: Double = bounce.x >= HawkEye.centreX ? 1 : -1
+        return HawkEyeCamera(position: SIMD3(HawkEye.centreX - side * 2, y, 7.5), target: SIMD3(HawkEye.centreX, HawkEye.netY, 0), fovDegrees: 46)
+    }
+    /// A three-quarter view beside the bounce, on the court's side of the flight, as the ball lands.
+    public var chaseCamera: HawkEyeCamera {
+        let t = travel
+        var beside = SIMD3(-t.y, t.x, 0)
+        if simd_dot(beside, SIMD3(HawkEye.centreX - bounce.x, HawkEye.netY - bounce.y, 0)) < 0 { beside = -beside }
+        let ground = SIMD3(bounce.x, bounce.y, 0)
+        return HawkEyeCamera(position: ground - t * 5 + beside * 6 + SIMD3(0, 0, 3), target: ground + SIMD3(0, 0, 0.3), fovDegrees: 40)
     }
     /// The close view: low, inside the court, looking out across the line at the mark, so the line runs
     /// across the picture and the gap (or overlap) between mark and line shows.
     public var closeCamera: HawkEyeCamera {
         let gap = abs(judgement.distanceM)
-        let back = 1.1 + min(2.5, gap * 1.5), height = 0.55 + min(1.4, gap * 0.8)
-        let along = SIMD3(-outward.y, outward.x, 0)
-        let focus = (lineAnchor + SIMD3(bounce.x, bounce.y, 0)) / 2
-        let position = focus - outward * back + along * (back * 0.35) + SIMD3(0, 0, height)
-        return HawkEyeCamera(position: position, target: focus, fovDegrees: 34)
+        let back = 1 + min(2.5, gap * 1.5), height = 0.38 + min(1.2, gap * 0.8)
+        let position = focus - outward * back + along * (back * 0.3) + SIMD3(0, 0, height)
+        return HawkEyeCamera(position: position, target: focus, fovDegrees: 32)
+    }
+    /// The camera `f` of the way (0…1) along wide → beside → close: a Catmull-Rom path, eased at both
+    /// ends, so the view sweeps round the bounce instead of sliding straight in.
+    public func camera(along f: Double) -> HawkEyeCamera {
+        let c = max(0, min(1, f))
+        let e = c * c * c * (c * (c * 6 - 15) + 10), u = 2 * e
+        let k = min(1, Int(u)), s = u - Double(k)
+        let keys = [wideCamera, wideCamera, chaseCamera, closeCamera, closeCamera]
+        let (p0, p1, p2, p3) = (keys[k], keys[k + 1], keys[k + 2], keys[k + 3])
+        func cr<T: FloatingPoint>(_ a: T, _ b: T, _ c: T, _ d: T, _ s: T) -> T {
+            let s2 = s * s, s3 = s2 * s
+            let half = T(1) / T(2)
+            return half * (T(2) * b + (c - a) * s + (T(2) * a - T(5) * b + T(4) * c - d) * s2 + (T(3) * b - a - T(3) * c + d) * s3)
+        }
+        func v(_ a: SIMD3<Double>, _ b: SIMD3<Double>, _ c: SIMD3<Double>, _ d: SIMD3<Double>) -> SIMD3<Double> {
+            SIMD3(cr(a.x, b.x, c.x, d.x, s), cr(a.y, b.y, c.y, d.y, s), cr(a.z, b.z, c.z, d.z, s))
+        }
+        return HawkEyeCamera(position: v(p0.position, p1.position, p2.position, p3.position),
+                             target: v(p0.target, p1.target, p2.target, p3.target),
+                             fovDegrees: cr(p0.fovDegrees, p1.fovDegrees, p2.fovDegrees, p3.fovDegrees, s))
     }
 }
 
@@ -149,12 +192,6 @@ public struct HawkEyeCamera: Equatable, Sendable {
             }
         }
         return out.map { screen($0, width: width, height: height) }
-    }
-    /// Smoothstep blend between two cameras, `t` in 0…1.
-    public static func blend(_ a: HawkEyeCamera, _ b: HawkEyeCamera, _ t: Double) -> HawkEyeCamera {
-        let s = max(0, min(1, t)); let e = s * s * (3 - 2 * s)
-        return HawkEyeCamera(position: a.position + (b.position - a.position) * e, target: a.target + (b.target - a.target) * e,
-                             fovDegrees: a.fovDegrees + (b.fovDegrees - a.fovDegrees) * e)
     }
 }
 

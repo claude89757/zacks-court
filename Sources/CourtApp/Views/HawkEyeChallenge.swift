@@ -3,12 +3,13 @@ import simd
 import CourtCore
 
 /// Timing of a challenge replay, in seconds, modelled on the broadcast sequence: title, the flight to
-/// the bounce, the zoom to the line, the mark, then the verdict.
+/// the bounce while the camera sweeps round beside it, the drop to a low view across the line, the mark,
+/// then the verdict. Mirrors `replayTiming` in app.js.
 struct HawkEyeReplayTiming {
     let hasFlight: Bool
     var title: Double { 1.0 }
-    var flightEnd: Double { hasFlight ? title + 2.2 : title }
-    var zoomEnd: Double { flightEnd + 1.4 }
+    var flightEnd: Double { hasFlight ? title + 2.4 : title }
+    var zoomEnd: Double { flightEnd + 1.6 }
     var markEnd: Double { zoomEnd + 0.5 }
     var total: Double { markEnd + 0.3 }
 
@@ -30,8 +31,7 @@ struct HawkEyeReplayTiming {
             // most of the time to the bounce, then the short way on
             progress = f < 0.85 ? bounceAt * (f / 0.85) : bounceAt + (flightCount - bounceAt) * ((f - 0.85) / 0.15)
         }
-        let zoom = (t - flightEnd) / (zoomEnd - flightEnd)
-        return Frame(camera: HawkEyeCamera.blend(scene.wideCamera, scene.closeCamera, zoom),
+        return Frame(camera: scene.camera(along: (t - title) / (zoomEnd - title)),
                      flightProgress: progress,
                      markOpacity: max(0, min(1, (t - zoomEnd) / (markEnd - zoomEnd))),
                      verdict: t >= markEnd,
@@ -281,89 +281,192 @@ struct ChallengeButton: View {
     }
 }
 
-/// Draws one frame of the replay: court, lines, net, the flight so far with the ball, the mark and its
-/// uncertainty, in the frame's camera.
+/// Draws one frame of the replay in the frame's camera: sky and haze, court with surface grain, lines,
+/// the net and its shadow, the flight as a tapered trail with the shaded ball and its shadow, then the
+/// footprint, its uncertainty and the distance to the line. Mirrors `drawReplay` in app.js.
 struct HawkEyeReplayPainter {
     let scene: HawkEyeReplayScene
     let frame: HawkEyeReplayTiming.Frame
 
+    /// Replay palette (mirrors `RP` in app.js).
+    enum Palette {
+        static func rgb(_ hex: UInt32, _ alpha: Double = 1) -> Color {
+            Color(red: Double(hex >> 16 & 0xff) / 255, green: Double(hex >> 8 & 0xff) / 255, blue: Double(hex & 0xff) / 255, opacity: alpha)
+        }
+        static let skyTop = rgb(0x04080c), skyHorizon = rgb(0x16242a), haze = rgb(0x1c2c2b)
+        static let apronFar = rgb(0x10261f), apronNear = rgb(0x0b2019), runFar = rgb(0x1d4a3c), runNear = rgb(0x163b30)
+        static let courtFar = rgb(0x2a6b57), courtNear = rgb(0x1f5747), line = rgb(0xf4f7f2), tape = rgb(0xe9efe9)
+        static let ballLight = rgb(0xfbffd0), ball = rgb(0xdcf04a), ballDark = rgb(0x7f9a18), afterBounce = rgb(0xe8ffa8)
+        static let post = [rgb(0x2a3532), rgb(0x9aa8a2), rgb(0x3c4a46)]
+    }
+    /// Light from high up, a little to the left and from behind the near end: sets the shadows.
+    static let sun = simd_normalize(SIMD3<Double>(-0.45, 0.35, 1))
+    static func shadow(_ p: SIMD3<Double>) -> SIMD3<Double> { let k = p.z / sun.z; return SIMD3(p.x - sun.x * k, p.y - sun.y * k, 0) }
+    static func ellipse(_ c: SIMD3<Double>, _ a: Double, _ b: Double, _ dir: SIMD3<Double>, _ n: Int = 40) -> [SIMD3<Double>] {
+        let d = simd_normalize(SIMD3(dir.x, dir.y, 0)), q = SIMD3(-d.y, d.x, 0)
+        return (0..<n).map { i in let t = Double(i) / Double(n) * 2 * .pi; return c + d * (a * cos(t)) + q * (b * sin(t)) }
+    }
+    static func netTop(_ x: Double) -> Double {
+        let left = -0.914, post = HawkEye.width + 0.914, m = HawkEye.width / 2
+        return x <= m ? 1.07 + (0.914 - 1.07) * ((x - left) / (m - left)) : 0.914 + (1.07 - 0.914) * ((x - m) / (post - m))
+    }
+    /// Fixed specks on the surface round the bounce: they shrink with distance, so the ground reads as a plane.
+    static func grain(_ focus: SIMD3<Double>) -> [SIMD3<Double>] {
+        var seed = 7.0
+        func rnd() -> Double { seed = (seed * 16807).truncatingRemainder(dividingBy: 2147483647); return seed / 2147483647 }
+        return (0..<1600).map { _ in let x = focus.x + (rnd() - 0.5) * 7; return SIMD3(x, focus.y + (rnd() - 0.5) * 7, 0) }
+    }
+
     func paint(_ gc: inout GraphicsContext, size: CGSize) {
-        let w = Double(size.width), h = Double(size.height), cam = frame.camera
-        func path(_ points: [SIMD3<Double>]) -> Path? {
+        let w = Double(size.width), h = Double(size.height), cam = frame.camera, mark = frame.markOpacity
+        let W = HawkEye.width, L = HawkEye.length, net = HawkEye.netY, ballR = HawkEye.ballRadius
+        let call = CourtStyle.callColor(scene.judgement.call)
+        let f = h / (2 * tan(cam.fovDegrees * .pi / 360))
+        func pt(_ s: SIMD2<Double>) -> CGPoint { CGPoint(x: s.x, y: s.y) }
+        func project(_ p: SIMD3<Double>) -> CGPoint? { cam.project(p, width: w, height: h).map(pt) }
+        func shape(_ points: [SIMD3<Double>]) -> Path? {
             let s = cam.polygon(points, width: w, height: h)
             guard s.count >= 3 else { return nil }
-            var p = Path(); p.move(to: CGPoint(x: s[0].x, y: s[0].y))
-            for q in s.dropFirst() { p.addLine(to: CGPoint(x: q.x, y: q.y)) }
+            var p = Path(); p.move(to: pt(s[0])); for q in s.dropFirst() { p.addLine(to: pt(q)) }
             p.closeSubpath(); return p
         }
-        gc.fill(Path(CGRect(origin: .zero, size: size)), with: .color(CourtStyle.background))
-        let W = HawkEye.width, L = HawkEye.length
-        if let p = path([SIMD3(-6, -8, 0), SIMD3(W + 6, -8, 0), SIMD3(W + 6, L + 8, 0), SIMD3(-6, L + 8, 0)]) {
-            gc.fill(p, with: .color(CourtStyle.courtSurface.opacity(0.65)))
+        func vertical(_ y0: Double, _ stops: [Gradient.Stop]) -> GraphicsContext.Shading {
+            .linearGradient(Gradient(stops: stops), startPoint: CGPoint(x: 0, y: y0), endPoint: CGPoint(x: 0, y: h))
         }
-        if let p = path([SIMD3(0, 0, 0), SIMD3(W, 0, 0), SIMD3(W, L, 0), SIMD3(0, L, 0)]) {
-            gc.fill(p, with: .color(CourtStyle.courtSurface))
+        // sky down to a hazy horizon
+        let forward = simd_normalize(cam.target - cam.position)
+        let flat = simd_length(SIMD2(forward.x, forward.y)) > 1e-6 ? simd_normalize(SIMD3(forward.x, forward.y, 0)) : SIMD3(0, 1, 0)
+        let hy = max(0, min(h, project(cam.position + flat * 4000).map { Double($0.y) } ?? 0))
+        gc.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(Gradient(colors: [Palette.skyTop, Palette.skyHorizon]),
+                                                                              startPoint: .zero, endPoint: CGPoint(x: 0, y: max(1, hy))))
+        // ground, run-off and court
+        if let p = shape([SIMD3(-60, -60, 0), SIMD3(W + 60, -60, 0), SIMD3(W + 60, L + 60, 0), SIMD3(-60, L + 60, 0)]) {
+            gc.fill(p, with: vertical(hy, [.init(color: Palette.haze, location: 0), .init(color: Palette.apronFar, location: 0.18), .init(color: Palette.apronNear, location: 1)]))
         }
+        if let p = shape([SIMD3(-3.66, -6.4, 0), SIMD3(W + 3.66, -6.4, 0), SIMD3(W + 3.66, L + 6.4, 0), SIMD3(-3.66, L + 6.4, 0)]) {
+            gc.fill(p, with: vertical(hy, [.init(color: Palette.runFar, location: 0), .init(color: Palette.runNear, location: 1)]))
+        }
+        if let p = shape([SIMD3(0, 0, 0), SIMD3(W, 0, 0), SIMD3(W, L, 0), SIMD3(0, L, 0)]) {
+            gc.fill(p, with: .linearGradient(Gradient(colors: [Palette.courtFar, Palette.courtNear]), startPoint: CGPoint(x: 0, y: hy), endPoint: CGPoint(x: w * 0.3, y: h)))
+        }
+        var specks = Path()
+        for p in Self.grain(scene.focus) {
+            let q = cam.view(p); guard q.z >= 0.1 else { continue }
+            let r = min(1.6, 0.006 * f / q.z); guard r >= 0.3 else { continue }
+            let s = cam.screen(q, width: w, height: h); specks.addRect(CGRect(x: s.x, y: s.y, width: r, height: r * 0.6))
+        }
+        gc.fill(specks, with: .color(.white.opacity(0.05)))
         // uncertainty under the lines, so the lines stay readable
-        if frame.markOpacity > 0 {
-            let u = scene.uncertainty
-            let ring = (0..<48).map { i -> SIMD3<Double> in
-                let a = Double(i) / 48 * 2 * .pi
-                return SIMD3(scene.bounce.x + u.x * cos(a), scene.bounce.y + u.y * sin(a), 0)
+        let footprint = scene.footprint
+        if mark > 0, let p = shape(Self.ellipse(scene.bounce, scene.uncertainty.x, scene.uncertainty.y, SIMD3(1, 0, 0), 64)) {
+            gc.fill(p, with: .color(call.opacity(0.16 * mark)))
+            gc.stroke(p, with: .color(call.opacity(0.7 * mark)), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+        }
+        gc.drawLayer { layer in
+            layer.addFilter(.shadow(color: .white.opacity(0.35), radius: 1.5))
+            for rect in HawkEyeCourtLines.rectangles() { if let p = shape(rect) { layer.fill(p, with: .color(Palette.line)) } }
+        }
+        // the judged line's edge, picked out once the zoom is done
+        if mark > 0, let a = project(scene.lineAnchor - scene.along * 1.2), let b = project(scene.lineAnchor + scene.along * 1.2) {
+            var p = Path(); p.move(to: a); p.addLine(to: b)
+            gc.stroke(p, with: .color(CourtStyle.green.opacity(0.85 * mark)), lineWidth: 1.5)
+        }
+        // net: its shadow, the mesh, the top tape and the posts
+        let left = -0.914, post = W + 0.914
+        let xs = (0...20).map { left + (post - left) * Double($0) / 20 }
+        if let p = shape([SIMD3(left, net, 0)] + xs.map { Self.shadow(SIMD3($0, net, Self.netTop($0))) } + [SIMD3(post, net, 0)]) {
+            gc.fill(p, with: .color(.black.opacity(0.28)))
+        }
+        if let body = shape([SIMD3(left, net, 0), SIMD3(post, net, 0), SIMD3(post, net, 1.07), SIMD3(W / 2, net, 0.914), SIMD3(left, net, 1.07)]) {
+            gc.fill(body, with: .color(Palette.rgb(0x080e0c, 0.35)))
+            var mesh = Path()
+            for x in stride(from: left, through: post, by: 0.08) {
+                if let a = project(SIMD3(x, net, 0)), let b = project(SIMD3(x, net, 1.1)) { mesh.move(to: a); mesh.addLine(to: b) }
             }
-            if let p = path(ring) {
-                gc.fill(p, with: .color(CourtStyle.callColor(scene.judgement.call).opacity(0.16 * frame.markOpacity)))
-                gc.stroke(p, with: .color(CourtStyle.callColor(scene.judgement.call).opacity(0.55 * frame.markOpacity)),
-                          style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            for z in stride(from: 0.05, to: 1.1, by: 0.08) {
+                if let a = project(SIMD3(left, net, z)), let b = project(SIMD3(post, net, z)) { mesh.move(to: a); mesh.addLine(to: b) }
+            }
+            var clipped = gc; clipped.clip(to: body)
+            clipped.stroke(mesh, with: .color(Palette.rgb(0xe6f0eb, 0.16)), lineWidth: 0.6)
+        }
+        if let p = shape(xs.map { SIMD3($0, net, Self.netTop($0)) } + xs.reversed().map { SIMD3($0, net, Self.netTop($0) - 0.06) }) {
+            gc.fill(p, with: .color(Palette.tape))
+        }
+        for x in [left, post] {
+            guard let p = shape([SIMD3(x - 0.04, net, 0), SIMD3(x + 0.04, net, 0), SIMD3(x + 0.04, net, 1.07), SIMD3(x - 0.04, net, 1.07)]) else { continue }
+            if let a = project(SIMD3(x - 0.04, net, 0)), let b = project(SIMD3(x + 0.04, net, 0)) {
+                gc.fill(p, with: .linearGradient(Gradient(colors: Palette.post), startPoint: CGPoint(x: a.x, y: 0), endPoint: CGPoint(x: b.x + 0.01, y: 0)))
+            } else { gc.fill(p, with: .color(Palette.post[1])) }
+        }
+        // the footprint, pressed in as the mark appears
+        if mark > 0 {
+            let grow = 0.6 + 0.4 * sin(min(1, mark * 1.4) * .pi / 2)
+            if let p = shape(Self.ellipse(scene.bounce, footprint.along * grow, footprint.across * grow, scene.along)) {
+                gc.fill(p, with: .color(call.opacity(0.95 * mark)))
+                gc.stroke(p, with: .color(.white.opacity(0.95 * mark)), lineWidth: 1.4)
             }
         }
-        for rect in HawkEyeCourtLines.rectangles() { if let p = path(rect) { gc.fill(p, with: .color(.white.opacity(0.92))) } }
-        // the judged line, picked out once the zoom is done
-        if frame.markOpacity > 0 {
-            let a = scene.lineAnchor, n = scene.outward, along = SIMD3(-n.y, n.x, 0)
-            let width = scene.judgement.line == .baseline ? 0.10 : 0.05
-            let span: SIMD3<Double> = along * 1.2, inward: SIMD3<Double> = n * width
-            let edge: [SIMD3<Double>] = [a - span, a + span, a + span - inward, a - span - inward]
-            if let p = path(edge) { gc.stroke(p, with: .color(CourtStyle.green.opacity(0.8 * frame.markOpacity)), lineWidth: 1.5) }
-        }
-        let net = HawkEye.netY
-        let post: Double = W + 0.9, middle: Double = W / 2
-        let netShape: [SIMD3<Double>] = [SIMD3(-0.9, net, 0), SIMD3(post, net, 0), SIMD3(post, net, 1.07), SIMD3(middle, net, 0.914), SIMD3(-0.9, net, 1.07)]
-        if let p = path(netShape) {
-            gc.fill(p, with: .color(.white.opacity(0.10)))
-            gc.stroke(p, with: .color(.white.opacity(0.55)), lineWidth: 1)
-        }
+        // the flight: a tapered comet, faded where it passes the camera; dimmer and dashed after the bounce (a guess)
+        var ball: SIMD3<Double>?
         if let flight = scene.flight, frame.flightProgress > 0 {
             let n = min(Double(flight.count - 1), frame.flightProgress)
             let whole = Int(n)
             var pts = Array(flight[0...whole])
             if whole < flight.count - 1 { pts.append(flight[whole] + (flight[whole + 1] - flight[whole]) * (n - Double(whole))) }
-            var trail = Path(), started = false
-            for p in pts {
-                guard let s = cam.project(p, width: w, height: h) else { started = false; continue }
-                if started { trail.addLine(to: CGPoint(x: s.x, y: s.y)) } else { trail.move(to: CGPoint(x: s.x, y: s.y)); started = true }
+            for i in 1..<max(1, pts.count) {
+                let qa = cam.view(pts[i - 1]), qb = cam.view(pts[i])
+                guard qa.z >= 0.3, qb.z >= 0.3 else { continue }
+                let after = i > scene.bounceIndex, k = Double(i) / Double(max(1, pts.count - 1))
+                let near = max(0, min(1, (qb.z - 0.8) / 2.5)), r = ballR * f / qb.z
+                let alpha = near * (after ? 0.45 : 0.25 + 0.7 * pow(k, 1.4))
+                let width = after ? max(1, min(3, r * 0.5)) : max(2.5, min(7, r * 1.4)) * (0.45 + 0.55 * k)
+                var seg = Path(); seg.move(to: pt(cam.screen(qa, width: w, height: h))); seg.addLine(to: pt(cam.screen(qb, width: w, height: h)))
+                gc.stroke(seg, with: .color((after ? Palette.afterBounce : CourtStyle.green).opacity(alpha)),
+                          style: StrokeStyle(lineWidth: width, lineCap: .round, dash: after ? [4, 5] : []))
             }
-            gc.stroke(trail, with: .color(CourtStyle.green.opacity(0.85)), style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-            if let ball = pts.last, frame.markOpacity < 1 {
-                let c = cam.view(ball)
-                if c.z > HawkEyeCamera.near {
-                    let s = cam.screen(c, width: w, height: h)
-                    let f = h / (2 * tan(cam.fovDegrees * .pi / 360))
-                    let r = max(3, HawkEye.ballRadius * f / c.z)
-                    gc.fill(Path(ellipseIn: CGRect(x: s.x - r, y: s.y - r, width: 2 * r, height: 2 * r)), with: .color(Color(red: 0.86, green: 0.95, blue: 0.25)))
-                }
+            if mark < 1 { ball = pts.last }
+        }
+        func drawBall(_ p: SIMD3<Double>, alpha: Double, squash: Double) {
+            let lift = max(0, p.z - ballR), spread = 1 + lift * 0.6
+            if let s = shape(Self.ellipse(Self.shadow(SIMD3(p.x, p.y, lift)), ballR * spread * 1.25, ballR * spread, Self.sun)) {
+                gc.fill(s, with: .color(.black.opacity(max(0.12, 0.55 - lift * 0.12) * alpha)))
+            }
+            let q = cam.view(p); guard q.z >= 0.1 else { return }
+            let s = cam.screen(q, width: w, height: h), r = max(5, ballR * f / q.z)
+            let rect = CGRect(x: s.x - r * (2 - squash), y: s.y + r * (1 - squash) * 0.5 - r * squash, width: 2 * r * (2 - squash), height: 2 * r * squash)
+            gc.drawLayer { layer in
+                layer.opacity = alpha
+                layer.addFilter(.shadow(color: Palette.rgb(0xd2ff5a, 0.55), radius: r * 0.6))
+                layer.fill(Path(ellipseIn: rect), with: .radialGradient(
+                    Gradient(stops: [.init(color: Palette.ballLight, location: 0), .init(color: Palette.ball, location: 0.45), .init(color: Palette.ballDark, location: 1)]),
+                    center: CGPoint(x: s.x - r * 0.35, y: s.y - r * 0.4), startRadius: r * 0.1, endRadius: r))
+            }
+            var seam = Path()
+            for i in 0...12 {
+                let a = 2.2 + (4.1 - 2.2) * Double(i) / 12
+                let point = CGPoint(x: s.x + r * 0.9 + r * 0.75 * cos(a), y: s.y - r * 0.2 + r * 0.75 * sin(a))
+                if i == 0 { seam.move(to: point) } else { seam.addLine(to: point) }
+            }
+            gc.stroke(seam, with: .color(.white.opacity(0.7 * alpha)), lineWidth: max(0.6, r * 0.12))
+        }
+        if let ball { drawBall(ball, alpha: 1, squash: 1) }
+        if mark > 0 { drawBall(scene.bounce, alpha: 0.3 * mark, squash: 1 - 0.12 * sin(min(1, mark * 1.4) * .pi)) }
+        // how far the footprint is from the line, beside the mark (no number for a call too close to make)
+        if mark > 0, scene.judgement.call != .close {
+            let q = cam.view(scene.bounce)
+            if q.z > 0.1 {
+                let at = cam.screen(q, width: w, height: h), reach = max(18, 2.2 * footprint.along * f / q.z)
+                let text = gc.resolve(Text("约 \(Int((abs(scene.judgement.distanceM) * 100).rounded())) 厘米")
+                    .font(.system(size: 15, weight: .semibold)).foregroundColor(.white))
+                let tw = text.measure(in: size).width
+                let x = min(w - tw - 26, at.x + reach), y = max(30, at.y - reach * 0.6)
+                let box = Path(roundedRect: CGRect(x: x, y: y - 21, width: tw + 18, height: 28), cornerRadius: 8)
+                var tag = gc; tag.opacity = mark
+                tag.fill(box, with: .color(Palette.rgb(0x050807, 0.8)))
+                tag.draw(text, at: CGPoint(x: x + 9, y: y - 7), anchor: .leading)
             }
         }
-        if frame.markOpacity > 0 {
-            let r = scene.markRadius
-            let mark = (0..<32).map { i -> SIMD3<Double> in
-                let a = Double(i) / 32 * 2 * .pi
-                return SIMD3(scene.bounce.x + r * cos(a), scene.bounce.y + r * sin(a), 0)
-            }
-            if let p = path(mark) {
-                gc.fill(p, with: .color(CourtStyle.callColor(scene.judgement.call).opacity(0.9 * frame.markOpacity)))
-                gc.stroke(p, with: .color(.white.opacity(frame.markOpacity)), lineWidth: 1)
-            }
-        }
+        gc.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(Gradient(colors: [.black.opacity(0), .black.opacity(0.5)]),
+                center: CGPoint(x: w / 2, y: h * 0.55), startRadius: h * 0.35, endRadius: max(w, h) * 0.65))
     }
 }

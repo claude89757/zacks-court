@@ -124,6 +124,23 @@ asc status --app 6827224757                     # 发布状态总览
   4. 挂到线上 1.1 的四个语言上，每个语言两种位置都用同一张图（creative assets 用 `DEFAULT_PROFILE`）：`asc localizations placements create --localization-id <本地化 ID> --image-id <图片 ID> --placement-type PRODUCT_PAGE_HEADER_ASSET`，再用 `APP_STORE_SEARCH_RESULTS_ASSET` 跑一遍。1.1 的本地化 ID：zh-Hans `ee27abea-f73b-4bf1-8b55-2f7dfd624285`、en-US `d24d0791-bd14-4112-b948-094e8d482661`、zh-Hant `b413f760-e9f5-4299-82e2-4bd8d4908b7f`、en-GB `b3ea238e-65ca-45c3-91f6-1aece2cac2ef`。苹果文档说线上版本换上已审过的素材不用提交新版本；如果命令行挂不上，就在网页上 1.1 版本页「标题和搜索结果」里「浏览素材」选图后点「发布」。
 - 上线后再考虑（这次不做，免得多一道审核）：店内活动、自定义产品页、产品页优化（A/B 测试）、App 预览视频。新 App 刚上线流量小，A/B 测试和自定义产品页看不出差别。
 
+### 预览视频（计划随 1.2 上传，2026-11-04）
+
+商店页面可以放视频，App Store Connect 的规格（`asc asset-library specs`，2026-11-04 读取）：
+
+| | App 预览视频（`APP_PREVIEW`） | 产品页标题视频（`PRODUCT_PAGE_HEADER_ASSET`，iOS 27 起） |
+| --- | --- | --- |
+| 位置 | 截图前面，进页面静音自动播放 | 产品页最上方 |
+| 尺寸 | 1920×886 横屏或 886×1920 竖屏（6.9 英寸 iPhone） | 3840×1646 |
+| 帧率 / 时长 | 最多 30 帧，15–30 秒 | 30 或 60 帧，5–30 秒 |
+| 数量 | 每种语言最多 3 段 | 1 段 |
+| 其他 | 必须有音轨（静音也行） | 不需要音轨 |
+
+- 预览视频只能用 App 自己的画面（可以加字幕）。规则和截图一样：数据来自 `court-probe demo-session` 的示例记录，画面角上写「画面为演示数据 · Demo data」；不出现配对二维码、用户录像，不写「鹰眼」。
+- 录法：`./scripts/record-store-preview.sh <新建的 iPhone 17 Pro Max 模拟器 UDID> <目录>`。脚本用 Release、不带模型打包，装进模拟器，写入示例记录，一边录屏一边跑 `testStorePreviewFlow`。流程是看板全屏测速牌 3 秒，然后点「回放」连看三拍界内外回放。脚本按测试写下的时间点剪成 15–30 秒，转成 1920×886、30 帧，加角标和静音音轨，输出 `preview-1920x886.mp4`。角标先用 Pillow 画成透明 PNG，再让 ffmpeg `overlay` 叠上（Homebrew 的 ffmpeg 没有 `drawtext`）；裁剪写在 `-i` 之后（输出侧），因为这段录屏是变帧率的，输入侧 `-ss` 会从关键帧算起、把结尾切掉。App 界面只有中文，四种语言先共用这一段。
+- 上传：预览视频跟着版本一起审核，正在审核的版本加不进去，所以放到 1.2。命令：`asc video-previews upload --version-localization <1.2 的本地化 ID> --path <目录> --device-type IPHONE_69`，四种语言各传一次，再用 `asc video-previews set-poster-frame` 选封面帧（选回放判定那一帧）。
+- 标题视频要 3840×1646，模拟器录屏的分辨率不够，暂不做。
+
 ### 1.1 发版记录（2026-11-04 已提交审核）
 
 先决条件（只能由账户持有人在网页上做）：
@@ -131,7 +148,7 @@ asc status --app 6827224757                     # 发布状态总览
 - **2026-11-10 前续费开发者会员**。协议、发布证书和描述文件都到这天为止，过期后不能上传。
 
 实际顺序（App Store Connect 的改动不用逐步问用户，由顾问模型把关）：
-1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号现在是 `3`：1.1 (1) 于 2026-11-04 上传后，又合入了手持拍摄的球场识别（PR #9），重新打了 1.1 (2) 并提交审核；同日在苹果开始审核前撤回，换成带错球场修复（PR #13、#14）的 1.1 (3) 重新提交。之后每次合入 PR 都打一个新的 TestFlight 构建：1.1 (4)（PR #16 挑战）、1.1 (5)（PR #18 第一帧锁定球场）只进 TestFlight。同日晚上用户要求正式版也用最新代码：撤回 1.1 (3) 的提交 `a8434131`（苹果还没开始审），推送四种语言新增挑战和更快球场识别的「新功能」，关联 1.1 (5)，重新提交（`361112b4`）。
+1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号现在是 `6`：1.1 (1) 于 2026-11-04 上传后，又合入了手持拍摄的球场识别（PR #9），重新打了 1.1 (2) 并提交审核；同日在苹果开始审核前撤回，换成带错球场修复（PR #13、#14）的 1.1 (3) 重新提交。之后每次合入 PR 都打一个新的 TestFlight 构建：1.1 (4)（PR #16 挑战）、1.1 (5)（PR #18 第一帧锁定球场）、1.1 (6)（3D 回放）只进 TestFlight。同日晚上用户要求正式版也用最新代码：撤回 1.1 (3) 的提交 `a8434131`（苹果还没开始审），推送四种语言新增挑战和更快球场识别的「新功能」，关联 1.1 (5)，重新提交（`361112b4`）。
 2. 确认 `scripts/reference-chain.sh status` 是 `off`，然后 `COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，Release 归档并导出（手动签名，Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」）。解开 IPA 逐个检查：只有两个 TrackNetV3，没有 `AnalysisModels`。然后上传。
 3. 「新功能」已写完（2026-11-04，包括 PR #6 球场跟踪和 PR #7 去掉手动标定）。建 1.1 版本（`asc versions create --app 6827224757 --version 1.1 --release-type AFTER_APPROVAL`）。推送四种语言的文字，其中 zh-Hant、en-GB 是新增的本地化，如果 `metadata apply` 不新建本地化，先用 `asc localizations create` 建。
 4. 截图：新版本会沿用 1.0 的 5 张旧截图，先删掉，再上传各语言目录里的新图。

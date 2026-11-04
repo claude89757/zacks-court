@@ -2779,3 +2779,32 @@ dt001 的原因：
 - 描述、关键词、截图、审核备注都没改。构建本身没有重打，是 TestFlight 那一个。
 
 没有验证：1.1 (5) 没装到真机上；撤回后审核要重新排队。
+
+## 2026-11-04 界内外回放改成环绕镜头（App 与浏览器）
+
+回放原来是从后上方直线推到线边；现在三台虚拟相机（击球一方底线后上方的广角、落点旁的四分之三视角、线边低机位）用一条 Catmull-Rom 曲线连起来，两头缓入缓出，总长从 5.4 秒变成 5.8 秒。球印的法向固定为判定用的球半径 3.3 厘米，只沿飞行方向拉长（最多 1.9 倍），所以画面上球印到线的距离和结论卡上的数一致。画面补了天光到地平线的雾、场外地面/缓冲区/球场三层颜色、落点附近的颗粒、球网与网柱及投影、球的高光与影子、越靠近球越亮的拖尾；App 与浏览器用同一套数和步骤（`HawkEyeReplayPainter.Palette` / `RP`）。
+
+改动：
+- `Sources/CourtCore/HawkEyeReplay.swift`：`camera(along:)`、`chaseCamera`、`travel`、`focus`、`footprint`；删掉不再用的 `HawkEyeCamera.blend`。
+- `Sources/CourtApp/Views/HawkEyeChallenge.swift`：`HawkEyeReplayPainter` 重画。
+- `Sources/CourtCore/Web/app.js`：`replayCamera` / `groundEllipse` / `surfaceGrain` / `drawReplay`，`replayTiming` 同步 5.8 秒。
+- `Sources/CourtApp/Models/WorkspaceModel.swift`：`COURT_UI_REPLAY_DEMO=1` 时把「演示数据」记录当作刚结束，UI 测试与录商店预览视频才能直接打开回放。
+- `apps/iphone/ZacksCourtUITests/WorkspaceUITests.swift`：新增 `testChallengeReplayDemo`（逐帧截图）和 `testStorePreviewFlow`（预览视频分镜，写 `marks.txt`）。
+- `scripts/record-store-preview.sh`：录屏 → 按分镜裁剪 → 1920×886、30 帧、静音立体声音轨。
+
+跑了（macOS 26.6.2、Xcode 27.0、Swift 6.4、ffmpeg 8.0.1、Chrome 无界面）：
+- `swift build` 通过；`swift run court-check` 通过。
+- `swift test`：315 项，18 项跳过（都要显式开启的环境，例如模型目录、真机、截图目录），0 失败，用时 513 秒。
+- 浏览器：`node --check` 通过；用无界面 Chrome 把 3 类判定（出界底线、界内边线、压线附近发球线）各画 4 个时刻（飞行、落地、转向特写、判定），12 张都正常，球印、误差圈、距离标签和结论都对得上。
+- App：在 iPhone 17 Pro Max 模拟器（`replay-3d-qa`）上跑 `testStorePreviewFlow`，录下的画面里测速牌、CHALLENGE 标题、三拍回放（第 53、52、51 拍）都正常。
+- 商店预览：`./scripts/record-store-preview.sh DCFBEB68… .local/store-preview` 端到端跑通，输出 `preview-1920x886.mp4`：1920×886、30 帧、25.33 秒、带 AAC 音轨，抽查第 0.2 秒是测速牌、第 3.8 秒是 CHALLENGE、最后是第 51 拍的「界内」结论卡，右下角角标「画面为演示数据 · Demo data」。
+
+这一轮遇到的问题，已修在脚本/测试里：
+- Homebrew 的 ffmpeg 没有 `drawtext`（编译时没带 libfreetype），角标改成先用 Pillow 画透明 PNG 再 `overlay`；系统自带的 `python3` 有 Pillow，Homebrew 的没有，脚本会自己挑一个（`COURT_PREVIEW_PYTHON` 可指定）。
+- 裁剪必须放在输出侧（`-ss`/`-t` 写在 `-i` 之后）：这段模拟器录屏是变帧率的，输入侧 `-ss` 从关键帧算起，实测 25.4 秒只出 23.1 秒，结尾会被切掉。
+- 打分镜时设备还在转横屏：`assertLandscape()` 只看窗口尺寸，会早于界面重排返回，录到的测速牌是竖屏、回放是横屏，混在一个视频里。UI 测试在 `assertLandscape()` 之后加了 2.5 秒等待，并在测速牌出现后再断言一次，重录后整段都是横屏。
+
+没有验证：
+- 没装到真机上；这次只改回放画法，不改界内外判定，也不证明判定精度。
+- 预览视频是模拟器上录的演示数据，没上传 App Store Connect（计划随 1.2），也没过苹果的预览视频规格检查（只按文档里的尺寸、帧率、时长、音轨自查）。
+- 没在 iPhone 13/14 这类小屏或旧机型上看回放的实际帧率与发热。

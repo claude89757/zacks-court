@@ -149,6 +149,11 @@ struct LinkStats {
             self.store = store
             history = try store.loadAll()
             clearedRecordings = StorageCleanup(store: store).clearedRecordings()
+            // UI tests and store recordings: the display shows the newest demo record (`court-probe
+            // demo-session`, titled 演示数据) as just finished, so its boards and replays have shots.
+            if Self.replayDemo {
+                displayFinishedID = history.filter { $0.state == .completed && $0.title.contains("演示数据") }.max { $0.startedAt < $1.startedAt }?.id
+            }
         } catch { self.error = "读取历史记录失败：\(error.localizedDescription)。检查存储空间后重新打开 App。" }
         // Retention runs once the app has settled, never while a record is open.
         Task { [weak self] in try? await Task.sleep(for: .seconds(3)); self?.applyRecordingRetention() }
@@ -162,6 +167,9 @@ struct LinkStats {
     }
 
     deinit { ticker?.cancel() }
+
+    /// Set by UI tests only (`COURT_UI_REPLAY_DEMO=1`); it shows records titled 演示数据 and nothing else.
+    static let replayDemo = ProcessInfo.processInfo.environment["COURT_UI_REPLAY_DEMO"] == "1"
 
     // MARK: Role-aware state (shared sheets and dashboards)
 
