@@ -565,10 +565,23 @@ const CALLS = {
 const LINES = { sideline: "边线", baseline: "底线", serviceLine: "发球线", centreLine: "中线" };
 const FORMATS = { singles: "单打", doubles: "双打" };
 const VOICE_KEY = "court.web.hawkeye.voice";
+const VOICE_NAME_KEY = "court.web.hawkeye.voiceName";
+/// Line-call voices; mirrors CourtCore/LineCallVoice.swift (a test checks the two lists agree and every
+/// clip exists). AI-generated clips (OpenAI), named voice-<id>-out.m4a / voice-<id>-in.m4a beside this page.
+const VOICES = [
+  { id: "ash", name: "Ash", gender: "male" }, { id: "onyx", name: "Onyx", gender: "male" },
+  { id: "cedar", name: "Cedar", gender: "male" }, { id: "verse", name: "Verse", gender: "male" },
+  { id: "coral", name: "Coral", gender: "female" }, { id: "marin", name: "Marin", gender: "female" },
+  { id: "nova", name: "Nova", gender: "female" }, { id: "sage", name: "Sage", gender: "female" },
+];
+const DEFAULT_VOICE = "ash";
+const GENDERS = { male: "男声", female: "女声" };
+const voiceById = (id) => VOICES.find((v) => v.id === id) || VOICES.find((v) => v.id === DEFAULT_VOICE);
 /// Calls this old (row time against the newest row of the message) are not announced: a page that
 /// reconnects must not shout past calls. Same as the app (HawkEyeAlerts).
 const STALE_CALL_SECONDS = 8;
-state.hawkEye = { announced: new Set(), alert: null, timer: null, voice: load(VOICE_KEY) !== "off", unlocked: false, pending: null };
+state.hawkEye = { announced: new Set(), alert: null, timer: null, voice: load(VOICE_KEY) !== "off", unlocked: false, pending: null,
+  voiceName: voiceById(load(VOICE_NAME_KEY)).id };
 const hawkSupported = () => (state.camera?.capabilities || []).includes("hawkEye");
 const hawkOff = { enabled: false, format: "singles", farHalf: false };
 const hawkSettings = () => state.hawkEye.pending || state.status?.hawkEye || hawkOff;
@@ -628,26 +641,37 @@ function showCall(alert, fresh) {
 }
 $("hawkeye-call").addEventListener("click", () => { clearTimeout(state.hawkEye.timer); showCall(null); });
 
-/// The recorded calls, served beside this page (the app plays the same files). A clip that fails to
-/// load falls back to the browser's speech synthesis.
-const VOICE_CLIPS = { out: { file: "voice-out.m4a", text: "Out!" }, in: { file: "voice-in.m4a", text: "In." } };
-for (const clip of Object.values(VOICE_CLIPS)) {
-  clip.audio = new Audio(clip.file);
-  clip.audio.preload = "auto";
-  clip.audio.addEventListener("error", () => { clip.audio = null; });
+/// The chosen voice's two clips, served beside this page (the app plays the same files). A clip that
+/// fails to load falls back to the browser's speech synthesis.
+const WORDS = { out: "Out!", in: "In." };
+let voiceClips = {};
+function loadVoiceClips() {
+  for (const audio of Object.values(voiceClips)) if (audio) audio.pause();
+  voiceClips = {};
+  for (const call of Object.keys(WORDS)) {
+    const audio = new Audio(`voice-${state.hawkEye.voiceName}-${call}.m4a`);
+    audio.preload = "auto";
+    audio.addEventListener("error", () => { if (voiceClips[call] === audio) voiceClips[call] = null; });
+    voiceClips[call] = audio;
+  }
 }
-function voiceAvailable() { return "speechSynthesis" in window || Object.values(VOICE_CLIPS).some((c) => c.audio); }
-/// Browsers play sound only after a tap on the page: the Hawk-Eye buttons and the 「开启语音」 chip unlock it
-/// by starting each clip muted inside the tap (and a silent utterance for the speech fallback).
-function unlockVoice() {
-  if (state.hawkEye.unlocked || !voiceAvailable()) return;
-  for (const clip of Object.values(VOICE_CLIPS)) {
-    const audio = clip.audio;
+loadVoiceClips();
+function voiceAvailable() { return "speechSynthesis" in window || Object.values(voiceClips).some(Boolean); }
+/// Starts each clip muted inside a tap so later calls may play it (iOS Safari). A clip a real call has
+/// started meanwhile (unmuted) is left playing.
+function primeClips() {
+  for (const audio of Object.values(voiceClips)) {
     if (!audio) continue;
     audio.muted = true;
-    audio.play().then(() => { audio.pause(); audio.currentTime = 0; audio.muted = false; })
+    audio.play().then(() => { if (audio.muted) { audio.pause(); audio.currentTime = 0; audio.muted = false; } })
       .catch(() => { audio.muted = false; });
   }
+}
+/// Browsers play sound only after a tap on the page: the Hawk-Eye buttons, the 「开启语音」 chip, the voice
+/// picker and 「试听」 unlock it (plus a silent utterance for the speech fallback).
+function unlockVoice() {
+  if (state.hawkEye.unlocked || !voiceAvailable()) return;
+  primeClips();
   if ("speechSynthesis" in window) {
     const silent = new SpeechSynthesisUtterance(" ");
     silent.volume = 0;
@@ -656,19 +680,21 @@ function unlockVoice() {
   state.hawkEye.unlocked = true;
 }
 function sayOut() { say("out"); }
-/// Calls "out" or "in".
-function say(call) {
-  const clip = VOICE_CLIPS[call];
-  if (!state.hawkEye.voice || !clip) return;
-  for (const other of Object.values(VOICE_CLIPS)) if (other.audio && other !== clip) other.audio.pause();
+/// Calls "out" or "in" when the voice is on. Only line calls (a clear out) and challenge verdicts call this.
+function say(call) { if (state.hawkEye.voice) playCall(call); }
+function playCall(call) {
+  const words = WORDS[call];
+  if (!words) return;
+  for (const [other, audio] of Object.entries(voiceClips)) if (audio && other !== call) audio.pause();
   if ("speechSynthesis" in window) speechSynthesis.cancel();
-  if (clip.audio) {
-    const audio = clip.audio;
+  const audio = voiceClips[call];
+  if (audio) {
     audio.muted = false; audio.currentTime = 0;
-    audio.play().catch(() => speak(clip.text));
+    // AbortError means this page paused it (a newer call or a voice change), not that the clip is bad.
+    audio.play().catch((error) => { if (error.name !== "AbortError" && voiceClips[call] === audio) speak(words); });
     return;
   }
-  speak(clip.text);
+  speak(words);
 }
 function speak(text) {
   if (!("speechSynthesis" in window)) return;
@@ -678,6 +704,27 @@ function speak(text) {
   speechSynthesis.speak(utterance);
 }
 $("hawkeye-sound").addEventListener("click", () => { unlockVoice(); renderHawkEye(); });
+for (const [gender, label] of Object.entries(GENDERS)) {
+  const group = document.createElement("optgroup");
+  group.label = label;
+  for (const voice of VOICES.filter((v) => v.gender === gender)) {
+    const option = document.createElement("option");
+    option.value = voice.id; option.textContent = `${label} · ${voice.name}`;
+    group.appendChild(option);
+  }
+  $("hawkeye-voice-name").appendChild(group);
+}
+$("hawkeye-voice-name").value = state.hawkEye.voiceName;
+$("hawkeye-voice-name").addEventListener("change", (event) => {
+  state.hawkEye.voiceName = voiceById(event.target.value).id;
+  save(VOICE_NAME_KEY, state.hawkEye.voiceName);
+  loadVoiceClips();
+  // New clips need this tap's activation to play later; the change itself makes no sound.
+  if (state.hawkEye.unlocked) primeClips(); else unlockVoice();
+  renderHawkEye();
+});
+/// 「试听」: the only call made outside a line call or a challenge, and only on this tap.
+$("hawkeye-voice-preview").addEventListener("click", () => { unlockVoice(); playCall("out"); renderHawkEye(); });
 
 async function setHawk(settings) {
   state.hawkEye.pending = settings;
@@ -725,6 +772,7 @@ function renderHawkEye() {
   $("hawkeye-far").checked = Boolean(settings.farHalf);
   $("hawkeye-far-note").textContent = settings.farHalf ? "远端落点看得斜，误差是近端的几倍，远端的判定更常显示「压线附近」。" : "只判近端半场：远端的落点误差大，默认不判。";
   $("hawkeye-voice").checked = state.hawkEye.voice;
+  $("hawkeye-voice-name").value = state.hawkEye.voiceName;
   $("hawkeye-pending").hidden = !state.hawkEye.pending;
   $("board-challenge").hidden = !dashboardRows().some((row) => lineCall(row) || row.challenge);
   for (const button of document.querySelectorAll("[data-challenge]")) button.hidden = !(challengeSupported() && state.connected);

@@ -44,37 +44,40 @@ struct HawkEyeAlert: Equatable, Identifiable {
     /// Calls a challenge's verdict ("Out!" or "In.").
     func say(_ call: HawkEyeCall) { voice.say(call) }
 
+    /// The voice the calls use (setting 「语音」).
+    var callVoice: LineCallVoice {
+        get { voice.voice }
+        set { voice.voice = newValue }
+    }
+
     /// Rows already on the display when it (re)connects: remembered, never announced.
     func markSeen(_ rows: [TennisShotEvent]) {
         for row in rows where row.bounce?.hawkEye != nil { announced.insert(row.id) }
     }
 }
 
-/// Calls "Out!" / "In." in English like an electronic line-calling system. Plays the recorded clips
-/// shipped beside the browser display page (`voice-out.m4a`, `voice-in.m4a` in CourtCore's `Web`, so the
-/// app and the browser use the same file) and falls back to speech synthesis when a clip is missing.
-/// On iPhone it uses the playback audio category so the ring/silent switch does not mute it, and ducks
-/// other audio while calling.
+/// Calls "Out!" / "In." in English like an electronic line-calling system, in the chosen
+/// `LineCallVoice`: plays that voice's recorded clips from CourtCore's `Web` folder (the browser display
+/// plays the same files) and falls back to speech synthesis when a clip is missing. Only the chosen
+/// voice's two clips are loaded. On iPhone it uses the playback audio category so the ring/silent
+/// switch does not mute it, and ducks other audio while calling.
 @MainActor final class HawkEyeVoice {
-    /// Recorded clip file names (without extension) in the web resource folder.
-    static func clipName(_ call: HawkEyeCall) -> String? {
-        switch call {
-        case .out: "voice-out"
-        case .in: "voice-in"
-        case .close: nil
-        }
+    /// The chosen voice; changing it drops the loaded clips so the next call loads the new ones.
+    var voice = LineCallVoice.voice(id: nil) {
+        didSet { if voice != oldValue { for player in players.values { player.pause() }; players = [:]; loaded = false } }
     }
 
     private lazy var synthesizer = AVSpeechSynthesizer()
-    private var players: [String: AVAudioPlayer] = [:]
-    private var prepared = false
+    private var players: [HawkEyeCall: AVAudioPlayer] = [:]
+    private var sessionReady = false
+    private var loaded = false
 
     func sayOut() { say(.out) }
 
     func say(_ call: HawkEyeCall) {
-        guard let name = Self.clipName(call) else { return }
+        guard let words = LineCallVoice.words(call) else { return }
         prepare()
-        guard let player = players[name] else { speak(call == .out ? "Out!" : "In."); return }
+        guard let player = players[call] else { speak(words); return }
         // pause() rather than stop(): stop() drops the buffers prepareToPlay() filled.
         for other in players.values where other !== player { other.pause() }
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
@@ -96,21 +99,24 @@ struct HawkEyeAlert: Equatable, Identifiable {
     }
 
     private func prepare() {
-        guard !prepared else { return }
-        prepared = true
-        #if os(iOS)
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .mixWithOthers])
-        try? session.setActive(true)
-        #endif
-        // Loaded on the first call, after the audio session is set, so opening the app never touches
-        // the user's music; the clips are a few kilobytes, so this adds no audible delay.
+        if !sessionReady {
+            sessionReady = true
+            #if os(iOS)
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .mixWithOthers])
+            try? session.setActive(true)
+            #endif
+        }
+        // Loaded on the first call (and after a voice change), after the audio session is set, so opening
+        // the app never touches the user's music; each clip is a few kilobytes, so this adds no audible delay.
+        guard !loaded else { return }
+        loaded = true
         guard let root = WebDisplayResources.directory else { return }
         for call in [HawkEyeCall.out, .in] {
-            guard let name = Self.clipName(call),
-                  let player = try? AVAudioPlayer(contentsOf: root.appendingPathComponent("\(name).m4a")) else { continue }
+            guard let name = voice.fileName(call),
+                  let player = try? AVAudioPlayer(contentsOf: root.appendingPathComponent(name)) else { continue }
             player.prepareToPlay()
-            players[name] = player
+            players[call] = player
         }
     }
 }

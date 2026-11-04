@@ -70,7 +70,21 @@ struct LinkStats {
     var hawkEyeSound = (UserDefaults.standard.object(forKey: "court.hawkEye.sound") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(hawkEyeSound, forKey: "court.hawkEye.sound") }
     }
-    @ObservationIgnored let hawkEyeAlerts = HawkEyeAlerts()
+    /// The voice for "Out!" / "In." (男声 Ash by default). Stored per device.
+    var hawkEyeVoice = LineCallVoice.voice(id: UserDefaults.standard.string(forKey: "court.hawkEye.voice")) {
+        didSet {
+            UserDefaults.standard.set(hawkEyeVoice.id, forKey: "court.hawkEye.voice")
+            hawkEyeAlerts.callVoice = hawkEyeVoice
+        }
+    }
+    @ObservationIgnored let hawkEyeAlerts: HawkEyeAlerts = {
+        let alerts = HawkEyeAlerts()
+        alerts.callVoice = LineCallVoice.voice(id: UserDefaults.standard.string(forKey: "court.hawkEye.voice"))
+        return alerts
+    }()
+    /// Settings 「试听」: plays "Out!" in the chosen voice. The only call made outside a line call or a
+    /// challenge replay, and only when the user taps it.
+    func previewHawkEyeVoice() { hawkEyeAlerts.say(.out) }
     @ObservationIgnored private var hawkEyeTimer: Task<Void, Never>?
     @ObservationIgnored private var hawkEyeRequest: UUID?
     /// Interface the camera connection runs over.
