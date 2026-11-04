@@ -3001,3 +3001,16 @@ PR #27 合入 main（`8f9caa9`）后从新的 main 打 1.1 (9)。`asc builds nex
 - 球场实测。
 - 晃动时机位页还不会说明「画面在动所以不记击球」，分析落后的提示也还写着「遮阳降温」，这两条留作后续。
 - 拍屏幕和真实球场不同，这一轮不证明任何精度。
+
+## 2026-11-05 TestFlight 1.1 (10)：画面移动时重建球背景、记录里不再有 NaN
+
+PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds next-build-number` 返回 10，只把构建号改成 10。`scripts/reference-chain.sh status` 为 `off`；`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 后 Release 归档并导出（手动签名，Apple Distribution，描述文件「Zacks Court App Store 20261027」），之后还原了 `Info.plist`。
+
+- 解包检查：只有 `tracknetv3-base-fp16-v1`、`tracknetv3-base-v1`，没有 `AnalysisModels`，`LocalReferenceChain` 0 处；`CFBundleShortVersionString` 1.1、`CFBundleVersion` 10；签名 Apple Distribution，TeamIdentifier=A2YR8HBQKY。PR #30 已打进包里：二进制里有「自研模型还不支持离线补算」「检查存储空间后重试」和 `backgroundRebuilds`。
+- 上传：`asc builds upload --test-notes … --locale zh-Hans --wait` 后，构建 `735e9e79` 为 `VALID`，zh-Hans 的「测试什么」是 1.1 (10) 的说明（[testflight.md](app-store/testflight.md)）。
+- 内测组「Zacks Court 内测」：`internalBuildState` 为 `IN_BETA_TESTING`。
+- 公测组「Zacks Court 公测」：`asc builds add-groups --submit --confirm` 提交成功，Beta 审核为 `APPROVED`，`externalBuildState` 为 `IN_BETA_TESTING`，公开链接的测试者拿到的就是构建 10。
+
+没有验证：
+- TestFlight 的构建 10 没装到真机上；装在用户 iPhone 上的是同一份代码（`df8dc52`）用开发签名打的 Release 包。
+- 构建 10 没有重跑 `swift test`：代码与 PR #30 合入的 main 相同，合入前在本分支与 main 的合并结果上跑过相关测试。
