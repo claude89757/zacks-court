@@ -2871,3 +2871,14 @@ PR #22 合入 main（`bda5abd`）后从新的 main 打 1.1 (7)：`scripts/refere
 - 球场实测：这一轮只是记录工具，不改识别，也不证明任何精度。
 - 看板那边的诊断包（只有记录 JSON 和看板写的 `-status.jsonl`，没有机位的采集日志）只在代码里，没单独跑。
 - 其余 UI 用例没有重跑（只在导出菜单里加了一项）。
+
+## 2026-11-05 TestFlight 1.1 (8)：机位采集日志与诊断包
+
+PR #24 合入 main（`b123ddb`）后从新的 main 打 1.1 (8)：`scripts/reference-chain.sh status` 为 `off`，`asc builds next-build-number` 返回 8，`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 生成工程，Release 归档并手动导出（Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」），之后还原 `Info.plist`。
+
+- 解包检查：只有 `tracknetv3-base-fp16-v1`、`tracknetv3-base-v1`，没有 `AnalysisModels`，`LocalReferenceChain` 0 处；`CFBundleShortVersionString` 1.1、`CFBundleVersion` 8；签名 Apple Distribution，TeamIdentifier=A2YR8HBQKY；二进制里有采集日志和诊断包的代码（`capture-`、`ZacksCourt-diagnostics`）。
+- 上传：`asc builds upload` 后构建 `9df57709` 为 `VALID`；zh-Hans 的「测试什么」写成 1.1 (8) 的说明（[testflight.md](app-store/testflight.md)），请测试者认不出球场也录 30 秒以上，再把诊断包和录像发回。
+- 内测组「Zacks Court 内测」：`internalBuildState` 为 `IN_BETA_TESTING`。
+- 公测组「Zacks Court 公测」：构建 8 已加入该组，`externalBuildState` 为 `READY_FOR_BETA_SUBMISSION`；Beta 审核提交仍被构建 2 的 Beta 审核挡住（「Another build in the same train is already in beta review」），等它审完再用 `asc builds add-groups --submit` 提交最新构建。
+
+没有验证：没装到真机上；构建 8 没有重跑全量 `swift test`（代码与 PR #24 相同，提 PR 前跑过全量，合并 main 后跑过相关的 18 项）；公测组还没拿到构建 8。
