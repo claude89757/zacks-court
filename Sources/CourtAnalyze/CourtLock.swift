@@ -201,6 +201,18 @@ enum CourtLockCommand {
             // hold, peaks around 110 px per second)
             let s = shake(from: Rotation(), to: Rotation(), t0: 0, t1: .infinity, scale: name == "shaky" ? 0.4 : 0.15)
             return Scenario(name: name) { t in (s(t), true) }
+        case "net":
+            // a phone hung on the net or a fence: slow sway of the net plus a damped 5-10 Hz shiver after
+            // each ball that hits it (every 2-6 s, 0.2-0.5 degrees, dying out in about a second)
+            let p = pose(), sway = (0..<3).map { _ in (rng.uniform(0.05, 0.12) * degree, rng.uniform(0.2, 0.6), rng.uniform(0, 2 * .pi)) }
+            var hits: [(t: Double, a: Double, f: Double, axis: Int, phase: Double)] = []
+            var t = rng.uniform(1, 4)
+            while t < 400 { hits.append((t, rng.uniform(0.2, 0.5) * degree, rng.uniform(5, 10), Int(rng.next() % 2), rng.uniform(0, 2 * .pi))); t += rng.uniform(2, 6) }
+            return Scenario(name: name) { t in
+                var a = sway.map { $0.0 * sin(2 * .pi * $0.1 * t + $0.2) }
+                for h in hits where t >= h.t && t < h.t + 3 { a[h.axis] += h.a * exp(-(t - h.t) / 0.3) * sin(2 * .pi * h.f * (t - h.t) + h.phase) }
+                return (Rotation(pan: p.pan + a[0], tilt: p.tilt + a[1], roll: p.roll + a[2]), true)
+            }
         case "bump":
             let p = pose(), s = shake(from: Rotation(), to: p, t0: 15, t1: 17)
             return Scenario(name: name) { t in t < 15 ? (Rotation(), true) : t < 17 ? (s(t), false) : (p, true) }
