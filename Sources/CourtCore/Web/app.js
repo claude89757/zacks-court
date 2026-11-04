@@ -744,19 +744,31 @@ function replayScene(event, judgement) {
   }
   const sx = Number.isFinite(b.sigmaXMeters) ? Math.max(HE.minMargin, HE.sigmas * b.sigmaXMeters) : HE.defaultMargin;
   const sy = Number.isFinite(b.sigmaYMeters) ? Math.max(HE.minMargin, HE.sigmas * b.sigmaYMeters) : HE.defaultMargin;
-  const wideY = fromNear ? -10.5 : HE.length + 10.5;
-  const wide = { pos: [c, wideY, 7.5], target: [c, HE.netY, 0], fov: 46 };
-  const gap = Math.abs(j.distanceM), back = 1.1 + Math.min(2.5, gap * 1.5), height = 0.55 + Math.min(1.4, gap * 0.8);
+  // Camera path: wide from the hitter's end, a three-quarter view beside the bounce, then low across the line.
   const along = [-outward[1], outward[0], 0];
+  const travel = flight ? v3.norm([x - flight[0][0], y - flight[0][1], 0]) : outward;
+  let beside = [-travel[1], travel[0], 0];
+  if (v3.dot(beside, [c - x, HE.netY - y, 0]) < 0) beside = v3.mul(beside, -1);
+  const side = x >= c ? 1 : -1;
+  const wide = { pos: [c - side * 2, fromNear ? -10.5 : HE.length + 10.5, 7.5], target: [c, HE.netY, 0], fov: 46 };
+  const chase = { pos: v3.add(v3.add(v3.sub([x, y, 0], v3.mul(travel, 5)), v3.mul(beside, 6)), [0, 0, 3]), target: [x, y, 0.3], fov: 40 };
+  const gap = Math.abs(j.distanceM), back = 1 + Math.min(2.5, gap * 1.5), height = 0.38 + Math.min(1.2, gap * 0.8);
   const focus = v3.mul(v3.add(anchor, [x, y, 0]), 0.5);
-  const close = { pos: v3.add(v3.add(v3.sub(focus, v3.mul(outward, back)), v3.mul(along, back * 0.35)), [0, 0, height]), target: focus, fov: 34 };
-  return { j, bounce, flight, bounceIndex, anchor, outward, unc: [sx, sy], wide, close };
+  const close = { pos: v3.add(v3.add(v3.sub(focus, v3.mul(outward, back)), v3.mul(along, back * 0.3)), [0, 0, height]), target: focus, fov: 32 };
+  // The footprint keeps the ball radius across the line (the distance the call measured) and skids only along it.
+  const skid = 1 + 0.9 * Math.abs(v3.dot(travel, along));
+  return { j, bounce, flight, bounceIndex, anchor, outward, along, travel, unc: [sx, sy], wide, chase, close, focus, skid };
 }
 
-function camBlend(a, b, t) {
-  const s = Math.max(0, Math.min(1, t)), e = s * s * (3 - 2 * s);
-  const mix = (p, q) => v3.add(p, v3.mul(v3.sub(q, p), e));
-  return { pos: mix(a.pos, b.pos), target: mix(a.target, b.target), fov: a.fov + (b.fov - a.fov) * e };
+/// Camera at time t: a Catmull-Rom path wide → beside → close, eased over the flight and the zoom.
+function replayCamera(scene, t, timing) {
+  const f = Math.max(0, Math.min(1, (t - timing.title) / (timing.zoomEnd - timing.title)));
+  const e = f * f * f * (f * (f * 6 - 15) + 10), u = 2 * e, k = Math.min(1, Math.floor(u)), s = u - k;
+  const keys = [scene.wide, scene.wide, scene.chase, scene.close, scene.close];
+  const [p0, p1, p2, p3] = keys.slice(k, k + 4);
+  const cr = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * s + (2 * a - 5 * b + 4 * c - d) * s * s + (-a + 3 * b - 3 * c + d) * s * s * s);
+  const vec = (key) => [0, 1, 2].map((i) => cr(p0[key][i], p1[key][i], p2[key][i], p3[key][i]));
+  return { pos: vec("pos"), target: vec("target"), fov: cr(p0.fov, p1.fov, p2.fov, p3.fov) };
 }
 function camera(cam, w, h) {
   const fwd = v3.norm(v3.sub(cam.target, cam.pos)), right = v3.norm(v3.cross(fwd, [0, 0, 1])), up = v3.cross(right, fwd);
@@ -765,7 +777,7 @@ function camera(cam, w, h) {
   const screen = (q) => [w / 2 + f * q[0] / q[2], h / 2 - f * q[1] / q[2]];
   const NEAR = 0.05;
   return {
-    f, view, screen,
+    f, fwd, pos: cam.pos, view, screen,
     project: (p) => { const q = view(p); return q[2] > NEAR ? screen(q) : null; },
     polygon: (points) => {
       const cs = points.map(view), out = [];
@@ -786,7 +798,7 @@ function courtLines() {
     rect(c - w / 2, base, c + w / 2, base + 0.10), rect(c - w / 2, L - base - 0.10, c + w / 2, L - base)];
 }
 function replayTiming(hasFlight) {
-  const title = 1.0, flightEnd = hasFlight ? title + 2.2 : title, zoomEnd = flightEnd + 1.4, markEnd = zoomEnd + 0.5;
+  const title = 1.0, flightEnd = hasFlight ? title + 2.4 : title, zoomEnd = flightEnd + 1.6, markEnd = zoomEnd + 0.5;
   return { title, flightEnd, zoomEnd, markEnd, total: markEnd + 0.3 };
 }
 
@@ -799,6 +811,31 @@ function judgedShots() {
 function cssColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#fff"; }
 function callColor(call) { return cssColor(call === "out" ? "--recording" : call === "in" ? "--green" : "--warning"); }
 
+/// Replay palette (mirrors HawkEyeReplayPainter.Palette in HawkEyeChallenge.swift).
+const RP = {
+  skyTop: "#04080c", skyHorizon: "#16242a", haze: "#1c2c2b", apronFar: "#10261f", apronNear: "#0b2019",
+  runFar: "#1d4a3c", runNear: "#163b30", courtFar: "#2a6b57", courtNear: "#1f5747", line: "#f4f7f2",
+  ballLight: "#fbffd0", ball: "#dcf04a", ballDark: "#7f9a18", post: ["#2a3532", "#9aa8a2", "#3c4a46"],
+};
+/// Light from high up, a little to the left and from behind the near end: sets the shadows.
+const SUN = v3.norm([-0.45, 0.35, 1]);
+const groundShadow = (p) => { const k = p[2] / SUN[2]; return [p[0] - SUN[0] * k, p[1] - SUN[1] * k, 0]; };
+function groundEllipse(c, a, b, dir, n = 40) {
+  const d = v3.norm([dir[0], dir[1], 0]), q = [-d[1], d[0], 0], out = [];
+  for (let i = 0; i < n; i += 1) { const t = i / n * 2 * Math.PI; out.push(v3.add(v3.add(c, v3.mul(d, a * Math.cos(t))), v3.mul(q, b * Math.sin(t)))); }
+  return out;
+}
+/// Fixed specks on the surface round the bounce: they shrink with distance, so the ground reads as a plane.
+function surfaceGrain(focus) {
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, out = [];
+  for (let i = 0; i < 1600; i += 1) out.push([focus[0] + (rnd() - 0.5) * 7, focus[1] + (rnd() - 0.5) * 7, 0]);
+  return out;
+}
+const netTop = (x) => {
+  const left = -0.914, post = HE.width + 0.914, m = HE.width / 2;
+  return x <= m ? 1.07 + (0.914 - 1.07) * ((x - left) / (m - left)) : 0.914 + (1.07 - 0.914) * ((x - m) / (post - m));
+};
+
 function paintReplay(scene, t) {
   const canvas = $("challenge-canvas"), ratio = window.devicePixelRatio || 1;
   const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -806,50 +843,137 @@ function paintReplay(scene, t) {
   const g = canvas.getContext("2d");
   g.setTransform(ratio, 0, 0, ratio, 0, 0);
   const timing = replayTiming(Boolean(scene.flight));
-  const cam = camera(camBlend(scene.wide, scene.close, (t - timing.flightEnd) / (timing.zoomEnd - timing.flightEnd)), w, h);
+  drawReplay(g, w, h, scene, t, timing);
+  $("challenge-title").hidden = t >= timing.title + 0.3;
+  $("challenge-title").style.opacity = String(t < timing.title ? 1 : Math.max(0, 1 - (t - timing.title) / 0.3));
+  $("challenge-verdict").hidden = t < timing.markEnd;
+  return t < timing.total;
+}
+
+function drawReplay(g, w, h, scene, t, timing) {
+  const cam = camera(replayCamera(scene, t, timing), w, h);
   const mark = Math.max(0, Math.min(1, (t - timing.zoomEnd) / (timing.markEnd - timing.zoomEnd)));
-  const fill = (points, color) => {
-    const s = cam.polygon(points); if (s.length < 3) return null;
-    g.beginPath(); g.moveTo(s[0][0], s[0][1]); for (const p of s.slice(1)) g.lineTo(p[0], p[1]); g.closePath();
-    if (color) { g.fillStyle = color; g.fill(); }
-    return true;
+  const W = HE.width, L = HE.length, net = HE.netY, color = callColor(scene.j.call);
+  const shape = (points) => {
+    const s = cam.polygon(points); if (s.length < 3) return false;
+    g.beginPath(); g.moveTo(s[0][0], s[0][1]); for (const p of s.slice(1)) g.lineTo(p[0], p[1]); g.closePath(); return true;
   };
-  g.fillStyle = cssColor("--bg"); g.fillRect(0, 0, w, h);
-  const W = HE.width, L = HE.length, color = callColor(scene.j.call);
-  g.globalAlpha = 0.65; fill([[-6, -8, 0], [W + 6, -8, 0], [W + 6, L + 8, 0], [-6, L + 8, 0]], "#0e2921"); g.globalAlpha = 1;
-  fill([[0, 0, 0], [W, 0, 0], [W, L, 0], [0, L, 0]], "#0e2921");
+  const vertical = (y0, stops) => { const gr = g.createLinearGradient(0, y0, 0, h); stops.forEach(([o, c]) => gr.addColorStop(o, c)); return gr; };
+  // sky down to a hazy horizon
+  const flat = v3.norm([cam.fwd[0], cam.fwd[1], 0]);
+  const hz = cam.project(v3.add(cam.pos, v3.mul(flat, 4000)));
+  const hy = Math.max(0, Math.min(h, hz ? hz[1] : 0));
+  const sky = g.createLinearGradient(0, 0, 0, Math.max(1, hy));
+  sky.addColorStop(0, RP.skyTop); sky.addColorStop(1, RP.skyHorizon);
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  // ground, run-off and court, each lit a little brighter toward the camera's far side
+  if (shape([[-60, -60, 0], [W + 60, -60, 0], [W + 60, L + 60, 0], [-60, L + 60, 0]])) { g.fillStyle = vertical(hy, [[0, RP.haze], [0.18, RP.apronFar], [1, RP.apronNear]]); g.fill(); }
+  if (shape([[-3.66, -6.4, 0], [W + 3.66, -6.4, 0], [W + 3.66, L + 6.4, 0], [-3.66, L + 6.4, 0]])) { g.fillStyle = vertical(hy, [[0, RP.runFar], [1, RP.runNear]]); g.fill(); }
+  if (shape([[0, 0, 0], [W, 0, 0], [W, L, 0], [0, L, 0]])) {
+    const gr = g.createLinearGradient(0, hy, w * 0.3, h); gr.addColorStop(0, RP.courtFar); gr.addColorStop(1, RP.courtNear); g.fillStyle = gr; g.fill();
+  }
+  g.beginPath();
+  for (const p of (scene.grain ||= surfaceGrain(scene.focus))) {
+    const q = cam.view(p); if (q[2] < 0.1) continue;
+    const r = Math.min(1.6, 0.006 * cam.f / q[2]); if (r < 0.3) continue;
+    const s = cam.screen(q); g.rect(s[0], s[1], r, r * 0.6);
+  }
+  g.fillStyle = "rgba(255,255,255,0.05)"; g.fill();
+  // uncertainty under the lines, so the lines stay readable
+  const fpA = HE.ball * scene.skid, fpB = HE.ball;   // footprint: along the line, across it
+  if (mark > 0 && shape(groundEllipse(scene.bounce, scene.unc[0], scene.unc[1], [1, 0, 0], 64))) {
+    g.globalAlpha = 0.16 * mark; g.fillStyle = color; g.fill();
+    g.globalAlpha = 0.7 * mark; g.setLineDash([5, 4]); g.strokeStyle = color; g.lineWidth = 1.2; g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+  }
+  g.save(); g.shadowColor = "rgba(255,255,255,0.35)"; g.shadowBlur = 3;
+  for (const r of courtLines()) if (shape(r)) { g.fillStyle = RP.line; g.fill(); }
+  g.restore();
+  // the judged line's edge, picked out once the zoom is done
   if (mark > 0) {
-    const ring = []; for (let i = 0; i < 48; i += 1) { const a = i / 48 * 2 * Math.PI; ring.push([scene.bounce[0] + scene.unc[0] * Math.cos(a), scene.bounce[1] + scene.unc[1] * Math.sin(a), 0]); }
-    if (fill(ring)) { g.globalAlpha = 0.16 * mark; g.fillStyle = color; g.fill(); g.globalAlpha = 0.55 * mark; g.setLineDash([4, 3]); g.strokeStyle = color; g.lineWidth = 1; g.stroke(); g.setLineDash([]); g.globalAlpha = 1; }
+    const a = scene.anchor, span = v3.mul(scene.along, 1.2);
+    const p = cam.project(v3.sub(a, span)), q = cam.project(v3.add(a, span));
+    if (p && q) { g.globalAlpha = 0.85 * mark; g.strokeStyle = cssColor("--green"); g.lineWidth = 1.5; g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke(); g.globalAlpha = 1; }
   }
-  g.globalAlpha = 0.92; for (const r of courtLines()) fill(r, "#ffffff"); g.globalAlpha = 1;
-  const net = HE.netY;
-  if (fill([[-0.9, net, 0], [W + 0.9, net, 0], [W + 0.9, net, 1.07], [W / 2, net, 0.914], [-0.9, net, 1.07]])) {
-    g.fillStyle = "rgba(255,255,255,0.10)"; g.fill(); g.strokeStyle = "rgba(255,255,255,0.55)"; g.lineWidth = 1; g.stroke();
+  // net: its shadow, the mesh, the top tape and the posts
+  const left = -0.914, post = W + 0.914, xs = Array.from({ length: 21 }, (_, i) => left + (post - left) * i / 20);
+  if (shape([[left, net, 0], ...xs.map((x) => groundShadow([x, net, netTop(x)])), [post, net, 0]])) { g.fillStyle = "rgba(0,0,0,0.28)"; g.fill(); }
+  const netShape = [[left, net, 0], [post, net, 0], [post, net, 1.07], [W / 2, net, 0.914], [left, net, 1.07]];
+  if (shape(netShape)) {
+    g.fillStyle = "rgba(8,14,12,0.35)"; g.fill();
+    g.save(); g.clip(); g.beginPath();
+    for (let x = left; x <= post; x += 0.08) { const a = cam.project([x, net, 0]), b = cam.project([x, net, 1.1]); if (a && b) { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); } }
+    for (let z = 0.05; z < 1.1; z += 0.08) { const a = cam.project([left, net, z]), b = cam.project([post, net, z]); if (a && b) { g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); } }
+    g.strokeStyle = "rgba(230,240,235,0.16)"; g.lineWidth = 0.6; g.stroke(); g.restore();
   }
+  if (shape([...xs.map((x) => [x, net, netTop(x)]), ...xs.slice().reverse().map((x) => [x, net, netTop(x) - 0.06])])) { g.fillStyle = "#e9efe9"; g.fill(); }
+  for (const x of [left, post]) {
+    if (!shape([[x - 0.04, net, 0], [x + 0.04, net, 0], [x + 0.04, net, 1.07], [x - 0.04, net, 1.07]])) continue;
+    const a = cam.project([x - 0.04, net, 0]), b = cam.project([x + 0.04, net, 0]);
+    if (a && b) { const gr = g.createLinearGradient(a[0], 0, b[0] + 0.01, 0); RP.post.forEach((c, i) => gr.addColorStop(i / 2, c)); g.fillStyle = gr; } else g.fillStyle = RP.post[1];
+    g.fill();
+  }
+  // the footprint, pressed in as the mark appears
+  if (mark > 0) {
+    const grow = 0.6 + 0.4 * Math.sin(Math.min(1, mark * 1.4) * Math.PI / 2);
+    if (shape(groundEllipse(scene.bounce, fpA * grow, fpB * grow, scene.along))) {
+      g.globalAlpha = 0.95 * mark; g.fillStyle = color; g.fill();
+      g.globalAlpha = mark; g.strokeStyle = "rgba(255,255,255,0.95)"; g.lineWidth = 1.4; g.stroke(); g.globalAlpha = 1;
+    }
+  }
+  // the flight: a tapered comet, faded where it passes the camera; dimmer and dashed after the bounce (a guess)
+  let ball = null;
   if (scene.flight && t > timing.title) {
     const f = Math.max(0, Math.min(1, (t - timing.title) / (timing.flightEnd - timing.title)));
     const last = scene.flight.length - 1, bi = scene.bounceIndex;
     const n = Math.min(last, f < 0.85 ? bi * (f / 0.85) : bi + (last - bi) * ((f - 0.85) / 0.15));
     const whole = Math.floor(n), pts = scene.flight.slice(0, whole + 1);
     if (whole < last) pts.push(v3.add(scene.flight[whole], v3.mul(v3.sub(scene.flight[whole + 1], scene.flight[whole]), n - whole)));
-    g.beginPath(); let started = false;
-    for (const p of pts) { const s = cam.project(p); if (!s) { started = false; continue; } if (started) g.lineTo(s[0], s[1]); else { g.moveTo(s[0], s[1]); started = true; } }
-    g.strokeStyle = cssColor("--green"); g.globalAlpha = 0.85; g.lineWidth = 3; g.lineCap = "round"; g.lineJoin = "round"; g.stroke(); g.globalAlpha = 1;
-    const ball = pts[pts.length - 1], q = cam.view(ball);
-    if (mark < 1 && q[2] > 0.05) {
-      const s = cam.screen(q), r = Math.max(3, HE.ball * cam.f / q[2]);
-      g.beginPath(); g.arc(s[0], s[1], r, 0, 2 * Math.PI); g.fillStyle = "#dbf240"; g.fill();
+    g.lineCap = "round";
+    for (let i = 1; i < pts.length; i += 1) {
+      const qa = cam.view(pts[i - 1]), qb = cam.view(pts[i]);
+      if (qa[2] < 0.3 || qb[2] < 0.3) continue;
+      const a = cam.screen(qa), b = cam.screen(qb), after = i > bi, k = i / (pts.length - 1 || 1);
+      const near = Math.max(0, Math.min(1, (qb[2] - 0.8) / 2.5)), r = HE.ball * cam.f / qb[2];
+      g.globalAlpha = near * (after ? 0.45 : 0.25 + 0.7 * Math.pow(k, 1.4));
+      g.strokeStyle = after ? "#e8ffa8" : cssColor("--green");
+      g.lineWidth = after ? Math.max(1, Math.min(3, r * 0.5)) : Math.max(2.5, Math.min(7, r * 1.4)) * (0.45 + 0.55 * k);
+      g.setLineDash(after ? [4, 5] : []);
+      g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+    }
+    g.setLineDash([]); g.globalAlpha = 1;
+    if (mark < 1) ball = pts[pts.length - 1];
+  }
+  const drawBall = (p, alpha, squash) => {
+    const lift = Math.max(0, p[2] - HE.ball), spread = 1 + lift * 0.6;
+    if (shape(groundEllipse(groundShadow([p[0], p[1], lift]), HE.ball * spread * 1.25, HE.ball * spread, SUN))) {
+      g.fillStyle = `rgba(0,0,0,${(Math.max(0.12, 0.55 - lift * 0.12) * alpha).toFixed(3)})`; g.fill();
+    }
+    const q = cam.view(p); if (q[2] < 0.1) return;
+    const s = cam.screen(q), r = Math.max(5, HE.ball * cam.f / q[2]);
+    g.save(); g.globalAlpha = alpha; g.shadowColor = "rgba(210,255,90,0.55)"; g.shadowBlur = r * 1.2;
+    const gr = g.createRadialGradient(s[0] - r * 0.35, s[1] - r * 0.4, r * 0.1, s[0], s[1], r);
+    gr.addColorStop(0, RP.ballLight); gr.addColorStop(0.45, RP.ball); gr.addColorStop(1, RP.ballDark);
+    g.beginPath(); g.ellipse(s[0], s[1] + r * (1 - squash) * 0.5, r * (2 - squash), r * squash, 0, 0, 2 * Math.PI); g.fillStyle = gr; g.fill();
+    g.shadowBlur = 0; g.beginPath(); g.arc(s[0] + r * 0.9, s[1] - r * 0.2, r * 0.75, 2.2, 4.1);
+    g.strokeStyle = "rgba(255,255,255,0.7)"; g.lineWidth = Math.max(0.6, r * 0.12); g.stroke(); g.restore();
+  };
+  if (ball) drawBall(ball, 1, 1);
+  if (mark > 0) drawBall(scene.bounce, 0.3 * mark, 1 - 0.12 * Math.sin(Math.min(1, mark * 1.4) * Math.PI));
+  // how far the footprint is from the line, beside the mark (no number for a call too close to make)
+  if (mark > 0 && scene.j.call !== "close") {
+    const cm = Math.round(Math.abs(scene.j.distanceM) * 100);
+    const q = cam.view(scene.bounce);
+    if (q[2] > 0.1) {
+      const at = cam.screen(q), reach = Math.max(18, 2.2 * fpA * cam.f / q[2]);
+      const text = `约 ${cm} 厘米`;
+      g.font = "600 15px -apple-system, 'PingFang SC', sans-serif";
+      const tw = g.measureText(text).width, x = Math.min(w - tw - 26, at[0] + reach), y = Math.max(30, at[1] - reach * 0.6);
+      g.globalAlpha = mark; g.fillStyle = "rgba(5,8,7,0.8)"; g.beginPath(); if (g.roundRect) g.roundRect(x, y - 21, tw + 18, 28, 8); else g.rect(x, y - 21, tw + 18, 28); g.fill();
+      g.fillStyle = "#fff"; g.fillText(text, x + 9, y - 2); g.globalAlpha = 1;
     }
   }
-  if (mark > 0) {
-    const ring = []; for (let i = 0; i < 32; i += 1) { const a = i / 32 * 2 * Math.PI; ring.push([scene.bounce[0] + HE.ball * Math.cos(a), scene.bounce[1] + HE.ball * Math.sin(a), 0]); }
-    if (fill(ring)) { g.globalAlpha = 0.9 * mark; g.fillStyle = color; g.fill(); g.globalAlpha = mark; g.strokeStyle = "#fff"; g.lineWidth = 1; g.stroke(); g.globalAlpha = 1; }
-  }
-  $("challenge-title").hidden = t >= timing.title + 0.3;
-  $("challenge-title").style.opacity = String(t < timing.title ? 1 : Math.max(0, 1 - (t - timing.title) / 0.3));
-  $("challenge-verdict").hidden = t < timing.markEnd;
-  return t < timing.total;
+  const vg = g.createRadialGradient(w / 2, h * 0.55, h * 0.35, w / 2, h * 0.55, Math.max(w, h) * 0.65);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.5)"); g.fillStyle = vg; g.fillRect(0, 0, w, h);
 }
 
 function showChallenge(keepIndex) {

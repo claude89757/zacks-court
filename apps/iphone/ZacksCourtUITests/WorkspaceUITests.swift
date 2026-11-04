@@ -15,6 +15,8 @@ final class WorkspaceUITests: XCTestCase {
         // Simulators have no camera: the demo shows a triple camera's zoom presets so their layout
         // and gestures can be checked. Nothing is captured.
         if name.contains("testCameraZoomPresets") || name.contains("testScreenTourForReview") { app.launchEnvironment["COURT_UI_ZOOM_DEMO"] = "1" }
+        // The display shows the seeded demo record (titled 演示数据) as just finished.
+        if name.contains("testChallengeReplayDemo") || name.contains("testStorePreviewFlow") { app.launchEnvironment["COURT_UI_REPLAY_DEMO"] = "1" }
         app.launch()
         XCTAssertTrue(app.buttons["历史记录"].firstMatch.waitForExistence(timeout: 10))
     }
@@ -1054,6 +1056,81 @@ final class WorkspaceUITests: XCTestCase {
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
         save("03-detail-0")
         for page in 1...8 { detail.swipeUp(velocity: .slow); save("03-detail-\(page)") }
+    }
+
+    /// The line-call replay on the full-screen speed board, played from the demo record: frames go to
+    /// TEST_RUNNER_COURT_UI_REPLAY_DEMO (a folder) every 0.4 s, for checking the animation and as the
+    /// script of the store preview video. Seed the record first with `court-probe demo-session`.
+    func testChallengeReplayDemo() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let folder = environment["COURT_UI_REPLAY_DEMO"] ?? environment["TEST_RUNNER_COURT_UI_REPLAY_DEMO"] else {
+            throw XCTSkip("Set TEST_RUNNER_COURT_UI_REPLAY_DEMO to a folder and seed the demo record first")
+        }
+        var shot = 0
+        func save(_ name: String) {
+            shot += 1
+            let url = URL(fileURLWithPath: folder).appendingPathComponent(String(format: "%03d-", shot) + name + ".png")
+            XCTAssertNoThrow(try XCUIScreen.main.screenshot().pngRepresentation.write(to: url))
+        }
+        enterServer()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        assertLandscape()
+        let tile = app.buttons["court.analysis.speed.open"].firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 5), "The demo record fills the speed tile")
+        tapReachable(tile)
+        XCTAssertTrue(app.descendants(matching: .any)["court.focus.speed"].firstMatch.waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 1.5); save("board")
+        let replay = app.buttons["court.speedboard.challenge"].firstMatch
+        XCTAssertTrue(replay.waitForExistence(timeout: 5), "Judged demo shots offer the replay")
+        replay.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["court.hawkeye.replay"].firstMatch.waitForExistence(timeout: 5))
+        for step in 0..<18 { save("replay-a-\(step)"); Thread.sleep(forTimeInterval: 0.4) }
+        let previous = app.buttons["上一个"].firstMatch
+        if previous.isEnabled {
+            previous.tap()
+            for step in 0..<18 { save("replay-b-\(step)"); Thread.sleep(forTimeInterval: 0.4) }
+        }
+        app.buttons["关闭"].firstMatch.tap()
+        XCUIDevice.shared.orientation = .portrait
+    }
+
+    /// The store preview video's script, run while `scripts/record-store-preview.sh` records the screen:
+    /// the full-screen speed board, then three line-call replays from the demo record. Writes
+    /// `marks.txt` (wall-clock seconds) to TEST_RUNNER_COURT_UI_STORE_PREVIEW so the script can trim.
+    func testStorePreviewFlow() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let folder = environment["COURT_UI_STORE_PREVIEW"] ?? environment["TEST_RUNNER_COURT_UI_STORE_PREVIEW"] else {
+            throw XCTSkip("Set TEST_RUNNER_COURT_UI_STORE_PREVIEW to a folder; run it through scripts/record-store-preview.sh")
+        }
+        var marks = ""
+        func mark(_ name: String) { marks += "\(name) \(Date().timeIntervalSince1970)\n" }
+        enterServer()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        assertLandscape()
+        // The window reports landscape before the app has laid out for it; opening the board in that gap
+        // records a portrait board and the preview then mixes orientations.
+        Thread.sleep(forTimeInterval: 2.5)
+        let tile = app.buttons["court.analysis.speed.open"].firstMatch
+        XCTAssertTrue(tile.waitForExistence(timeout: 5), "Seed the demo record with court-probe demo-session first")
+        tapReachable(tile)
+        XCTAssertTrue(app.descendants(matching: .any)["court.focus.speed"].firstMatch.waitForExistence(timeout: 5))
+        assertLandscape()
+        Thread.sleep(forTimeInterval: 0.6)
+        mark("start")
+        Thread.sleep(forTimeInterval: 3.0)
+        app.buttons["court.speedboard.challenge"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["court.hawkeye.replay"].firstMatch.waitForExistence(timeout: 5))
+        Thread.sleep(forTimeInterval: 6.6)
+        for _ in 0..<2 {
+            let previous = app.buttons["上一个"].firstMatch
+            guard previous.isEnabled else { break }
+            previous.tap()
+            Thread.sleep(forTimeInterval: 6.6)
+        }
+        mark("end")
+        try marks.write(to: URL(fileURLWithPath: folder).appendingPathComponent("marks.txt"), atomically: true, encoding: .utf8)
+        app.buttons["关闭"].firstMatch.tap()
+        XCUIDevice.shared.orientation = .portrait
     }
 
     /// History opens on the session list; filters are 44-point controls; a record can be deleted
