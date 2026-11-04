@@ -80,6 +80,7 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 | [privacy-policy.md](privacy-policy.md) | 中英文隐私政策，公开版在上面的隐私政策网址 |
 | [review-notes.md](review-notes.md) | 给审核员的说明 |
 | [testflight.md](testflight.md) | TestFlight 内测、公测的说明文字和 Beta 审核备注 |
+| [creative-assets/source/](creative-assets/source/) | iOS 27 产品页标题和搜索结果的通用素材模板（`universal.html` + `captions.json`），`scripts/render-creative-assets.sh` 生成 `creative-assets/<语言>/universal.png`（约 9 MB，不进 Git） |
 
 `metadata/` 用的是 `asc metadata` 的目录格式，已通过 `asc metadata validate`（离线检查字段和长度）。
 
@@ -106,6 +107,22 @@ asc status --app 6827224757                     # 发布状态总览
 - **不写的词**：鹰眼、Hawk-Eye（注册商标）、电子裁判、umpire、referee、雷达、测速仪、radar gun、任何竞品名称，以及名称和副标题里的「免费 / Free」（苹果不允许）。球速和界内外一律写「估计」。
 - **推广文本**随时可改，不用提交新版本；名称、副标题、关键词只能随新版本改。
 - **上线后**：在 App Store Connect 的「App 分析」里看「来源：App Store 搜索」的曝光和转化，一两周后按实际搜索词调整关键词。
+
+### 创意素材：产品页标题和搜索结果（iOS 27 起，2026-11-04）
+
+苹果 2026-10-05 起支持的可选素材，只对 iOS 27 / iPadOS 27 及以后的用户显示；不放时搜索结果显示截图，审核不受影响。规格见 [Creative assets specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/creative-assets-specifications/)。
+
+- **做法**：每种语言一张通用素材（16:9，5244×2950 PNG，不能有透明通道），同时用于产品页标题（裁成 21:9）和搜索结果（裁成 3:2）。文字和主体放在两种裁切都保留的中间区域（按居中裁切估算，没有在 App Store Connect 的预览工具里看过）。画面是一记 149 km/h 的发球、落点超出发球线 32 厘米判出界，标「模型估计」和演示数据；不写免费、价格、网址、©、竞品和第 6 节的禁用词。
+- **已上传素材库**（2026-11-04，规格 `i5244x2950a0`，通用，可用于两种位置），状态 `PREPARE_FOR_SUBMISSION`：
+  - zh-Hans `d2c00019-6ef2-8eb5-8022-a0e8be458eaf`（creative-1.1-zh-Hans）
+  - zh-Hant `50400019-6ef2-8eb5-8025-5480b09ff30c`（creative-1.1-zh-Hant）
+  - en-US 和 en-GB 共用 `82c00019-6ef2-8eb5-8000-fcbcfa78ef4d`（creative-1.1-en）
+- **还没提交、没挂到版本上**：1.1 的审核提交（`422c5c95`）还开着，同一平台同时只能有一个审核提交；也不能改正在审核的版本。接下来：
+  1. 前提：1.1 的审核提交已关闭（过审或被拒，`asc review submissions list --app 6827224757`）。
+  2. 单独提交素材审核：`asc review submissions-create --app 6827224757 --platform IOS`，把三张图逐个加进去（`asc review items add --submission <ID> --item-type appAssetLibraryImages --item-id <图片 ID>`），再 `asc review submissions-submit --id <ID> --confirm`。
+  3. 前提：三张图都是 `APPROVED`（`asc asset-library images list --library-id 6827224757`），且 1.1 已上线。
+  4. 挂到线上 1.1 的四个语言上，每个语言两种位置都用同一张图（creative assets 用 `DEFAULT_PROFILE`）：`asc localizations placements create --localization-id <本地化 ID> --image-id <图片 ID> --placement-type PRODUCT_PAGE_HEADER_ASSET`，再用 `APP_STORE_SEARCH_RESULTS_ASSET` 跑一遍。1.1 的本地化 ID：zh-Hans `ee27abea-f73b-4bf1-8b55-2f7dfd624285`、en-US `d24d0791-bd14-4112-b948-094e8d482661`、zh-Hant `b413f760-e9f5-4299-82e2-4bd8d4908b7f`、en-GB `b3ea238e-65ca-45c3-91f6-1aece2cac2ef`。苹果文档说线上版本换上已审过的素材不用提交新版本；如果命令行挂不上，就在网页上 1.1 版本页「标题和搜索结果」里「浏览素材」选图后点「发布」。
+- 上线后再考虑（这次不做，免得多一道审核）：店内活动、自定义产品页、产品页优化（A/B 测试）、App 预览视频。新 App 刚上线流量小，A/B 测试和自定义产品页看不出差别。
 
 ### 1.1 发版记录（2026-11-04 已提交审核）
 

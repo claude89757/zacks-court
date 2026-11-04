@@ -30,7 +30,7 @@
     "est": "Model estimate",
     "out": "Out",
     "outDetail": "32 cm long · service line",
-    "demo": "Screens show demo data"
+    "demo": "Demo data"
   },
   "en-GB": {
     "line1": "Serve speed.",
@@ -41,6 +41,6 @@
     "est": "Model estimate",
     "out": "Out",
     "outDetail": "32 cm long · service line",
-    "demo": "Screens show demo data"
+    "demo": "Demo data"
   }
 }
