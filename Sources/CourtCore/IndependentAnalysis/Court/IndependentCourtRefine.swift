@@ -194,11 +194,13 @@ enum IndependentCourtRefine {
         return (0..<9).map { c * eye[$0] + c1 * rrt[$0] + s * rx[$0] }
     }
 
-    /// `cv2.projectPoints` without distortion; params = f, rvec, tvec; principal point (cx, cy).
+    /// `cv2.projectPoints` without distortion; params = f, rvec, tvec and optionally the horizontal
+    /// principal coordinate as an 8th value (otherwise `cx`); principal point (cx, cy).
     struct Projection {
         let f: Double, R: [Double], t: SIMD3<Double>, cx: Double, cy: Double
         init(_ p: [Double], cx: Double, cy: Double) {
-            f = p[0]; R = rodrigues(SIMD3(p[1], p[2], p[3])); t = SIMD3(p[4], p[5], p[6]); self.cx = cx; self.cy = cy
+            f = p[0]; R = rodrigues(SIMD3(p[1], p[2], p[3])); t = SIMD3(p[4], p[5], p[6])
+            self.cx = p.count > 7 ? p[7] : cx; self.cy = cy
         }
         @inline(__always) func depth(_ X: SIMD3<Double>) -> Double { R[6] * X.x + R[7] * X.y + R[8] * X.z + t.z }
         @inline(__always) func callAsFunction(_ X: SIMD3<Double>) -> SIMD2<Double> {
@@ -336,7 +338,8 @@ enum IndependentCourtRefine {
     struct Fit { var x: [Double], perLine: [(IndependentCourtLine, Double)], fSD: Double }
 
     /// One fit (`lm_fit`): LM on `use`, then per-line RMS (raw px) for every refined line with masks
-    /// recomputed at the solution, and the focal-length standard deviation from (J^T J)^-1 r.r / (m - 7).
+    /// recomputed at the solution, and the focal-length standard deviation from (J^T J)^-1 r.r / (m - n),
+    /// n = 7 parameters, or 8 when the horizontal principal coordinate is free.
     static func fit(_ x0: [Double], lines: [(IndependentCourtLine, IndependentCourtRefinedLine)], use: [IndependentCourtLine],
                     width: Int, height: Int, baselineWidth wb: Double) -> Fit {
         let byName = Dictionary(lines.map { ($0.0, $0) }, uniquingKeysWith: { a, _ in a })

@@ -466,7 +466,7 @@ public final class IndependentLiveEngine {
         guard configuration.camera != nil else {
             if court?.moving == true {
                 return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
-                                                   reason: "正在识别球场 · 画面在动，请把手机固定住")
+                                                   reason: "正在识别球场 · 画面在晃动，尽量拿稳")
             }
             let refusal = court?.latest?.refusals.first?.message
             return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
