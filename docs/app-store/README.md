@@ -131,7 +131,7 @@ asc status --app 6827224757                     # 发布状态总览
 - **2026-11-10 前续费开发者会员**。协议、发布证书和描述文件都到这天为止，过期后不能上传。
 
 实际顺序（App Store Connect 的改动不用逐步问用户，由顾问模型把关）：
-1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号是 `2`：1.1 (1) 于 2026-11-04 上传后，又合入了手持拍摄的球场识别（PR #9），重新打了 1.1 (2)，内测、公测和正式版都用这一个构建。
+1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号现在是 `3`：1.1 (1) 于 2026-11-04 上传后，又合入了手持拍摄的球场识别（PR #9），重新打了 1.1 (2) 并提交审核；同日在苹果开始审核前撤回，换成带错球场修复（PR #13、#14）的 1.1 (3) 重新提交。
 2. 确认 `scripts/reference-chain.sh status` 是 `off`，然后 `COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，Release 归档并导出（手动签名，Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」）。解开 IPA 逐个检查：只有两个 TrackNetV3，没有 `AnalysisModels`。然后上传。
 3. 「新功能」已写完（2026-11-04，包括 PR #6 球场跟踪和 PR #7 去掉手动标定）。建 1.1 版本（`asc versions create --app 6827224757 --version 1.1 --release-type AFTER_APPROVAL`）。推送四种语言的文字，其中 zh-Hant、en-GB 是新增的本地化，如果 `metadata apply` 不新建本地化，先用 `asc localizations create` 建。
 4. 截图：新版本会沿用 1.0 的 5 张旧截图，先删掉，再上传各语言目录里的新图。
