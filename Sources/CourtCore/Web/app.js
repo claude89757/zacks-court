@@ -574,10 +574,19 @@ const hawkOff = { enabled: false, format: "singles", farHalf: false };
 const hawkSettings = () => state.hawkEye.pending || state.status?.hawkEye || hawkOff;
 const sameHawk = (a, b) => Boolean(a && b) && a.enabled === b.enabled && a.format === b.format && Boolean(a.farHalf) === Boolean(b.farHalf);
 
+/// Painted width of a line, inward from the outer edge a call measures from (HawkEyeLine.paintedWidth).
+const lineWidth = (line) => (line === "baseline" ? 0.10 : 0.05);
+/// The gap the eye sees between footprint and line (HawkEyeJudgement.visibleGapM): out, beyond the outer
+/// edge; in, inside the inner edge (distanceM reaches the footprint's far side); 0 touching; null if close.
+function visibleGap(j) {
+  if (j.call === "out") return Math.max(0, j.distanceM);
+  if (j.call === "in") return Math.max(0, -j.distanceM - 2 * 0.033 - lineWidth(j.line));
+  return null;
+}
 function hawkDetail(j) {
-  const cm = Math.round(Math.abs(j.distanceM) * 100), line = LINES[j.line] || "线";
+  const cm = Math.round((visibleGap(j) || 0) * 100), line = LINES[j.line] || "线";
   if (j.call === "out") return `出界约 ${cm} 厘米 · ${line}`;
-  if (j.call === "in") return `界内 · 距${line}约 ${cm} 厘米`;
+  if (j.call === "in") return cm === 0 ? `界内 · 球印压在${line}上` : `界内 · 距${line}约 ${cm} 厘米`;
   return `离${line}不到 ${Math.round(j.marginM * 100)} 厘米，无法判定`;
 }
 
@@ -718,15 +727,32 @@ const v3 = {
 function replayScene(event, judgement) {
   const b = event.bounce, j = judgement || lineCall(event);
   if (!j || !Number.isFinite(b.xMeters) || !Number.isFinite(b.yMeters)) return null;
-  const x = b.xMeters, y = b.yMeters, c = HE.centreX, far = y > HE.netY;
-  const bounce = [x, y, HE.ball];
+  const x = b.xMeters, y = b.yMeters, c = HE.centreX, far = y > HE.netY, L = HE.length, net = HE.netY;
+  const bounce = [x, y, HE.ball], ground = [x, y, 0], hit = event.hit;
+  // the judged line's outer edge nearest the bounce (clamped to the line's ends), its outward normal and
+  // the stretch to pick out: the same rectangle the camera judged in
   const half = j.serve || j.format === "singles" ? HE.singles : c;
-  let anchor, outward;
-  if (j.line === "sideline") { const r = x >= c; anchor = [r ? c + half : c - half, y, 0]; outward = [r ? 1 : -1, 0, 0]; }
-  else if (j.line === "centreLine") { const r = x >= c; anchor = [r ? c + HE.centreHalf : c - HE.centreHalf, y, 0]; outward = [r ? 1 : -1, 0, 0]; }
-  else if (j.line === "baseline") { anchor = [x, far ? HE.length : 0, 0]; outward = [0, far ? 1 : -1, 0]; }
-  else { anchor = [x, far ? HE.netY + HE.service : HE.netY - HE.service, 0]; outward = [0, far ? 1 : -1, 0]; }
-  const hit = event.hit;
+  const y0 = j.serve ? (far ? net : net - HE.service) : (far ? net : 0), y1 = j.serve ? (far ? net + HE.service : net) : (far ? L : net);
+  let rightBox = null;
+  if (j.serve) {
+    if (hit && Math.abs(hit.x - c) >= 0.3) rightBox = hit.x < c;
+    else if (j.line === "centreLine") rightBox = x < c;
+  }
+  const x0 = rightBox === true ? c - HE.centreHalf : c - half, x1 = rightBox === false ? c + HE.centreHalf : c + half;
+  const clampY = (v) => Math.min(Math.max(v, y0), y1), clampX = (v) => Math.min(Math.max(v, x0), x1);
+  let anchor, outward, low, high;
+  if (j.line === "sideline") {
+    const r = x >= c, ex = r ? c + half : c - half;
+    anchor = [ex, clampY(y), 0]; outward = [r ? 1 : -1, 0, 0]; low = [ex, y0, 0]; high = [ex, y1, 0];
+  } else if (j.line === "centreLine") {
+    const r = rightBox ?? (x < c), ex = r ? c - HE.centreHalf : c + HE.centreHalf;
+    anchor = [ex, clampY(y), 0]; outward = [r ? -1 : 1, 0, 0]; low = [ex, y0, 0]; high = [ex, y1, 0];
+  } else {
+    const ey = j.line === "baseline" ? (far ? L : 0) : (far ? net + HE.service : net - HE.service);
+    anchor = [clampX(x), ey, 0]; outward = [0, far ? 1 : -1, 0]; low = [x0, ey, 0]; high = [x1, ey, 0];
+  }
+  const toward = (end) => { const d = v3.sub(end, anchor), l = Math.hypot(d[0], d[1], d[2]); return l > 1.2 ? v3.add(anchor, v3.mul(d, 1.2 / l)) : end; };
+  const lineFrom = toward(low), lineTo = toward(high);
   const fromNear = hit ? hit.y < HE.netY : y > HE.netY;
   let flight = null, bounceIndex = 0;
   const T = b.sourcePTS - event.sourcePTS;
@@ -742,33 +768,61 @@ function replayScene(event, judgement) {
     }
     bounceIndex = 36;
   }
-  const sx = Number.isFinite(b.sigmaXMeters) ? Math.max(HE.minMargin, HE.sigmas * b.sigmaXMeters) : HE.defaultMargin;
-  const sy = Number.isFinite(b.sigmaYMeters) ? Math.max(HE.minMargin, HE.sigmas * b.sigmaYMeters) : HE.defaultMargin;
-  // Camera path: wide from the hitter's end, a three-quarter view beside the bounce, then low across the line.
   const along = [-outward[1], outward[0], 0];
   const travel = flight ? v3.norm([x - flight[0][0], y - flight[0][1], 0]) : outward;
-  let beside = [-travel[1], travel[0], 0];
-  if (v3.dot(beside, [c - x, HE.netY - y, 0]) < 0) beside = v3.mul(beside, -1);
-  const side = x >= c ? 1 : -1;
-  const wide = { pos: [c - side * 2, fromNear ? -10.5 : HE.length + 10.5, 7.5], target: [c, HE.netY, 0], fov: 46 };
-  const chase = { pos: v3.add(v3.add(v3.sub([x, y, 0], v3.mul(travel, 5)), v3.mul(beside, 6)), [0, 0, 3]), target: [x, y, 0.3], fov: 40 };
-  const gap = Math.abs(j.distanceM), back = 1 + Math.min(2.5, gap * 1.5), height = 0.38 + Math.min(1.2, gap * 0.8);
-  const focus = v3.mul(v3.add(anchor, [x, y, 0]), 0.5);
-  const close = { pos: v3.add(v3.add(v3.sub(focus, v3.mul(outward, back)), v3.mul(along, back * 0.3)), [0, 0, height]), target: focus, fov: 32 };
   // The footprint keeps the ball radius across the line (the distance the call measured) and skids only along it.
   const skid = 1 + 0.9 * Math.abs(v3.dot(travel, along));
-  return { j, bounce, flight, bounceIndex, anchor, outward, along, travel, unc: [sx, sy], wide, chase, close, focus, skid };
+  // where the footprint may lie: the call's margin either side of the centre across the line, plus the ball
+  const band = [HE.ball * skid + 0.02, j.marginM + HE.ball];
+  // the gap the closing shot measures (HawkEyeReplayScene.measure)
+  let measure = null;
+  const gap = visibleGap(j);
+  if (gap !== null && gap > 0.004) {
+    if (j.call === "out") {
+      const d = v3.sub(ground, anchor), l = Math.hypot(d[0], d[1], d[2]), dir = l > 1e-9 ? v3.mul(d, 1 / l) : outward;
+      measure = { from: anchor, to: v3.sub(ground, v3.mul(dir, HE.ball)), metres: gap };
+    } else measure = { from: v3.add(ground, v3.mul(outward, HE.ball)), to: v3.sub(anchor, v3.mul(outward, lineWidth(j.line))), metres: gap };
+  }
+  let beside = [-travel[1], travel[0], 0];
+  if (v3.dot(beside, [c - x, HE.netY - y, 0]) < 0) beside = v3.mul(beside, -1);
+  // Cameras: the opening view raised behind the hitter and off to the side, beside the bounce as it
+  // lands, then nearly overhead over the gap (measureCamera, which needs the screen's aspect).
+  const side = x >= c ? 1 : -1;
+  const wide = { pos: [c - side * 2, fromNear ? -10.5 : HE.length + 10.5, 7.5], target: [c, HE.netY, 0], fov: 46 };
+  let opening = wide;
+  if (flight) {
+    const h0 = [flight[0][0], flight[0][1], 0];
+    opening = { pos: v3.add(v3.add(v3.sub(h0, v3.mul(travel, 9)), v3.mul(beside, 6)), [0, 0, 5.5]),
+      target: v3.add(v3.add(h0, v3.mul(v3.sub(ground, h0), 0.55)), [0, 0, 0.5]), fov: 50 };
+  }
+  const chase = { pos: v3.add(v3.add(v3.sub(ground, v3.mul(travel, 3.2)), v3.mul(beside, 3.8)), [0, 0, 1.9]), target: [x, y, 0.2], fov: 40 };
+  const focus = v3.mul(v3.add(anchor, ground), 0.5);
+  return { j, bounce, flight, bounceIndex, anchor, outward, along, travel, lineFrom, lineTo, band, measure, wide, opening, chase, focus, skid };
 }
 
-/// Camera at time t: a Catmull-Rom path wide → beside → close, eased over the flight and the zoom.
-function replayCamera(scene, t, timing) {
-  const f = Math.max(0, Math.min(1, (t - timing.title) / (timing.zoomEnd - timing.title)));
-  const e = f * f * f * (f * (f * 6 - 15) + 10), u = 2 * e, k = Math.min(1, Math.floor(u)), s = u - k;
-  const keys = [scene.wide, scene.wide, scene.chase, scene.close, scene.close];
-  const [p0, p1, p2, p3] = keys.slice(k, k + 4);
-  const cr = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * s + (2 * a - 5 * b + 4 * c - d) * s * s + (-a + 3 * b - 3 * c + d) * s * s * s);
-  const vec = (key) => [0, 1, 2].map((i) => cr(p0[key][i], p1[key][i], p2[key][i], p3[key][i]));
-  return { pos: vec("pos"), target: vec("target"), fov: cr(p0.fov, p1.fov, p2.fov, p3.fov) };
+/// The closing shot (HawkEyeReplayScene.measureCamera): nearly overhead, tilted 12° so the out side is
+/// up, the line, footprint and band filling about half the height, a little below the middle.
+function measureCamera(scene, aspect) {
+  const t = Math.tan(34 * Math.PI / 360), ground = [scene.bounce[0], scene.bounce[1], 0], o = scene.outward;
+  const p = v3.dot(v3.sub(ground, scene.anchor), o), reach = scene.band[1];
+  const lo = Math.min(-lineWidth(scene.j.line), p - reach), hi = Math.max(0, p + reach);
+  const wide = 2 * (HE.ball * scene.skid + 0.1) + 0.3;
+  const height = Math.min(9, Math.max(1.0, (hi - lo) / (1.1 * t), wide / (1.2 * Math.max(0.3, aspect) * t)));
+  const centre = v3.add(ground, v3.mul(o, (lo + hi) / 2 - p));
+  const target = v3.add(centre, v3.mul(o, 0.2 * height * t));
+  return { pos: v3.add(v3.sub(target, v3.mul(o, height * Math.tan(12 * Math.PI / 180))), [0, 0, height]), target, fov: 34 };
+}
+/// Opening and beside views are framed for 16:9; other screens keep about the same court width.
+function fitted(cam, aspect) {
+  const k = Math.min(1.5, Math.max(0.72, (16 / 9) / Math.max(0.1, aspect)));
+  return { ...cam, fov: 2 * Math.atan(Math.tan(cam.fov * Math.PI / 360) * k) * 180 / Math.PI };
+}
+/// Camera for a frame: opening → beside the bounce (approach), then → overhead (zoom), each eased to a stop.
+function replayCamera(scene, frame, aspect) {
+  const ease = (f) => { const c = Math.max(0, Math.min(1, f)); return c * c * c * (c * (c * 6 - 15) + 10); };
+  const blend = (a, b, e) => ({ pos: v3.add(a.pos, v3.mul(v3.sub(b.pos, a.pos), e)), target: v3.add(a.target, v3.mul(v3.sub(b.target, a.target), e)), fov: a.fov + (b.fov - a.fov) * e });
+  const chase = fitted(scene.chase, aspect);
+  return frame.zoom > 0 ? blend(chase, measureCamera(scene, aspect), ease(frame.zoom)) : blend(fitted(scene.opening, aspect), chase, ease(frame.approach));
 }
 function camera(cam, w, h) {
   const fwd = v3.norm(v3.sub(cam.target, cam.pos)), right = v3.norm(v3.cross(fwd, [0, 0, 1])), up = v3.cross(right, fwd);
@@ -797,9 +851,25 @@ function courtLines() {
     rect(s0, net - svc, s1, net - svc + w), rect(s0, net + svc - w, s1, net + svc), rect(c - w / 2, net - svc, c + w / 2, net + svc),
     rect(c - w / 2, base, c + w / 2, base + 0.10), rect(c - w / 2, L - base - 0.10, c + w / 2, L - base)];
 }
+/// Timing (HawkEyeReplayTiming): title; the flight while the camera comes round beside the bounce and
+/// stops as it lands; the footprint; the rise overhead; the measured gap; the verdict.
 function replayTiming(hasFlight) {
-  const title = 1.0, flightEnd = hasFlight ? title + 2.4 : title, zoomEnd = flightEnd + 1.6, markEnd = zoomEnd + 0.5;
-  return { title, flightEnd, zoomEnd, markEnd, total: markEnd + 0.3 };
+  const title = 0.8, landed = title + (hasFlight ? 2.2 : 1.2), settled = landed + 0.5, overhead = settled + 1.4, verdictAt = overhead + 0.6;
+  return { title, landed, settled, overhead, verdictAt, total: verdictAt + 0.3 };
+}
+function replayFrame(scene, t, timing) {
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const count = scene.flight ? scene.flight.length - 1 : 0, bi = scene.bounceIndex;
+  let progress = 0;
+  if (scene.flight) {
+    if (t < timing.landed) { const f = clamp((t - timing.title) / (timing.landed - timing.title)); progress = bi * (0.35 * f + 0.65 * (1 - (1 - f) * (1 - f))); }
+    else progress = bi + (count - bi) * Math.pow(clamp((t - timing.landed) / (timing.settled - timing.landed)), 1.6);
+  }
+  return {
+    approach: clamp((t - timing.title) / (timing.landed - timing.title)), zoom: clamp((t - timing.settled) / (timing.overhead - timing.settled)),
+    progress, mark: clamp((t - timing.landed) / 0.4), trail: 1 - clamp((t - timing.settled) / ((timing.overhead - timing.settled) * 0.7)),
+    measure: clamp((t - timing.overhead) / (timing.verdictAt - timing.overhead)),
+  };
 }
 
 const challenge = { shots: [], index: 0, started: 0, frame: null, scene: null, running: false, focus: null };
@@ -846,13 +916,13 @@ function paintReplay(scene, t) {
   drawReplay(g, w, h, scene, t, timing);
   $("challenge-title").hidden = t >= timing.title + 0.3;
   $("challenge-title").style.opacity = String(t < timing.title ? 1 : Math.max(0, 1 - (t - timing.title) / 0.3));
-  $("challenge-verdict").hidden = t < timing.markEnd;
+  $("challenge-verdict").hidden = t < timing.verdictAt;
   return t < timing.total;
 }
 
 function drawReplay(g, w, h, scene, t, timing) {
-  const cam = camera(replayCamera(scene, t, timing), w, h);
-  const mark = Math.max(0, Math.min(1, (t - timing.zoomEnd) / (timing.markEnd - timing.zoomEnd)));
+  const frame = replayFrame(scene, t, timing), mark = frame.mark, trail = frame.trail;
+  const cam = camera(replayCamera(scene, frame, w / Math.max(1, h)), w, h);
   const W = HE.width, L = HE.length, net = HE.netY, color = callColor(scene.j.call);
   const shape = (points) => {
     const s = cam.polygon(points); if (s.length < 3) return false;
@@ -866,8 +936,9 @@ function drawReplay(g, w, h, scene, t, timing) {
   const sky = g.createLinearGradient(0, 0, 0, Math.max(1, hy));
   sky.addColorStop(0, RP.skyTop); sky.addColorStop(1, RP.skyHorizon);
   g.fillStyle = sky; g.fillRect(0, 0, w, h);
-  // ground, run-off and court, each lit a little brighter toward the camera's far side
-  if (shape([[-60, -60, 0], [W + 60, -60, 0], [W + 60, L + 60, 0], [-60, L + 60, 0]])) { g.fillStyle = vertical(hy, [[0, RP.haze], [0.18, RP.apronFar], [1, RP.apronNear]]); g.fill(); }
+  // the ground runs to the true horizon (a finite ground's far edge would tilt with the view), then the
+  // run-off and the court
+  g.fillStyle = vertical(hy, [[0, RP.haze], [0.18, RP.apronFar], [1, RP.apronNear]]); g.fillRect(0, hy, w, Math.max(0, h - hy));
   if (shape([[-3.66, -6.4, 0], [W + 3.66, -6.4, 0], [W + 3.66, L + 6.4, 0], [-3.66, L + 6.4, 0]])) { g.fillStyle = vertical(hy, [[0, RP.runFar], [1, RP.runNear]]); g.fill(); }
   if (shape([[0, 0, 0], [W, 0, 0], [W, L, 0], [0, L, 0]])) {
     const gr = g.createLinearGradient(0, hy, w * 0.3, h); gr.addColorStop(0, RP.courtFar); gr.addColorStop(1, RP.courtNear); g.fillStyle = gr; g.fill();
@@ -879,19 +950,18 @@ function drawReplay(g, w, h, scene, t, timing) {
     const s = cam.screen(q); g.rect(s[0], s[1], r, r * 0.6);
   }
   g.fillStyle = "rgba(255,255,255,0.05)"; g.fill();
-  // uncertainty under the lines, so the lines stay readable
+  // where the footprint may lie, under the lines so they stay readable
   const fpA = HE.ball * scene.skid, fpB = HE.ball;   // footprint: along the line, across it
-  if (mark > 0 && shape(groundEllipse(scene.bounce, scene.unc[0], scene.unc[1], [1, 0, 0], 64))) {
+  if (mark > 0 && shape(groundEllipse(scene.bounce, scene.band[0], scene.band[1], scene.along, 64))) {
     g.globalAlpha = 0.16 * mark; g.fillStyle = color; g.fill();
     g.globalAlpha = 0.7 * mark; g.setLineDash([5, 4]); g.strokeStyle = color; g.lineWidth = 1.2; g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
   }
   g.save(); g.shadowColor = "rgba(255,255,255,0.35)"; g.shadowBlur = 3;
   for (const r of courtLines()) if (shape(r)) { g.fillStyle = RP.line; g.fill(); }
   g.restore();
-  // the judged line's edge, picked out once the zoom is done
+  // the judged line's outer edge, the one the call measures from, picked out with the mark
   if (mark > 0) {
-    const a = scene.anchor, span = v3.mul(scene.along, 1.2);
-    const p = cam.project(v3.sub(a, span)), q = cam.project(v3.add(a, span));
+    const p = cam.project(scene.lineFrom), q = cam.project(scene.lineTo);
     if (p && q) { g.globalAlpha = 0.85 * mark; g.strokeStyle = cssColor("--green"); g.lineWidth = 1.5; g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke(); g.globalAlpha = 1; }
   }
   // net: its shadow, the mesh, the top tape and the posts
@@ -922,10 +992,9 @@ function drawReplay(g, w, h, scene, t, timing) {
   }
   // the flight: a tapered comet, faded where it passes the camera; dimmer and dashed after the bounce (a guess)
   let ball = null;
-  if (scene.flight && t > timing.title) {
-    const f = Math.max(0, Math.min(1, (t - timing.title) / (timing.flightEnd - timing.title)));
+  if (scene.flight && frame.progress > 0 && trail > 0) {
     const last = scene.flight.length - 1, bi = scene.bounceIndex;
-    const n = Math.min(last, f < 0.85 ? bi * (f / 0.85) : bi + (last - bi) * ((f - 0.85) / 0.15));
+    const n = Math.min(last, frame.progress);
     const whole = Math.floor(n), pts = scene.flight.slice(0, whole + 1);
     if (whole < last) pts.push(v3.add(scene.flight[whole], v3.mul(v3.sub(scene.flight[whole + 1], scene.flight[whole]), n - whole)));
     g.lineCap = "round";
@@ -934,7 +1003,7 @@ function drawReplay(g, w, h, scene, t, timing) {
       if (qa[2] < 0.3 || qb[2] < 0.3) continue;
       const a = cam.screen(qa), b = cam.screen(qb), after = i > bi, k = i / (pts.length - 1 || 1);
       const near = Math.max(0, Math.min(1, (qb[2] - 0.8) / 2.5)), r = HE.ball * cam.f / qb[2];
-      g.globalAlpha = near * (after ? 0.45 : 0.25 + 0.7 * Math.pow(k, 1.4));
+      g.globalAlpha = trail * near * (after ? 0.45 : 0.25 + 0.7 * Math.pow(k, 1.4));
       g.strokeStyle = after ? "#e8ffa8" : cssColor("--green");
       g.lineWidth = after ? Math.max(1, Math.min(3, r * 0.5)) : Math.max(2.5, Math.min(7, r * 1.4)) * (0.45 + 0.55 * k);
       g.setLineDash(after ? [4, 5] : []);
@@ -957,23 +1026,46 @@ function drawReplay(g, w, h, scene, t, timing) {
     g.shadowBlur = 0; g.beginPath(); g.arc(s[0] + r * 0.9, s[1] - r * 0.2, r * 0.75, 2.2, 4.1);
     g.strokeStyle = "rgba(255,255,255,0.7)"; g.lineWidth = Math.max(0.6, r * 0.12); g.stroke(); g.restore();
   };
-  if (ball) drawBall(ball, 1, 1);
-  if (mark > 0) drawBall(scene.bounce, 0.3 * mark, 1 - 0.12 * Math.sin(Math.min(1, mark * 1.4) * Math.PI));
-  // how far the footprint is from the line, beside the mark (no number for a call too close to make)
-  if (mark > 0 && scene.j.call !== "close") {
-    const cm = Math.round(Math.abs(scene.j.distanceM) * 100);
-    const q = cam.view(scene.bounce);
-    if (q[2] > 0.1) {
-      const at = cam.screen(q), reach = Math.max(18, 2.2 * fpA * cam.f / q[2]);
-      const text = `约 ${cm} 厘米`;
-      g.font = "600 15px -apple-system, 'PingFang SC', sans-serif";
-      const tw = g.measureText(text).width, x = Math.min(w - tw - 26, at[0] + reach), y = Math.max(30, at[1] - reach * 0.6);
-      g.globalAlpha = mark; g.fillStyle = "rgba(5,8,7,0.8)"; g.beginPath(); if (g.roundRect) g.roundRect(x, y - 21, tw + 18, 28, 8); else g.rect(x, y - 21, tw + 18, 28); g.fill();
-      g.fillStyle = "#fff"; g.fillText(text, x + 9, y - 2); g.globalAlpha = 1;
-    }
-  }
+  if (ball) drawBall(ball, trail, 1);
+  if (mark > 0 && trail > 0) drawBall(scene.bounce, 0.3 * mark * trail, 1 - 0.12 * Math.sin(Math.min(1, mark * 1.4) * Math.PI));
   const vg = g.createRadialGradient(w / 2, h * 0.55, h * 0.35, w / 2, h * 0.55, Math.max(w, h) * 0.65);
   vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.5)"); g.fillStyle = vg; g.fillRect(0, 0, w, h);
+  if (frame.measure > 0) paintMeasure(g, cam, scene, frame.measure);
+}
+
+/// The overhead shot's reading (HawkEyeReplayPainter.paintMeasure): a dimension bar beside the mark from
+/// the line to the footprint, as long as the gap the verdict states, with that number; an in footprint on
+/// the line says so; a close call labels its band instead of a number.
+function paintMeasure(g, cam, scene, m) {
+  const j = scene.j;
+  const label = (text, right, y, size) => {
+    g.font = `700 ${size}px -apple-system, 'PingFang SC', sans-serif`;
+    const tw = g.measureText(text).width, left = Math.max(8, right - tw - 18);
+    g.globalAlpha = Math.max(0, Math.min(1, (m - 0.4) / 0.6));
+    g.fillStyle = "rgba(5,8,7,0.82)"; g.beginPath();
+    if (g.roundRect) g.roundRect(left, y - size * 0.85, tw + 18, size * 1.7, 8); else g.rect(left, y - size * 0.85, tw + 18, size * 1.7);
+    g.fill(); g.fillStyle = "#fff"; g.textBaseline = "middle"; g.fillText(text, left + 9, y); g.textBaseline = "alphabetic"; g.globalAlpha = 1;
+  };
+  const height = Math.max(0.3, cam.pos[2]);
+  const side = v3.mul(scene.along, Math.max(HE.ball * scene.skid + 0.07, 0.06 * height));
+  if (scene.measure) {
+    // drawn from the line toward the mark
+    const [lineEnd, markEnd] = j.call === "out" ? [scene.measure.from, scene.measure.to] : [scene.measure.to, scene.measure.from];
+    const a0 = cam.project(lineEnd), b0 = cam.project(markEnd), a = cam.project(v3.add(lineEnd, side)), bFull = cam.project(v3.add(markEnd, side));
+    if (!a0 || !b0 || !a || !bFull) return;
+    const b = [a[0] + (bFull[0] - a[0]) * m, a[1] + (bFull[1] - a[1]) * m];
+    g.globalAlpha = 0.75 * Math.min(1, m * 3); g.strokeStyle = "#fff"; g.lineWidth = 1; g.setLineDash([3, 3]);
+    g.beginPath(); g.moveTo(a0[0], a0[1]); g.lineTo(a[0], a[1]); g.moveTo(b0[0], b0[1]); g.lineTo(bFull[0], bFull[1]); g.stroke();
+    g.setLineDash([]); g.globalAlpha = 1;
+    const dx = bFull[0] - a[0], dy = bFull[1] - a[1], l = Math.max(1, Math.hypot(dx, dy)), nx = -dy / l * 7, ny = dx / l * 7;
+    g.lineWidth = 2; g.lineCap = "round"; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
+    for (const q of [a, b]) { g.moveTo(q[0] - nx, q[1] - ny); g.lineTo(q[0] + nx, q[1] + ny); }
+    g.stroke();
+    label(`${Math.round(scene.measure.metres * 100)} 厘米`, Math.min(a[0], bFull[0]) - 12, (a[1] + bFull[1]) / 2, 20);
+  } else {
+    const p = cam.project(v3.add(scene.bounce, side));
+    if (p) label(j.call === "close" ? `误差 ±${Math.round(j.marginM * 100)} 厘米` : "球印压线", p[0] - 6, p[1] - 30, 17);
+  }
 }
 
 function showChallenge(keepIndex) {
@@ -1017,12 +1109,12 @@ function showChallenge(keepIndex) {
     return;
   }
   const j = scene.j, look = CALLS[j.call] || CALLS.close;
+  $("challenge-word").textContent = challenged ? "CHALLENGE" : "REPLAY";
   $("challenge-sub").textContent = `${challenged ? "挑战" : "界内外回放"} · 第 ${current.number} 拍`;
   const verdict = $("challenge-verdict");
   verdict.className = `challenge-verdict ${j.call}`; verdict.style.setProperty("--call", look.color);
   $("challenge-shout").textContent = look.shout;
-  $("challenge-call").textContent = look.text + (j.serve ? " · 发球" : "") + (challenged ? ` · ${FORMATS[j.format] || "单打"}边线` : "");
-  $("challenge-detail").textContent = hawkDetail(j);
+  $("challenge-call").textContent = (j.call === "close" ? `${look.text} · ` : "") + hawkDetail(j) + (j.serve ? " · 发球" : "") + (challenged ? ` · ${FORMATS[j.format] || "单打"}边线` : "");
   $("challenge-margin").textContent = `${j.farHalf ? "远端半场，误差较大 · " : ""}模型估计，不是判罚 · 误差范围 ±${Math.round(j.marginM * 100)} 厘米`;
   $("challenge-canvas").setAttribute("aria-label", `第 ${current.number} 拍${challenged ? "挑战" : "界内外回放"}：${look.text}，${hawkDetail(j)}`);
   const previous = challenged && previousBounced(shot);
@@ -1035,7 +1127,7 @@ function showChallenge(keepIndex) {
   const step = () => {
     const t = reduce ? 99 : (performance.now() - challenge.started) / 1000;
     challenge.running = !overlay.hidden && paintReplay(scene, t);
-    if (!overlay.hidden && t >= timing.markEnd) announceChallenge(shot);
+    if (!overlay.hidden && t >= timing.verdictAt) announceChallenge(shot);
     if (challenge.running) challenge.frame = requestAnimationFrame(step);
   };
   step();

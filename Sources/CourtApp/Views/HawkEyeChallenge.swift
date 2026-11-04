@@ -3,38 +3,53 @@ import simd
 import CourtCore
 
 /// Timing of a challenge replay, in seconds, modelled on the broadcast sequence: title, the flight to
-/// the bounce while the camera sweeps round beside it, the drop to a low view across the line, the mark,
-/// then the verdict. Mirrors `replayTiming` in app.js.
+/// the bounce while the camera comes round beside it and stops, the footprint pressed in, the rise to a
+/// shot from overhead that measures the gap, then the verdict. Mirrors `replayTiming` in app.js.
 struct HawkEyeReplayTiming {
     let hasFlight: Bool
-    var title: Double { 1.0 }
-    var flightEnd: Double { hasFlight ? title + 2.4 : title }
-    var zoomEnd: Double { flightEnd + 1.6 }
-    var markEnd: Double { zoomEnd + 0.5 }
-    var total: Double { markEnd + 0.3 }
+    var title: Double { 0.8 }
+    /// The ball lands; the camera has come round beside the bounce and stands still.
+    var landed: Double { title + (hasFlight ? 2.2 : 1.2) }
+    /// The footprint is in and the ball has run on; the camera sets off for the overhead shot.
+    var settled: Double { landed + 0.5 }
+    var overhead: Double { settled + 1.4 }
+    /// The gap is measured, the verdict shows and a challenge's call is spoken.
+    var verdictAt: Double { overhead + 0.6 }
+    var total: Double { verdictAt + 0.3 }
 
     struct Frame {
-        var camera: HawkEyeCamera
+        /// Camera: opening view → beside the bounce (0…1), then → overhead (0…1).
+        var approach: Double
+        var zoom: Double
         /// Samples of the flight drawn so far (0 … count), fractional for a smooth ball.
         var flightProgress: Double
         var markOpacity: Double
+        /// The flight and the ball, faded out on the way overhead so the gap is all that is left.
+        var trailOpacity: Double
+        /// The measuring bar drawn so far (0…1).
+        var measure: Double
         var verdict: Bool
         var titleOpacity: Double
     }
 
     func frame(_ t: Double, scene: HawkEyeReplayScene) -> Frame {
-        let flightCount = Double((scene.flight?.count ?? 1) - 1)
-        let bounceAt = Double(scene.bounceIndex)
+        func clamp(_ v: Double) -> Double { max(0, min(1, v)) }
+        let count = Double((scene.flight?.count ?? 1) - 1), bounceAt = Double(scene.bounceIndex)
         var progress = 0.0
         if hasFlight {
-            let f = max(0, min(1, (t - title) / (flightEnd - title)))
-            // most of the time to the bounce, then the short way on
-            progress = f < 0.85 ? bounceAt * (f / 0.85) : bounceAt + (flightCount - bounceAt) * ((f - 0.85) / 0.15)
+            if t < landed {
+                // slowing into the bounce: a third of the average speed as it lands
+                let f = clamp((t - title) / (landed - title))
+                progress = bounceAt * (0.35 * f + 0.65 * (1 - (1 - f) * (1 - f)))
+            } else {
+                // a beat on the mark, then picking up again as it runs on
+                progress = bounceAt + (count - bounceAt) * pow(clamp((t - landed) / (settled - landed)), 1.6)
+            }
         }
-        return Frame(camera: scene.camera(along: (t - title) / (zoomEnd - title)),
-                     flightProgress: progress,
-                     markOpacity: max(0, min(1, (t - zoomEnd) / (markEnd - zoomEnd))),
-                     verdict: t >= markEnd,
+        return Frame(approach: clamp((t - title) / (landed - title)), zoom: clamp((t - settled) / (overhead - settled)),
+                     flightProgress: progress, markOpacity: clamp((t - landed) / 0.4),
+                     trailOpacity: 1 - clamp((t - settled) / ((overhead - settled) * 0.7)),
+                     measure: clamp((t - overhead) / (verdictAt - overhead)), verdict: t >= verdictAt,
                      titleOpacity: t < title ? 1 : max(0, 1 - (t - title) / 0.3))
     }
 }
@@ -135,7 +150,7 @@ struct HawkEyeChallengeView: View {
 
     private func titleCard(number: Int, challenged: Bool) -> some View {
         VStack(spacing: 6) {
-            Text("CHALLENGE").font(.system(size: 44, weight: .heavy, design: .rounded)).tracking(4)
+            Text(challenged ? "CHALLENGE" : "REPLAY").font(.system(size: 44, weight: .heavy, design: .rounded)).tracking(4)
             Text((challenged ? "挑战" : "界内外回放") + " · 第 \(number) 拍").font(.title3).foregroundStyle(CourtStyle.muted)
         }
         .padding(.horizontal, 32).padding(.vertical, 20)
@@ -162,26 +177,27 @@ struct HawkEyeChallengeView: View {
         .accessibilityIdentifier("court.hawkeye.unjudged")
     }
 
+    /// The verdict across the top, compact, so the overhead shot below keeps the gap in view.
     private func verdict(_ j: HawkEyeJudgement, challenged: Bool) -> some View {
         VStack {
-            Spacer()
-            HStack(spacing: 18) {
+            HStack(spacing: 14) {
                 Text(j.call.shout)
-                    .font(.system(size: 60, weight: .heavy, design: .rounded))
+                    .font(.system(size: 40, weight: .heavy, design: .rounded))
                     .foregroundStyle(j.call == .out ? Color.white : CourtStyle.background)
-                    .padding(.horizontal, 22).padding(.vertical, 4)
+                    .padding(.horizontal, 16).padding(.vertical, 2)
                     .background(CourtStyle.callColor(j.call), in: RoundedRectangle(cornerRadius: CourtStyle.Radius.control))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(j.call.text + (j.serve ? " · 发球" : "") + (challenged ? " · " + j.format.text + "边线" : "")).font(.title2.weight(.bold))
-                    Text(j.detailText).font(.callout).foregroundStyle(CourtStyle.muted)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text((j.call == .close ? j.call.text + " · " : "") + j.detailText + (j.serve ? " · 发球" : "") + (challenged ? " · " + j.format.text + "边线" : ""))
+                        .font(.headline)
                     Text((j.farHalf ? "远端半场，误差较大 · " : "") + "模型估计，不是判罚 · 误差范围 ±\(Int((j.marginM * 100).rounded())) 厘米")
                         .font(.caption).foregroundStyle(CourtStyle.muted)
                 }
             }
-            .padding(18)
+            .padding(.horizontal, 14).padding(.vertical, 10)
             .background(CourtStyle.panel.opacity(0.94), in: RoundedRectangle(cornerRadius: CourtStyle.Radius.card))
             .overlay(RoundedRectangle(cornerRadius: CourtStyle.Radius.card).strokeBorder(CourtStyle.callColor(j.call), lineWidth: 2))
-            .padding(CourtStyle.Space.l)
+            .padding(CourtStyle.Space.m)
+            Spacer()
         }
     }
 
@@ -217,7 +233,7 @@ struct HawkEyeChallengeView: View {
     }
     private func announce(_ shot: TennisShotEvent, timing: HawkEyeReplayTiming) async {
         guard let c = shot.challenge, let j = c.judgement else { return }
-        try? await Task.sleep(for: .seconds(reduceMotion ? 0.3 : timing.markEnd))
+        try? await Task.sleep(for: .seconds(reduceMotion ? 0.3 : timing.verdictAt))
         guard !Task.isCancelled else { return }
         model.announceChallenge(c.id, call: j.call)
     }
@@ -318,7 +334,8 @@ struct HawkEyeReplayPainter {
     }
 
     func paint(_ gc: inout GraphicsContext, size: CGSize) {
-        let w = Double(size.width), h = Double(size.height), cam = frame.camera, mark = frame.markOpacity
+        let w = Double(size.width), h = Double(size.height), mark = frame.markOpacity, trail = frame.trailOpacity
+        let cam = scene.camera(approach: frame.approach, zoom: frame.zoom, aspect: w / max(1, h))
         let W = HawkEye.width, L = HawkEye.length, net = HawkEye.netY, ballR = HawkEye.ballRadius
         let call = CourtStyle.callColor(scene.judgement.call)
         let f = h / (2 * tan(cam.fovDegrees * .pi / 360))
@@ -339,10 +356,10 @@ struct HawkEyeReplayPainter {
         let hy = max(0, min(h, project(cam.position + flat * 4000).map { Double($0.y) } ?? 0))
         gc.fill(Path(CGRect(origin: .zero, size: size)), with: .linearGradient(Gradient(colors: [Palette.skyTop, Palette.skyHorizon]),
                                                                               startPoint: .zero, endPoint: CGPoint(x: 0, y: max(1, hy))))
-        // ground, run-off and court
-        if let p = shape([SIMD3(-60, -60, 0), SIMD3(W + 60, -60, 0), SIMD3(W + 60, L + 60, 0), SIMD3(-60, L + 60, 0)]) {
-            gc.fill(p, with: vertical(hy, [.init(color: Palette.haze, location: 0), .init(color: Palette.apronFar, location: 0.18), .init(color: Palette.apronNear, location: 1)]))
-        }
+        // the ground runs to the true horizon (a finite ground's far edge would tilt with the view), then
+        // the run-off and the court
+        gc.fill(Path(CGRect(x: 0, y: hy, width: w, height: max(0, h - hy))),
+                with: vertical(hy, [.init(color: Palette.haze, location: 0), .init(color: Palette.apronFar, location: 0.18), .init(color: Palette.apronNear, location: 1)]))
         if let p = shape([SIMD3(-3.66, -6.4, 0), SIMD3(W + 3.66, -6.4, 0), SIMD3(W + 3.66, L + 6.4, 0), SIMD3(-3.66, L + 6.4, 0)]) {
             gc.fill(p, with: vertical(hy, [.init(color: Palette.runFar, location: 0), .init(color: Palette.runNear, location: 1)]))
         }
@@ -356,9 +373,9 @@ struct HawkEyeReplayPainter {
             let s = cam.screen(q, width: w, height: h); specks.addRect(CGRect(x: s.x, y: s.y, width: r, height: r * 0.6))
         }
         gc.fill(specks, with: .color(.white.opacity(0.05)))
-        // uncertainty under the lines, so the lines stay readable
-        let footprint = scene.footprint
-        if mark > 0, let p = shape(Self.ellipse(scene.bounce, scene.uncertainty.x, scene.uncertainty.y, SIMD3(1, 0, 0), 64)) {
+        // where the footprint may lie, under the lines so they stay readable
+        let footprint = scene.footprint, band = scene.band
+        if mark > 0, let p = shape(Self.ellipse(scene.bounce, band.along, band.across, scene.along, 64)) {
             gc.fill(p, with: .color(call.opacity(0.16 * mark)))
             gc.stroke(p, with: .color(call.opacity(0.7 * mark)), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
         }
@@ -366,8 +383,8 @@ struct HawkEyeReplayPainter {
             layer.addFilter(.shadow(color: .white.opacity(0.35), radius: 1.5))
             for rect in HawkEyeCourtLines.rectangles() { if let p = shape(rect) { layer.fill(p, with: .color(Palette.line)) } }
         }
-        // the judged line's edge, picked out once the zoom is done
-        if mark > 0, let a = project(scene.lineAnchor - scene.along * 1.2), let b = project(scene.lineAnchor + scene.along * 1.2) {
+        // the judged line's outer edge, the one the call measures from, picked out with the mark
+        if mark > 0, let a = project(scene.lineFrom), let b = project(scene.lineTo) {
             var p = Path(); p.move(to: a); p.addLine(to: b)
             gc.stroke(p, with: .color(CourtStyle.green.opacity(0.85 * mark)), lineWidth: 1.5)
         }
@@ -408,7 +425,7 @@ struct HawkEyeReplayPainter {
         }
         // the flight: a tapered comet, faded where it passes the camera; dimmer and dashed after the bounce (a guess)
         var ball: SIMD3<Double>?
-        if let flight = scene.flight, frame.flightProgress > 0 {
+        if let flight = scene.flight, frame.flightProgress > 0, trail > 0 {
             let n = min(Double(flight.count - 1), frame.flightProgress)
             let whole = Int(n)
             var pts = Array(flight[0...whole])
@@ -418,7 +435,7 @@ struct HawkEyeReplayPainter {
                 guard qa.z >= 0.3, qb.z >= 0.3 else { continue }
                 let after = i > scene.bounceIndex, k = Double(i) / Double(max(1, pts.count - 1))
                 let near = max(0, min(1, (qb.z - 0.8) / 2.5)), r = ballR * f / qb.z
-                let alpha = near * (after ? 0.45 : 0.25 + 0.7 * pow(k, 1.4))
+                let alpha = trail * near * (after ? 0.45 : 0.25 + 0.7 * pow(k, 1.4))
                 let width = after ? max(1, min(3, r * 0.5)) : max(2.5, min(7, r * 1.4)) * (0.45 + 0.55 * k)
                 var seg = Path(); seg.move(to: pt(cam.screen(qa, width: w, height: h))); seg.addLine(to: pt(cam.screen(qb, width: w, height: h)))
                 gc.stroke(seg, with: .color((after ? Palette.afterBounce : CourtStyle.green).opacity(alpha)),
@@ -449,24 +466,45 @@ struct HawkEyeReplayPainter {
             }
             gc.stroke(seam, with: .color(.white.opacity(0.7 * alpha)), lineWidth: max(0.6, r * 0.12))
         }
-        if let ball { drawBall(ball, alpha: 1, squash: 1) }
-        if mark > 0 { drawBall(scene.bounce, alpha: 0.3 * mark, squash: 1 - 0.12 * sin(min(1, mark * 1.4) * .pi)) }
-        // how far the footprint is from the line, beside the mark (no number for a call too close to make)
-        if mark > 0, scene.judgement.call != .close {
-            let q = cam.view(scene.bounce)
-            if q.z > 0.1 {
-                let at = cam.screen(q, width: w, height: h), reach = max(18, 2.2 * footprint.along * f / q.z)
-                let text = gc.resolve(Text("约 \(Int((abs(scene.judgement.distanceM) * 100).rounded())) 厘米")
-                    .font(.system(size: 15, weight: .semibold)).foregroundColor(.white))
-                let tw = text.measure(in: size).width
-                let x = min(w - tw - 26, at.x + reach), y = max(30, at.y - reach * 0.6)
-                let box = Path(roundedRect: CGRect(x: x, y: y - 21, width: tw + 18, height: 28), cornerRadius: 8)
-                var tag = gc; tag.opacity = mark
-                tag.fill(box, with: .color(Palette.rgb(0x050807, 0.8)))
-                tag.draw(text, at: CGPoint(x: x + 9, y: y - 7), anchor: .leading)
-            }
-        }
+        if let ball { drawBall(ball, alpha: trail, squash: 1) }
+        if mark > 0, trail > 0 { drawBall(scene.bounce, alpha: 0.3 * mark * trail, squash: 1 - 0.12 * sin(min(1, mark * 1.4) * .pi)) }
         gc.fill(Path(CGRect(origin: .zero, size: size)), with: .radialGradient(Gradient(colors: [.black.opacity(0), .black.opacity(0.5)]),
                 center: CGPoint(x: w / 2, y: h * 0.55), startRadius: h * 0.35, endRadius: max(w, h) * 0.65))
+        if frame.measure > 0 { paintMeasure(&gc, cam: cam, w: w, h: h) }
+    }
+
+    /// The overhead shot's reading: a dimension bar beside the mark from the line to the footprint, as
+    /// long as the gap the verdict states, with that number; an in footprint on the line says so; a close
+    /// call labels its band instead of a number.
+    func paintMeasure(_ gc: inout GraphicsContext, cam: HawkEyeCamera, w: Double, h: Double) {
+        let m = frame.measure, j = scene.judgement
+        func project(_ p: SIMD3<Double>) -> CGPoint? { cam.project(p, width: w, height: h).map { CGPoint(x: $0.x, y: $0.y) } }
+        func label(_ string: String, right x: Double, y: Double, size: Double) {
+            let text = gc.resolve(Text(string).font(.system(size: size, weight: .bold)).foregroundColor(.white))
+            let tw = Double(text.measure(in: CGSize(width: w, height: h)).width)
+            let left = max(8, x - tw - 18), box = CGRect(x: left, y: y - size * 0.85, width: tw + 18, height: size * 1.7)
+            var tag = gc; tag.opacity = max(0, min(1, (m - 0.4) / 0.6))
+            tag.fill(Path(roundedRect: box, cornerRadius: 8), with: .color(Palette.rgb(0x050807, 0.82)))
+            tag.draw(text, at: CGPoint(x: left + 9, y: y), anchor: .leading)
+        }
+        let height = max(0.3, cam.position.z)
+        let side = scene.along * max(scene.footprint.along + 0.07, 0.06 * height)
+        if let gap = scene.measure {
+            // drawn from the line toward the mark
+            let (lineEnd, markEnd) = j.call == .out ? (gap.from, gap.to) : (gap.to, gap.from)
+            guard let a0 = project(lineEnd), let b0 = project(markEnd), let a = project(lineEnd + side),
+                  let bFull = project(markEnd + side) else { return }
+            let b = CGPoint(x: a.x + (bFull.x - a.x) * m, y: a.y + (bFull.y - a.y) * m)
+            var ext = Path(); ext.move(to: a0); ext.addLine(to: a); ext.move(to: b0); ext.addLine(to: bFull)
+            gc.stroke(ext, with: .color(.white.opacity(0.75 * min(1, m * 3))), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            let dx = bFull.x - a.x, dy = bFull.y - a.y, l = max(1, hypot(dx, dy)), nx = -dy / l * 7, ny = dx / l * 7
+            var bar = Path(); bar.move(to: a); bar.addLine(to: b)
+            for q in [a, b] { bar.move(to: CGPoint(x: q.x - nx, y: q.y - ny)); bar.addLine(to: CGPoint(x: q.x + nx, y: q.y + ny)) }
+            gc.stroke(bar, with: .color(.white), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            label("\(Int((gap.metres * 100).rounded())) 厘米", right: Double(min(a.x, bFull.x)) - 12, y: Double(a.y + bFull.y) / 2, size: 20)
+        } else if let p = project(scene.bounce + side) {
+            let text = j.call == .close ? "误差 ±\(Int((j.marginM * 100).rounded())) 厘米" : "球印压线"
+            label(text, right: Double(p.x) - 6, y: Double(p.y) - 30, size: 17)   // above the line it sits on
+        }
     }
 }
