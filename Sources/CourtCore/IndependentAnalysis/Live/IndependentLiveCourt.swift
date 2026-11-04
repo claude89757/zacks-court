@@ -123,9 +123,13 @@ final class IndependentLiveCourt {
     private let mailbox = Mailbox()
     private let queue = DispatchQueue(label: "court.independent.court-calibration", qos: .utility)
 
-    init(options: Options = Options(), camera: IndependentPinholeCamera? = nil) {
+    /// Optional court keypoint model: its keypoints add start cameras to every full solve (not to tracking).
+    let keypointModel: IndependentCourtKeypointModel?
+
+    init(options: Options = Options(), camera: IndependentPinholeCamera? = nil, keypointModel: IndependentCourtKeypointModel? = nil) {
         self.options = options
         self.camera = camera
+        self.keypointModel = keypointModel
         if camera != nil { nextRecheck = -.infinity }      // a camera given at start is verified first
     }
 
@@ -263,7 +267,7 @@ final class IndependentLiveCourt {
 
     private func launch(_ frames: [Sample], current: IndependentPinholeCamera?, track: Bool, trackWhileStill: Bool = false, pts: Double) {
         inFlight = true; inFlightFrames = frames.count; newSamples = 0; windowRestarted = false; launchedAt = pts; stats.launches += 1
-        let mailbox = mailbox, trackPixels = options.trackPixels
+        let mailbox = mailbox, trackPixels = options.trackPixels, keypointModel = keypointModel
         queue.async {
             let began = ProcessInfo.processInfo.systemUptime
             var outcome = Outcome(calibration: IndependentCourtCalibration(), currentFits: nil, seconds: 0)
@@ -272,7 +276,7 @@ final class IndependentLiveCourt {
                     outcome.track = true; outcome.trackWhileStill = trackWhileStill
                     outcome.tracked = Self.track(current, image, maxPixels: trackPixels)
                 } else {
-                    outcome.calibration = IndependentCourtCalibrator.calibrate(image)
+                    outcome.calibration = IndependentCourtCalibrator.calibrate(image, keypoints: keypointModel?.keypoints(image))
                     if let current, !outcome.calibration.found { outcome.currentFits = Self.fits(current, image) }
                 }
             } else if track { outcome.track = true; outcome.trackWhileStill = trackWhileStill }

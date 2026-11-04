@@ -5,7 +5,7 @@ import Foundation
 import simd
 
 /// `court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios a,b] [--seed N] [--latency K]
-/// [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]`
+/// [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway] [--keypoints MODEL.mlpackage]`
 /// (`--before`: the search as it was before the motion check; `--anyway`: run without a steady solve,
 /// to see only whether the court locks and how much the picture moves.)
 ///
@@ -37,7 +37,7 @@ enum CourtLockCommand {
     }
 
     static func run(_ args: [String]) throws {
-        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway]") }
+        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway] [--keypoints MODEL.mlpackage]") }
         let video = URL(fileURLWithPath: args[1]), out = URL(fileURLWithPath: args[2])
         func value(_ flag: String) -> String? { args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
         let start = value("--start").flatMap(Double.init) ?? 0, duration = value("--duration").flatMap(Double.init) ?? 45
@@ -54,6 +54,10 @@ enum CourtLockCommand {
         if let v = value("--still-track") { settings.stillTrackInterval = v == "off" ? nil : Double(v) }
         if let v = value("--moving") { settings.movingInterval = v == "off" ? nil : Double(v) }
         if args.contains("--no-predict") { settings.predictTracking = false }
+        let keypointModel = try value("--keypoints").map { path -> IndependentCourtKeypointModel in
+            settings.keypointModel = URL(fileURLWithPath: path).lastPathComponent
+            return try IndependentCourtKeypointModel(modelURL: URL(fileURLWithPath: path))
+        }
 
         // Reference: the steady solve of the first 20 s of the stretch (25 samples, 0.8 s apart).
         var reference: IndependentPinholeCamera?, refusals: [String] = []
@@ -113,7 +117,7 @@ enum CourtLockCommand {
         }
         var rng = SplitMix(seed: seed)
         let scenarios = names.map { scenario($0, rng: &rng) }
-        let labs = scenarios.map { _ in IndependentCourtLockLab(settings: settings) }
+        let labs = scenarios.map { _ in IndependentCourtLockLab(settings: settings, keypointModel: keypointModel) }
         let warper = try Warper(f: reference.f)
         var index = 0
         try decode(video, start: start, duration: duration) { pixels, pts in
