@@ -2759,3 +2759,13 @@ dt001 的原因：
 - 运动模糊、卷帘、平移：合成晃动只有转动。
 - 室内低机位（double-test-001）、夜场斜角（double-test-002）这类单帧找不到球场的机位，这次的改动帮不上。
 - 设备视场角做焦距先验：每帧的相机内参已经随录像保存（`CaptureFrameMetadata.intrinsic`），但还没核对它是否计入了变焦和裁切，所以这次没用。
+
+## 2026-11-04 TestFlight 1.1 (5)：第一帧锁定球场
+
+从 main 05b0fcc（PR #18）打 1.1 (5)，步骤同 1.1 (4)：
+- `reference-chain` 为 `off`，`COURT_MODEL_SET=independent`，Release 归档后手动签名导出。
+- 解包检查：只有两个 TrackNetV3，没有 `AnalysisModels`，`LocalReferenceChain` 0 处；新文案「逐帧识别中」在二进制里，旧文案「尽量拿稳」已经没有了。
+- 上传：build `83460abd` 为 `VALID`，加了 zh-Hans「测试什么」。
+- 内测组 `IN_BETA_TESTING`。公测组已加入，但 Beta 审核提交仍被构建 2 的 Beta 审核挡住（`WAITING_FOR_REVIEW`），等它审完再提交构建 5。
+
+没有验证：没装到真机上。
