@@ -529,7 +529,7 @@ struct LinkStats {
     /// a close call is shown, not said). Follows the 「出界时语音播报」 switch.
     func announceChallenge(_ id: UUID, call: HawkEyeCall) {
         guard hawkEyeSound, call != .close, announcedChallenges.insert(id).inserted else { return }
-        hawkEyeAlerts.say(call == .out ? "Out!" : "In.")
+        hawkEyeAlerts.say(call)
     }
 
     @ObservationIgnored private var cameraCallsPrimed = false

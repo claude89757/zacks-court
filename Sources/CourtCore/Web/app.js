@@ -628,17 +628,50 @@ function showCall(alert, fresh) {
 }
 $("hawkeye-call").addEventListener("click", () => { clearTimeout(state.hawkEye.timer); showCall(null); });
 
-/// Browsers speak only after a tap on the page: the Hawk-Eye buttons and the 「开启语音」 chip unlock it.
+/// The recorded calls, served beside this page (the app plays the same files). A clip that fails to
+/// load falls back to the browser's speech synthesis.
+const VOICE_CLIPS = { out: { file: "voice-out.m4a", text: "Out!" }, in: { file: "voice-in.m4a", text: "In." } };
+for (const clip of Object.values(VOICE_CLIPS)) {
+  clip.audio = new Audio(clip.file);
+  clip.audio.preload = "auto";
+  clip.audio.addEventListener("error", () => { clip.audio = null; });
+}
+function voiceAvailable() { return "speechSynthesis" in window || Object.values(VOICE_CLIPS).some((c) => c.audio); }
+/// Browsers play sound only after a tap on the page: the Hawk-Eye buttons and the 「开启语音」 chip unlock it
+/// by starting each clip muted inside the tap (and a silent utterance for the speech fallback).
 function unlockVoice() {
-  if (state.hawkEye.unlocked || !("speechSynthesis" in window)) return;
-  const silent = new SpeechSynthesisUtterance(" ");
-  silent.volume = 0;
-  speechSynthesis.speak(silent);
+  if (state.hawkEye.unlocked || !voiceAvailable()) return;
+  for (const clip of Object.values(VOICE_CLIPS)) {
+    const audio = clip.audio;
+    if (!audio) continue;
+    audio.muted = true;
+    audio.play().then(() => { audio.pause(); audio.currentTime = 0; audio.muted = false; })
+      .catch(() => { audio.muted = false; });
+  }
+  if ("speechSynthesis" in window) {
+    const silent = new SpeechSynthesisUtterance(" ");
+    silent.volume = 0;
+    speechSynthesis.speak(silent);
+  }
   state.hawkEye.unlocked = true;
 }
-function sayOut() { say("Out!"); }
-function say(text) {
-  if (!state.hawkEye.voice || !("speechSynthesis" in window)) return;
+function sayOut() { say("out"); }
+/// Calls "out" or "in".
+function say(call) {
+  const clip = VOICE_CLIPS[call];
+  if (!state.hawkEye.voice || !clip) return;
+  for (const other of Object.values(VOICE_CLIPS)) if (other.audio && other !== clip) other.audio.pause();
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  if (clip.audio) {
+    const audio = clip.audio;
+    audio.muted = false; audio.currentTime = 0;
+    audio.play().catch(() => speak(clip.text));
+    return;
+  }
+  speak(clip.text);
+}
+function speak(text) {
+  if (!("speechSynthesis" in window)) return;
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = "en-GB"; utterance.rate = 1; utterance.pitch = 1.1; utterance.volume = 1;
   speechSynthesis.cancel();
@@ -697,7 +730,7 @@ function renderHawkEye() {
   for (const button of document.querySelectorAll("[data-challenge]")) button.hidden = !(challengeSupported() && state.connected);
   const chip = $("hawkeye-sound");
   // Challenges are called out too, so a page that can see them offers the unlock even with 界内外 off.
-  chip.hidden = !(supported && (settings.enabled || challengeSupported()) && state.hawkEye.voice && !state.hawkEye.unlocked && "speechSynthesis" in window);
+  chip.hidden = !(supported && (settings.enabled || challengeSupported()) && state.hawkEye.voice && !state.hawkEye.unlocked && voiceAvailable());
   const host = document.fullscreenElement || document.body;
   if (!chip.hidden && chip.parentElement !== host) host.appendChild(chip);
 }
@@ -1114,7 +1147,7 @@ function announceChallenge(shot) {
   const c = shot.challenge, j = c?.judgement;
   if (!j || j.call === "close" || state.challenges.spoken.has(c.id)) return;
   state.challenges.spoken.add(c.id);
-  say(j.call === "out" ? "Out!" : "In.");
+  say(j.call);
 }
 
 $("board-challenge").addEventListener("click", () => { showCall(null); challenge.focus = null; showChallenge(false); });

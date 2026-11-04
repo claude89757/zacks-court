@@ -2819,3 +2819,14 @@ PR #21 合入 main（`d9524b1`）后从新的 main 打 1.1 (6)：`scripts/refere
 - 公测组「Zacks Court 公测」：构建 6 已加入该组，但 Beta 审核提交被构建 2 的 Beta 审核挡住——`589586fd` 从 2026-11-03 19:01（太平洋时间）起一直是 `WAITING_FOR_REVIEW`，已超过一天。ASC API 不能取消 Beta 审核（`betaAppReviewSubmissions` 只有 GET 和 POST），只能等它审完，再用 `asc builds add-groups --submit` 提交构建 6。
 
 没有验证：没装到真机上；构建 6 没有重跑 `swift test`（代码与 PR #21 完全相同，本机检查在提 PR 前跑过）；公测组还没拿到构建 6，它的 Beta 审核还没提交。
+
+## 2026-11-05 界内外语音改播录音文件（换声准备）
+
+界内外与挑战的「Out!」「In.」从运行时语音合成改为播放打包的录音：`Sources/CourtCore/Web/voice-out.m4a`、`voice-in.m4a`，App（`HawkEyeVoice`，`AVAudioPlayer`）和浏览器看板（`<audio>`，点按页面时静音试播一次解锁）用同一份文件；文件缺失或加载失败时退回原来的系统语音合成。浏览器看板服务端新增 `m4a` → `audio/mp4`。新增 `scripts/prepare-line-call-voice.py`（标准库 + `afconvert`）：把任意来源的录音裁掉首尾静音、峰值归一到 −1 dBFS、首尾 8 ms 淡入淡出、转单声道 48 kHz AAC。这一轮**没有提交录音文件**，行为与之前相同（仍是系统语音），换声要等选定配音来源。
+
+- `swift build` 通过；`swift test --filter "WebDisplayTests|HawkEye"`：26 项，23 通过、3 跳过（需显式启用的实机与真视频检查）、0 失败。这轮测试在「播放器改为第一次报判定时载入」之前编译，那处改动之后只重跑了 `swift build`。
+- `scripts/prepare-line-call-voice.py --self-test` 通过。
+- 用 macOS `say -v Daniel` 临时生成两段测试录音（只放在临时目录，不提交），经脚本处理后：`afinfo` 为单声道 48 kHz AAC；`AVAudioPlayer` 能打开并 `prepareToPlay`。
+- `COURT_WEB_ROOT=<临时目录> swift run court-probe web`（合成画面）：`curl` 取两段录音为 200 / `audio/mp4`，不存在的文件 404；内置浏览器（Chromium）打开看板页即预载两段录音（Range 请求 206），能解码、静音播放成功；不存在的文件触发 `error`（页面据此退回语音合成）。
+
+没有验证：没在 iPhone、Mac App 里实际听到播放；没在 iOS Safari 上验证静音试播能解锁之后的有声播放；没跑 `court-check` 和全量 `swift test`。
