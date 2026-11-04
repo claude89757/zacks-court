@@ -4,8 +4,9 @@ import simd
 @testable import CourtCore
 @testable import CourtApp
 
-/// Challenge replay geometry: the drawn flight goes through the hit and the bounce, the close view looks
-/// at the judged line with the mark in frame, and ground polygons clip at the camera. Rendering is only
+/// Challenge replay geometry: the drawn flight goes through the hit and the bounce, the overhead shot
+/// frames the gap below the verdict and measures what the verdict says, and ground polygons clip at the
+/// camera. Rendering is only
 /// checked by eye (COURT_MAC_SNAPSHOTS=/path writes the frames); the picture is drawn from estimates.
 final class HawkEyeReplayTests: XCTestCase {
     private func shot(bounce: (Double, Double), hit: TennisCourtPoint?, call: HawkEyeCall = .out, line: HawkEyeLine = .baseline,
@@ -34,22 +35,91 @@ final class HawkEyeReplayTests: XCTestCase {
         XCTAssertNil(HawkEyeReplayScene(event: unjudged))
     }
 
-    func testCloseViewFramesTheMarkAndTheLine() throws {
-        let c = HawkEye.centreX
-        for (bounce, line) in [((c + HawkEye.singlesHalfWidth + 0.1, 6.0), HawkEyeLine.sideline), ((c - 1, -0.15), .baseline),
-                               ((c + 1, 23.9), .baseline), ((c - HawkEye.singlesHalfWidth - 0.1, 18.0), .sideline)] {
-            let scene = try XCTUnwrap(HawkEyeReplayScene(event: shot(bounce: bounce, hit: TennisCourtPoint(x: c, y: bounce.1 > 12 ? 1 : 22, z: 1), line: line)))
-            let cam = scene.closeCamera
-            let mark = try XCTUnwrap(cam.project(scene.bounce, width: 1000, height: 600))
-            let anchor = try XCTUnwrap(cam.project(scene.lineAnchor, width: 1000, height: 600))
-            for p in [mark, anchor] {
-                XCTAssertTrue((100...900).contains(p.x) && (60...540).contains(p.y), "\(line) at \(bounce): \(p)")
+    private func judged(_ x: Double, _ y: Double, hit: TennisCourtPoint, sx: Double = 0.045, sy: Double = 0.2, serve: Bool = false) -> TennisShotEvent {
+        var e = TennisShotEvent(streamID: UUID(), sourcePTS: 10, stroke: serve ? .serve : .forehand, confidence: 0)
+        e.hit = hit
+        e.bounce = TennisBounceEstimate(sourcePTS: 10.9, xMeters: x, yMeters: y, confidence: 0)
+        e.bounce?.sigmaXMeters = sx; e.bounce?.sigmaYMeters = sy
+        return HawkEye.annotate(e, settings: HawkEyeSettings(enabled: true, format: .singles, farHalf: true))
+    }
+    private var cases: [TennisShotEvent] {
+        let c = HawkEye.centreX, s = HawkEye.singlesHalfWidth, net = HawkEye.netY
+        return [
+            judged(c + s + 0.15, 3.2, hit: TennisCourtPoint(x: c - 1, y: 23, z: 1)),             // out, sideline
+            judged(c - s + 0.25, 4.0, hit: TennisCourtPoint(x: c + 1, y: 23, z: 1)),             // in, sideline
+            judged(c + 1.3, 0.06, hit: TennisCourtPoint(x: c - 0.5, y: 23, z: 1)),               // close, baseline
+            judged(c - 1.2, -0.55, hit: TennisCourtPoint(x: c + 1, y: 23, z: 1)),                // out, baseline
+            judged(c + 1.5, 6.5, hit: TennisCourtPoint(x: c - 2, y: 23, z: 1)),                  // in by metres
+            judged(c - s - 0.35, 19, hit: TennisCourtPoint(x: c + 1, y: 0.5, z: 1), sx: 0.06, sy: 0.5),  // far, out
+            judged(c + 1, HawkEye.length + 0.6, hit: TennisCourtPoint(x: c, y: 1, z: 1), sy: 0.4),       // far baseline
+            judged(c + s + 0.3, -0.4, hit: TennisCourtPoint(x: c - 1, y: 23, z: 1)),             // past the corner
+            judged(c + 0.2, net - 3, hit: TennisCourtPoint(x: c - 1.2, y: 24.2, z: 2.7), sx: 0.04, serve: true),  // centre line, in
+        ]
+    }
+
+    /// The overhead shot keeps the line, the footprint and the bar in the lower part of the picture, clear
+    /// of the verdict across the top, on wide and tall screens alike; the opening view has the hit and
+    /// the bounce in frame.
+    func testOverheadShotFramesTheGapBelowTheVerdict() throws {
+        for event in cases {
+            let scene = try XCTUnwrap(HawkEyeReplayScene(event: event)), j = scene.judgement
+            for aspect in [2.5, 16.0 / 9, 0.75] {
+                let w = 600 * aspect, h = 600.0, cam = scene.measureCamera(aspect: aspect)
+                var points = [scene.bounce, scene.lineAnchor]
+                if let m = scene.measure { points += [m.from, m.to] }
+                for p in points {
+                    let q = try XCTUnwrap(cam.project(p, width: w, height: h))
+                    XCTAssertTrue((0.08 * w...0.92 * w).contains(q.x) && (0.28 * h...0.97 * h).contains(q.y), "\(j.call) \(j.line) at \(aspect): \(q)")
+                }
+                // out is up the picture, the line runs across it
+                let a = try XCTUnwrap(cam.project(scene.lineAnchor, width: w, height: h))
+                let o = try XCTUnwrap(cam.project(scene.lineAnchor + scene.outward * 0.1, width: w, height: h))
+                XCTAssertLessThan(o.y, a.y); XCTAssertLessThan(abs(o.x - a.x), abs(o.y - a.y))
             }
-            let wide = scene.wideCamera
-            for corner in [SIMD3(0.0, 0, 0), SIMD3(HawkEye.width, 0, 0), SIMD3(0, HawkEye.length, 0), SIMD3(HawkEye.width, HawkEye.length, 0)] {
-                let p = try XCTUnwrap(wide.project(corner, width: 1000, height: 600))
-                XCTAssertTrue((-1...1001).contains(p.x) && (-1...601).contains(p.y), "Whole court in the wide view: \(p)")
+            let open = scene.openingCamera
+            for p in [scene.flight!.first!, scene.bounce] {
+                let q = try XCTUnwrap(open.project(p, width: 1000, height: 600))
+                XCTAssertTrue((0...1000).contains(q.x) && (0...600).contains(q.y), "Opening view: \(q)")
             }
+        }
+    }
+
+    /// The bar is as long as the number on the verdict, from the edge of the line the eye compares with.
+    func testMeasureMatchesTheVerdict() throws {
+        for event in cases {
+            let scene = try XCTUnwrap(HawkEyeReplayScene(event: event)), j = scene.judgement
+            guard let m = scene.measure else {
+                XCTAssertTrue(j.call == .close || j.visibleGapM == 0, "\(j)"); continue
+            }
+            XCTAssertEqual(simd_distance(m.from, m.to), m.metres, accuracy: 1e-9)
+            XCTAssertEqual(m.metres, try XCTUnwrap(j.visibleGapM), accuracy: 1e-9, "\(j.call) \(j.line)")
+            let edge = simd_dot((j.call == .out ? m.from : m.to) - scene.lineAnchor, scene.outward)
+            XCTAssertEqual(edge, j.call == .out ? 0 : -j.line.paintedWidth, accuracy: 1e-9)
+            XCTAssertTrue(j.detailText.contains("\(Int((m.metres * 100).rounded())) 厘米"), j.detailText)
+        }
+    }
+
+    func testInCallsGiveTheGapTheEyeSees() {
+        let c = HawkEye.centreX, s = HawkEye.singlesHalfWidth
+        let wide = judged(c - s + 0.25, 4.0, hit: TennisCourtPoint(x: c + 1, y: 23, z: 1)).lineCall!
+        XCTAssertEqual(wide.call, .in)
+        XCTAssertEqual(wide.distanceM, -0.283, accuracy: 1e-9, "The call still measures to the footprint's far side")
+        XCTAssertEqual(wide.visibleGapM!, 0.25 - 0.033 - 0.05, accuracy: 1e-9)
+        XCTAssertEqual(wide.detailText, "界内 · 距边线约 17 厘米")
+        let touching = judged(c + s - 0.06, 6.0, hit: TennisCourtPoint(x: c - 2, y: 23.5, z: 1), sx: 0.02).lineCall!
+        XCTAssertEqual(touching.call, .in); XCTAssertEqual(touching.visibleGapM, 0)
+        XCTAssertEqual(touching.detailText, "界内 · 球印压在边线上")
+    }
+
+    /// A serve judged against the centre line: the outer edge is the side facing the other box, whether
+    /// the ball stayed in its box or crossed over.
+    func testCentreLineFacesTheOtherBox() throws {
+        let c = HawkEye.centreX, net = HawkEye.netY, server = TennisCourtPoint(x: c - 1.2, y: 24.2, z: 2.7)  // to the right box
+        for x in [c + 0.2, c - 0.3] {
+            let scene = try XCTUnwrap(HawkEyeReplayScene(event: judged(x, net - 3, hit: server, sx: 0.04, serve: true)))
+            XCTAssertEqual(scene.judgement.line, .centreLine)
+            XCTAssertEqual(scene.lineAnchor.x, c - HawkEye.centreLineHalfWidth, accuracy: 1e-9)
+            XCTAssertEqual(scene.outward, SIMD3(-1, 0, 0))
         }
     }
 
@@ -78,7 +148,7 @@ final class HawkEyeReplayTests: XCTestCase {
         for (name, event) in cases {
             let scene = try XCTUnwrap(HawkEyeReplayScene(event: event))
             let timing = HawkEyeReplayTiming(hasFlight: scene.flight != nil)
-            for (label, t) in [("1-flight", timing.title + 1.2), ("2-zoom", timing.flightEnd + 0.7), ("3-mark", timing.total)] {
+            for (label, t) in [("1-flight", timing.title + 1.2), ("2-landed", timing.settled), ("3-overhead", timing.total)] {
                 let frame = timing.frame(t, scene: scene)
                 let view = Canvas { gc, size in HawkEyeReplayPainter(scene: scene, frame: frame).paint(&gc, size: size) }
                     .frame(width: 960, height: 540)

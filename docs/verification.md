@@ -2883,6 +2883,49 @@ PR #24 合入 main（`b123ddb`）后从新的 main 打 1.1 (8)：`scripts/refere
 
 没有验证：没装到真机上；构建 8 没有重跑全量 `swift test`（代码与 PR #24 相同，提 PR 前跑过全量，合并 main 后跑过相关的 18 项）；公测组还没拿到构建 8。
 
+## 2026-11-05 界内外回放：结尾改成俯视距离图（App 与浏览器）
+
+review 了 PR #21 的环绕镜头回放（逐帧看 1.1 (6) 的商店预览录屏）。发现的问题：结论卡盖住球印；界内的「约 N 厘米」量到球印远端，和画面上球印到线的空隙对不上；镜头在落点没有停下；地平线是斜的；整条线都被高亮；不是挑战的回放也写 CHALLENGE；误差画成绕着球印的圆；结尾元素太多。职业转播的界内外回放最后是一个接近俯视的画面，标出球印到线的距离，这次照这个改，App 与浏览器一起改。
+
+改动：
+- `Sources/CourtCore/HawkEye.swift`：加 `HawkEyeLine.paintedWidth`（底线 10 厘米，其他线 5 厘米）和 `HawkEyeJudgement.visibleGapM`，即眼睛看到的空隙：出界从线外沿量到球印近端，界内从球印量到线内沿，压线为 0，压线附近为空。界内文字改用这个数：「界内 · 距边线约 N 厘米」「界内 · 球印压在边线上」。判定本身（`call`、`distanceM`、`marginM`）不变。
+- `Sources/CourtCore/HawkEyeReplay.swift`：
+  - 开场镜头在击球一方身后的侧上方，看得出弧线；跟拍镜头停在落点旁。
+  - 新加俯视镜头 `measureCamera(aspect:)`：线外一侧朝画面上方，倾斜 12°；高度按空隙和画面比例在 1–9 米之间取，空隙落在结论卡下方。
+  - 视场按画面比例放宽或收窄。镜头只插值位置和朝向、不滚转，所以地平线是平的。
+  - 被判的线只亮落点两侧各 1.2 米（`lineFrom`/`lineTo`）。误差画成横跨线的带（`band`），`measure` 给出量尺两端。
+  - 发球按发球方的位置找发球区，判中线时朝向另一侧发球区。
+- `Sources/CourtApp/Views/HawkEyeChallenge.swift`：
+  - 节奏：标题 0.8 秒 → 第 3.0 秒落地，镜头停稳 → 停 0.5 秒 → 1.4 秒升到俯视，拖尾渐隐 → 量尺 0.6 秒 → 结论。共 5.8 秒；没有击球点时 4.8 秒。球越接近落点越慢。
+  - 量尺两端有短横和延长虚线，标「N 厘米」；原来浮在球印旁的距离标签去掉了。
+  - 结论卡移到顶部，变紧凑。回放的标题写 REPLAY，挑战写 CHALLENGE。
+- `Sources/CourtCore/Web/app.js`、`index.html`、`style.css`：浏览器看板用同样的镜头、节奏、量尺和顶部结论卡。
+- `Tests/CourtAppTests/HawkEyeReplayTests.swift`：用 9 种判定（边线出界/界内、底线压线附近/出界、界内差几米、远端、过角、中线发球）检查：
+  - 俯视画面在 2.5、16:9、0.75 三种比例下都把空隙、球印和线放在结论卡下方的画面内，线外朝上；开场看得到击球点和落点。
+  - 量尺长度等于结论里的数，界内的数等于看到的空隙。
+  - 中线朝向另一侧发球区。
+- `apps/iphone/ZacksCourtUITests/WorkspaceUITests.swift`：`testChallengeReplayDemo` 改成和预览视频一样连看三拍。
+- `docs/hawk-eye.md` 第 1、2、6 节；`docs/unified-app.md`。
+
+跑了（macOS 26.6.2、Xcode 27.0、Swift 6.4）：
+- 本分支和 main 试合并（`git merge-tree`，无冲突），导出到临时目录后跑：
+  - `swift build` 通过；`swift run court-check` 通过。
+  - `swift test`：322 项，22 项跳过（都要显式开启的环境，例如模型目录、真机、截图目录），1 项失败，用时 563 秒。失败的是 `CameraClipTests.testClipsCutFromMemoryWhileRecordingAndFromTheFinishedMovie`（「The camera lists clips in its hello」，机位↔看板 TLS 回环；当时 5 分钟平均负载 40、15 分钟 51），和回放无关，单独重跑 `CameraClipTests` 2 项都通过。
+  - `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 后，模拟器 SDK `build-for-testing`（App 与 UI 测试）通过。
+- App 与浏览器一致：把当前 app.js 的回放函数放进 node，和 Swift 比 4 种判定（边线出界 12 厘米、边线界内 17 厘米、底线压线附近、中线发球界内 14 厘米）。比的是线上的点、线外方向、高亮两端、量尺两端、俯视镜头、第 2 秒的镜头和结论文字，到小数点后 4 位都相同。另用无界面 Chrome 画了浏览器看板的这 4 拍，画面和 App 一致。
+- App：iPhone 17 Pro Max 模拟器（iOS 26.1，`replay-overhead-qa`），Release、不带模型，用 `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 生成工程、`build-for-testing` 编译通过（之后还原了 `Info.plist`）。跑 `testChallengeReplayDemo`，每 0.4 秒在 App 里截一张。三拍都从标题、飞行、落地、俯视、量尺一直放到顶部结论卡，结论卡不挡球印和空隙：第 53 拍出界 55 厘米（过角），第 52 拍界内 256 厘米，第 51 拍界内 58 厘米。
+- 每帧耗时：这三拍在 832×333、3 倍下用 `ImageRenderer` 画，首帧 40 毫秒，之后每帧不超过 3 毫秒。这是 Mac 上的数，不代表手机。
+- 商店预览：`record-store-preview.sh` 跑了两次，都正常输出 1920×886、30 帧、25.33 秒的文件，但内容都不能用：
+  - 第一次：录屏的时间轴比实际时间慢。状态栏时钟显示过了约 31 秒，录屏里只有约 4 秒，所以只录到第 53 拍的前一段。当时这台 Mac 的 15 分钟平均负载约 35，别的会话开着 6 台模拟器。
+  - 第二次（1 分钟负载约 8–13）：第 51 拍在录屏里一直停在标题上，录到的帧仍有每秒 40–79 帧。
+  - 拿掉录屏、照样跑 `testStorePreviewFlow`，同时用 `simctl io screenshot` 每约 0.7 秒从外面截屏：三拍都放到结论卡。`testChallengeReplayDemo` 在 App 里截的图也一样，所以是录屏丢了画面，不是 App 卡住。1.2 上传前要在空闲的机器上重录，并逐帧检查后再用。
+
+没有验证：
+- 没装到真机上，没看真机帧率与发热，也没看 iPhone 13/14 这类旧机型。
+- 判定逻辑没改，这次不证明判定精度。界内数字的口径变了，从量到球印远端改成看到的空隙；旧记录里的数也按新口径显示。
+- VoiceOver 读的是新的结论文字，没有用 VoiceOver 实际听过。
+- 预览视频没有录成可用的版本（见上）；录屏为什么丢画面没有查清。
+
 ## 2026-11-05 近端界内外漏判归因（只分析，规则不变）
 
 环境：Apple M4 Pro、macOS 26.6.2，main `cea2fbf`（规则 v26）。只用开发视频：test.MOV 用 11-02 的 trace（这台 Mac 上没有视频），double-test-003 用 11-03 的 trace，另外用当前 main 把 double-test-003 实时重跑了一遍。参照是这台 Mac 上 10-29 整理的 S家 App 老师行，留出视频没有打开，也没有打分。
