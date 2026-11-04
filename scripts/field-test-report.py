@@ -6,7 +6,8 @@ Reads the CSV from scripts/field-test-sheet.py after the reference columns were 
 - ref_stroke: 正手/反手/发球/截击/高压/喂球 (or the English names), filled by field-test-sheet.py from
   single-stroke drill block names; empty means no reference. Nobody labels shots by hand (user,
   2026-10-30); 「无」 (false detection) is still read from older sheets.
-- ref_speed_kph: the radar (or other independent) reading for that shot.
+- ref_speed_kph: an independent speed reading for that shot, if there is one. Field tests use no radar
+  (user, 2026-11-05), so this column is usually empty and only coverage is reported.
 - ref_x_m / ref_y_m: independent landing position in court metres (x from the near-left doubles
   corner across, y from the near baseline toward the far one).
 - Rows with an empty shot_id are real shots the app did not record (misses; older sheets only).
@@ -14,8 +15,8 @@ Reads the CSV from scripts/field-test-sheet.py after the reference columns were 
   per block against the plan, since misses are no longer added by hand.
 
 Every figure is printed with its denominator; a missing value is never counted as 0. The app's
-speed is an early-flight fit and the radar a peak reading, so the signed bias is shown on its own
-and nothing is corrected.
+speed is a fitted estimate and a reference may measure something else, so the signed bias is shown
+on its own and nothing is corrected.
 
     scripts/field-test-report.py sheet.csv [--planned "正手=15,反手=15"] [--json report.json]
     scripts/field-test-report.py --self-test

@@ -97,6 +97,8 @@ public final class CameraSessionController {
     @ObservationIgnored public var extraWarnings: () -> [String] = { [] }
     @ObservationIgnored private let store: SessionStore?
     @ObservationIgnored private let journal: AnalysisJournal
+    /// The camera's own 1 Hz record of each capture run (court, heat, load), shared in diagnostic packages.
+    @ObservationIgnored public let captureLog: CameraCaptureLog
     @ObservationIgnored private var link: CameraLink?
     @ObservationIgnored private let previewSink = PreviewSink()
     @ObservationIgnored private var displayConnected = false
@@ -151,6 +153,7 @@ public final class CameraSessionController {
         self.analyzer = analyzer ?? CameraSideAnalyzer(configuration: configuration)
         store = try? SessionStore(directory: storageDirectory)
         journal = AnalysisJournal(directory: storageDirectory)
+        captureLog = CameraCaptureLog(storageDirectory: storageDirectory)
         if let configuration {
             nearHandedness = configuration.nearHandedness; farHandedness = configuration.farHandedness
         }
@@ -382,6 +385,7 @@ public final class CameraSessionController {
         await stopRecording()
         await journal.flush()
         closed = true; ticker?.cancel(); ticker = nil
+        captureLog.close(CameraLogLine(kind: .stop, t: Date().timeIntervalSince1970))
         link?.stop(); link = nil; previewSink.set(nil)
         stopWebDisplay()
     }
@@ -861,6 +865,7 @@ public final class CameraSessionController {
         analysis.inferenceMilliseconds = tennisAnalysis?.inferenceMilliseconds ?? 0
         analysis.calibration = tennisAnalysis?.calibration; analysis.modelVersion = tennisAnalysis?.modelVersion
         analysis.limitations = tennisAnalysis?.limitations ?? []
+        analysis.court = metrics.court
         status.analysis = analysis
         status.device = deviceState()
         status.shed = shed.level; status.shedReason = shed.reason
@@ -874,8 +879,8 @@ public final class CameraSessionController {
         status.busy = isBusy
         return status
     }
-    private func sendStatus() {
-        let value = status
+    private func sendStatus(_ current: CameraStatus? = nil) {
+        let value = current ?? status
         if displayConnected { send(.status, value, to: .native) }
         if let web, !webJoined.isEmpty, let data = try? WebWire.envelope(WireKind.status.rawValue, value) { web.broadcast(data) }
     }
@@ -1118,7 +1123,27 @@ public final class CameraSessionController {
         }
         if dirty, uptime - lastSave >= 1 { persist() }
         if sessionChanged { sendSession() }
-        sendStatus()
+        let current = status
+        sendStatus(current)
+        logCapture(current)
+    }
+
+    /// One capture-log line a second while capturing: a file per capture run, opened on the first
+    /// second of capture and closed when capture stops (docs/camera-side-analysis.md §14).
+    private func logCapture(_ status: CameraStatus, now: Date = Date()) {
+        let t = now.timeIntervalSince1970
+        guard capturing else {
+            if captureLog.isOpen { captureLog.close(CameraLogLine(kind: .stop, t: t)) }
+            return
+        }
+        if !captureLog.isOpen {
+            var start = CameraLogLine(kind: .start, t: t)
+            start.app = identity.app; start.hardware = identity.hardware
+            start.system = ProcessInfo.processInfo.operatingSystemVersionString
+            captureLog.open(start, now: now)
+        }
+        captureLog.append(CameraLogLine(status: status, t: t, shots: session?.tennisEvents?.count, display: displayConnected,
+                                        browsers: webClients, linkPath: linkPath))
     }
 }
 

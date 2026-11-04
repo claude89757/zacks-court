@@ -16,18 +16,20 @@ App 只有三项核心功能，研究、打磨和验收都围绕它们：
 
 对拉的动作类别、对拉球速、远端界内外、App 看板与浏览器看板、测速牌等都保留并照常维护（不回退、不删），但不为它们安排新的研究或功能。新提议如果不服务这三项，先问用户。
 
+**以后的亮点是双机位联动**（用户 2026-11-05）：两台机位手机一起拍同一片球场，值得以后迭代，现在不排期，开工前先和用户定方案。**不用雷达**（用户 2026-11-03 决定、2026-11-05 确认）：球场实测和评估都不靠雷达测速枪，不要再把雷达写进计划。
+
 ## 仓库结构
 
 | 路径 | 内容 |
 | --- | --- |
-| `Sources/CourtCore` | 平台无关核心：协议 v2（`Wire`、`WireMessages`）、配对与 TLS 连接（`CourtServer`、自动重连的 `CameraLink`、点对点选项与 `LinkPath`）、H.264 编解码、会话与持久化、录像；机位端 `CameraMediaPipeline`（录像/预览/分析分流）、`CameraSideAnalyzer`（选帧器与独立触地定位队列）、`CameraSessionController`（机位会话权威）、`CameraLoadPolicy`（分级降载）、`RecordingTransfer`、`OfflineBackfill`、`ClipExport`（单拍片段，不重新编码）；浏览器看板服务端 `WebDisplayServer`（HTTP/1.1 + WebSocket、令牌/配对码认证、`/api/*`）与 `WebDisplay`（凭据、JSON 信封、帧格式），页面在 `Web/`（SwiftPM 资源，无构建步骤）；人员检测、S家链接口 `ReferenceChain`（实现只在本地，见下文「分析模型」）、历史查询；测试用的 `SyntheticFrameSource`、`FileFrameSource` |
+| `Sources/CourtCore` | 平台无关核心：协议 v2（`Wire`、`WireMessages`）、配对与 TLS 连接（`CourtServer`、自动重连的 `CameraLink`、点对点选项与 `LinkPath`）、H.264 编解码、会话与持久化、录像；机位端 `CameraMediaPipeline`（录像/预览/分析分流）、`CameraSideAnalyzer`（选帧器与独立触地定位队列）、`CameraSessionController`（机位会话权威）、`CameraLoadPolicy`（分级降载）、`RecordingTransfer`、`OfflineBackfill`、`ClipExport`（单拍片段，不重新编码）、`CameraDiagnostics`（机位采集日志与记录的诊断包）；浏览器看板服务端 `WebDisplayServer`（HTTP/1.1 + WebSocket、令牌/配对码认证、`/api/*`）与 `WebDisplay`（凭据、JSON 信封、帧格式），页面在 `Web/`（SwiftPM 资源，无构建步骤）；人员检测、S家链接口 `ReferenceChain`（实现只在本地，见下文「分析模型」）、历史查询；测试用的 `SyntheticFrameSource`、`FileFrameSource` |
 | `Sources/CourtApp` | 共享 SwiftUI 界面与媒体层：`Views/`、`Models/`（`WorkspaceModel` 看板镜像与角色外观、`RecognitionStatus` 识别状态、`CameraStandby` 值守屏、`CameraAutopilot` 开发用实机自检）、`Media/`（相机采集、`CameraModel`、预览、扫码、Phase 0 测量） |
 | `Sources/CourtMac` | Mac App 入口与辅助窗口（测速牌、落点看板、实时画面） |
 | `apps/iphone` | iOS 入口、XcodeGen 规格 `project.yml`、资源目录、UI 测试 `ZacksCourtUITests` |
 | `Sources/CourtProbe` | `court-probe`：v2 自检（错误密钥 + 机位↔看板回环），以及把合成画面或本地视频当作机位、连到已配对 App 的模拟机位；`web` 模式让这台 Mac 当机位、开浏览器看板 |
 | `Sources/CourtAnalyze` | `court-analyze`：用同一流式引擎离线分析本地视频 |
 | `Tests/CourtCoreTests` | `court-check` 可执行检查（协议 v2、配对、会话、人员检测、机位媒体管线的真实编解码） |
-| `Tests/CourtAppTests` | `swift test`：浏览器看板（`WebDisplayTests`，测试扮演浏览器）、模型/几何/轨迹门控、机位端分析、识别状态、值守屏、机位↔看板 TLS 集成（采用、镜像、断线补发、冲突、后台）、降载、回传、离线补算、单拍片段、连接方式与点对点设置、历史查询、预览响应；可选的实机看板测试 |
+| `Tests/CourtAppTests` | `swift test`：浏览器看板（`WebDisplayTests`，测试扮演浏览器）、模型/几何/轨迹门控、机位端分析、识别状态、值守屏、机位↔看板 TLS 集成（采用、镜像、断线补发、冲突、后台）、降载、回传、离线补算、单拍片段、连接方式与点对点设置、历史查询、预览响应、现场诊断（采集日志、诊断包）；可选的实机看板测试 |
 | `scripts/` | 构建、模型准备、iOS 工程生成、UI 验收、图标导出；球场实测的记录表生成与对照（`field-test-sheet.py`、`field-test-report.py`，只用 Python 标准库） |
 | `assets/` | 分析模型集合与品牌素材 |
 | `docs/` | 设计、验证记录、实机清单、研究记录、README 图片 |
@@ -55,7 +57,7 @@ swift build                      # 共享包与 Mac 可执行文件（不打包�
 - `COURT_MODEL_SET` 选择打包的模型集：`independent`（默认，上架版本只用这一种）只带自研；`both` 带 S家与自研两套，App 启动页可切换，默认 S家，选择按设备保存（`CourtAnalysisBackend`，旧版本存的 `swing` 读作 S家）；`sjia` 只带 S家（旧名 `swing` 照样认）。`both` 与 `sjia` 都需要本地的 S家模型和 S家链代码；Mac 输出分别为 `build/Zacks Court.app`、`build/both/`、`build/sjia/`。选自研时 `AnalysisModelLocator` 返回空，任何路径都不加载 S家权重。各模型的替代方案与阶段见 [docs/model-replacement-design.md](docs/model-replacement-design.md)。
 - `COURT_MODEL_SET=independent` 为 Mac/iOS 构建选择自研资源，排除 S家 `AnalysisModels`。`scripts/prepare-independent-app-models.sh` 从 `assets/independent-model-weights/` 校验并暂存两个固定的 MIT TrackNetV3 包：`tracknetv3-base-v1`（FP32，约45MB，离线分析，与 Python 逐位一致）和 `tracknetv3-base-fp16-v1`（FP16，约23MB，机位实时链在神经网络引擎上用，只按容差与 FP32 对照）；清单/许可在 `assets/independent-models/<id>/`，`IndependentBallModelAssets.Variant` 分别固定两个清单摘要。可用 `COURT_INDEPENDENT_MODEL_SOURCE` 显式指定 FP32 的同一固定字节源包，不下载模型。机位选自研时 `CameraSideAnalyzer(independent:)` 跑实时链（`IndependentLiveEngine`）；实时链用 `IndependentLiveCourt` 自动识别球场（`IndependentCourtCalibrator`，无学习权重），记录中每分钟复查；`court-analyze independent-live VIDEO MODEL_DIR auto|CAMERA.json OUT.json` 用本地视频按 NV12 模拟机位跑同一条链（旁边另写 `OUT.trace.json`，记下规则的全部输入；只改规则时用 `court-analyze independent-replay OUT.trace.json NEW.json` 重放，不必重跑模型，规则不变时与实时链逐行相同），`court-analyze court-calibrate MEDIAN.png… OUT.json` 单独求解中位图，`court-analyze court-lock VIDEO OUT.json` 把三脚架视频按已知的相机转动晃动后量自动识别多久锁定、锁得对不对。模型 `.bin/.mlmodel` 使用 Git LFS。
 - 资源选择不等于启用独立测速后端，也不认证精度。`CourtModelSet` 标识资源模式，独立与 code-only 模式不得通过环境变量回退加载私有模型；`COURT_CODE_ONLY=1` 优先排除两套资源。旧目录中的原研究 README 与 manifest 保持固定摘要，当前原生预处理/集成状态另记在 `docs/speed-model-training.md`。
-- 自研模型的开发和训练不安排人工标注（用户 2026-10-30）：训练标签和评估参考都要自动产生（物理拟合的伪标签、我们自己的离线老师、单一动作练习段、雷达等仪器读数），不要计划人工标注，也不要问谁来标注。
+- 自研模型的开发和训练不安排人工标注（用户 2026-10-30）：训练标签和评估参考都要自动产生（物理拟合的伪标签、我们自己的离线老师、单一动作练习段、量好坐标的标记这类实测读数），不要计划人工标注，也不要问谁来标注。
 - 研究、对比或改进自研模型（对齐并超越 S家）时，先读项目 skill [.claude/skills/inhouse-model-research/SKILL.md](.claude/skills/inhouse-model-research/SKILL.md)：目标、打分脚本 `compare_rows.py`、开发 / 留出视频分组，以及记录差距和已试方法的 `references/frontier.md`（每轮研究结束后更新）。
 - S家 App 的版本会更新，引用参照数据时写清是哪一天、哪台机器上的 S家 App 导出的，App 里的 S家链（本地模型）和 S家 App 的输出也不能混称。
 
@@ -134,7 +136,7 @@ python3 scripts/field-test-report.py --self-test
 - **浏览器看板是连接方向的例外**：App 看板监听、机位连过去；浏览器不能监听也不会 TLS-PSK，所以机位监听浏览器（默认开启，是主推方式；侧栏顶部「连接」打开全屏连接页，开关与 App 看板扫码配对都在那一页）。走明文 HTTP：令牌只放在二维码 URL 的 `#` 后、以 HMAC 挑战应答证明，`/api/*` 用每连接访问码；这比 TLS-PSK 弱，界面与 README 必须照实说明。浏览器发来的控制命令与 App 看板走同一个 `apply`，回执只回发起者；浏览器不能用 `transfer`/`clip` 命令，文件一律走 HTTP，录像下载在记录中拒绝。浏览器预览取分析器已复制的最新帧，在独立队列编 JPEG，不碰相机缓冲。
 - **新功能按能力协商**：协议 v2 内新增的命令只发给在 `hello.capabilities` 里声明支持的对端（目前机位声明 `clips`），新字段一律可选，旧 v2 版本照常解码。
 - **点对点直连可关闭**：看板默认在点对点 Wi-Fi 上监听（票据 `peerToPeer`），设置随设备保存；早期票据没有该标记，按关闭处理。点对点 Bonjour 尝试有 3 秒 `.waiting` 宽限，其他连接仍立即失败并退避。
-- 数据只存本机；配对链接含临时密钥，不写入日志、截图或提交。看板在机位拥有的会话进行中把机位每秒状态写入 `<会话ID>-status.jsonl`（诊断记录，不含画面；断线时写一行 `connected: false`），会话本身仍以机位为准。
+- 数据只存本机；配对链接含临时密钥，不写入日志、截图或提交。看板在机位拥有的会话进行中把机位每秒状态写入 `<会话ID>-status.jsonl`（诊断记录，不含画面；断线时写一行 `connected: false`），会话本身仍以机位为准。机位自己在采集时每秒写 `Sessions/Diagnostics/capture-*.jsonl`（球场识别、温度、负载，不含画面，保留 14 天，不分有没有看板）；记录详情「导出 › 诊断包（不含录像）」把记录 JSON、日志、前后的采集日志和中文摘要打成一个 zip，用户自己选择分享到哪里。球场实测的问题先要诊断包和录像，不凭描述猜（见 [docs/camera-side-analysis.md](docs/camera-side-analysis.md) 第 14 节）。
 
 ## 界面约定
 

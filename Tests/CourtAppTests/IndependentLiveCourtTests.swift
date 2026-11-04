@@ -89,6 +89,13 @@ final class IndependentLiveCourtTests: XCTestCase {
         guard case .found(let found)? = changes.first else { return XCTFail("court not found: \(court.latest?.refusals ?? [])") }
         XCTAssertLessThan(IndependentLiveCourt.distance(found, Self.cameraA), 1.5)
         XCTAssertEqual(court.latest?.quality, .good)
+        let diagnostics = court.diagnostics
+        XCTAssertEqual(diagnostics.state, .found)
+        XCTAssertEqual(diagnostics.lines, court.latest?.linesUsed.count)
+        XCTAssertEqual(try XCTUnwrap(diagnostics.heightMeters), Self.cameraA.centre.z, accuracy: 0.2)
+        XCTAssertEqual(try XCTUnwrap(diagnostics.behindBaselineMeters), -Self.cameraA.centre.y, accuracy: 0.5)
+        XCTAssertGreaterThan(diagnostics.maxSolveSeconds, 0)
+        XCTAssertNil(diagnostics.refusals)
 
         feed(a, seconds: 1.2)
         XCTAssertEqual(changes.count, 1, "a re-check of the same court changes nothing")
@@ -105,6 +112,9 @@ final class IndependentLiveCourtTests: XCTestCase {
         feed(blank, seconds: 0.2)
         XCTAssertEqual(changes.count, 3, "searching a blank court finds nothing")
         XCTAssertFalse(court.latest?.refusals.isEmpty ?? true, "the refusal reason is kept for the camera screen")
+        XCTAssertEqual(court.diagnostics.state, .searching)
+        XCTAssertEqual(court.diagnostics.refusals, court.latest?.refusals.map(\.rawValue))
+        XCTAssertEqual(court.diagnostics.lost, 1)
     }
 
     /// The renderer's sky clutter is drawn fixed in the image, which no real camera sees: left out here

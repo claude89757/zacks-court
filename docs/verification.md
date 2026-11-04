@@ -2819,3 +2819,66 @@ PR #21 合入 main（`d9524b1`）后从新的 main 打 1.1 (6)：`scripts/refere
 - 公测组「Zacks Court 公测」：构建 6 已加入该组，但 Beta 审核提交被构建 2 的 Beta 审核挡住——`589586fd` 从 2026-11-03 19:01（太平洋时间）起一直是 `WAITING_FOR_REVIEW`，已超过一天。ASC API 不能取消 Beta 审核（`betaAppReviewSubmissions` 只有 GET 和 POST），只能等它审完，再用 `asc builds add-groups --submit` 提交构建 6。
 
 没有验证：没装到真机上；构建 6 没有重跑 `swift test`（代码与 PR #21 完全相同，本机检查在提 PR 前跑过）；公测组还没拿到构建 6，它的 Beta 审核还没提交。
+
+## 2026-11-05 降载：相机压力按真机上报的原值判断
+
+起因：用户 2026-11-04 晚在 iPhone 17 Pro Max（iPhone18,2，TestFlight 1.1 (6)）上当机位试用，识别状态的「人员」一行显示「已放慢」（自研链降载 L1，人员检测从每 12 帧一次放慢到每 20 帧一次）。经 Wi-Fi 用 `devicectl` 取回 App 容器：23:35 之后没有开记录，所以没有数据；会话与录像旁记录都不含热状态、低电量或降载级别；系统日志要 root（`log collect --device-udid`），pymobiledevice3 在只有 Wi-Fi 时连不上，所以这次「已放慢」是发热（`fair`）还是低电量模式无法确认。查的过程中发现：机位 `status` 里的相机压力是 AVFoundation 原值（凌晨自动测试的日志里是 `AVCaptureSystemPressureLevelNominal`），`CameraLoadPolicy` 只认 `fair`/`shutdown` 这类短名，所以相机压力在真机上从没触发过降载，包括 L4（系统即将停相机时暂停记录）。
+
+改动：
+- `CameraLoadPolicy.pressureName` 去掉 `AVCaptureSystemPressureLevel` 前缀再比级别，短名照常认；
+- 回升时记住上一次升级是相机压力还是发热，逐级回升的原因文案保持同一来源（以前回升一律写成发热）；
+- `CameraPhase2Tests.testLoadPolicyReadsTheCameraRawPressureValues` 用真机原值覆盖 0–4 级、压力原因文案和两种回升；`docs/camera-side-analysis.md` 第 7 节补一句。
+
+跑了（macOS 26.6.2、Xcode 27.0、Swift 6.4）：
+- `swift build` 通过；`swift run court-check` 通过。
+- `swift test`：316 项，18 项跳过（都要显式开启的环境），0 失败，用时 632 秒。
+
+没有验证：
+- 没在真机上复现相机压力升高；改后真机上相机压力达到 `fair` 也会进入 L1，「已放慢」可能比以前更常出现，这是设计里写好的行为，但实际频率没测。
+- 这次的「已放慢」原因仍未确认（机位不记录热状态与降载，另提了任务补机位端诊断记录）。
+
+## 2026-11-05 TestFlight 1.1 (7)：相机压力触发降载
+
+PR #22 合入 main（`bda5abd`）后从新的 main 打 1.1 (7)：`scripts/reference-chain.sh status` 为 `off`，`asc builds next-build-number` 返回 7，`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 生成工程，Release 归档并手动导出（Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」），之后还原 `Info.plist`。
+
+- 解包检查：只有 `tracknetv3-base-fp16-v1`、`tracknetv3-base-v1`，没有 `AnalysisModels`，`LocalReferenceChain` 0 处；`CFBundleShortVersionString` 1.1、`CFBundleVersion` 7；签名 Apple Distribution，TeamIdentifier=A2YR8HBQKY。
+- 上传：`asc builds upload` 后构建 `178d9da8` 为 `VALID`；zh-Hans 的「测试什么」写成 1.1 (7) 的说明（相机负载触发降载、原因文案，以及请测试者在看到「已放慢」时记下提示和手机状态）。
+- 内测组「Zacks Court 内测」：`internalBuildState` 为 `IN_BETA_TESTING`。
+- 公测组「Zacks Court 公测」：构建 7 已加入该组，`externalBuildState` 为 `READY_FOR_BETA_SUBMISSION`；Beta 审核提交仍被构建 2 的 Beta 审核挡住（「Another build in the same train is already in beta review」），等它审完再用 `asc builds add-groups --submit` 提交最新构建。
+
+没有验证：没装到真机上；构建 7 没有重跑 `swift test`（代码与 PR #22 相同，本机检查在提 PR 前跑过）；公测组还没拿到构建 7。
+
+## 2026-11-05 现场诊断：机位采集日志与一键诊断包
+
+为什么：用户在球场上实测（手机不在这台 Mac 旁边），反馈「球场识别很差」，但单手机使用时机位什么都不记，开始记录之前架机位、等球场的那段也没有记录，没法诊断。上一节「已放慢」查不出原因，也是因为机位不记录热状态与降载；采集日志每秒记下温度、相机压力和降载等级与原因，这一项一并补上。设计见 [camera-side-analysis.md](camera-side-analysis.md) 第 14 节。
+
+改动：
+- 自动球场报出诊断数据（`IndependentLiveCourt.diagnostics` → 引擎 → `CameraSideAnalyzer.Metrics.court` → `status.analysis.court`，可选字段）：在用或最近被拒的求解（线数、对齐误差、拒绝原因、焦距、机高、离底线多远）、画面运动、求解次数与总 / 最长 / 最近耗时、找到 / 移动 / 丢失次数。
+- 机位采集时每秒写 `Sessions/Diagnostics/capture-*.jsonl`（`CameraCaptureLog`），每次采集一个文件，保留 14 天；存储页算进「诊断日志」并能清理。看板写的 `-status.jsonl` 也多了 `court` 和机位页上的球场文字。
+- 存储页「诊断日志」的说明改成「辅助检测、机位状态和机位采集日志」。
+- 记录详情「导出」菜单第一项「诊断包（不含录像）」：选好分享目标后打成 zip（记录 JSON、日志、记录前 30 分钟到结束后 1 分钟的采集日志、中文摘要 `README.txt`），不含录像和配对密钥。
+- `court-probe live` 在输出旁边写同样的 `.diagnostics.zip`。
+
+跑了什么（Mac M4 Pro，macOS 26.6.2，Xcode 27.0，Swift 6.4）：
+- `swift build` 通过；`swift run court-check` 通过。
+- 新增 `CameraDiagnosticsTests` 3 项：合成画面的机位（`CameraRig`）开记录跑约 2 秒，一次采集一个文件，`start` / 每秒带会话 ID 的 `status` / 关闭时 `stop`；诊断包 zip 里有记录 JSON、`README.txt` 和这个采集文件，没有 `.mov`，临时目录删掉；摘要按造好的日志写出「开始后约 4 秒认出球场」、拒绝原因与秒数、「记录中 5 秒，有球场 5 秒（100%）」、机高、App 版本和最高温度，两小时前的采集文件不放进包；采集日志算诊断日志、不算残留，清理后下一行带着 `start` 行重新开文件。`IndependentLiveCourtTests/testFindsKeepsMovesAndLosesTheCourt` 加了诊断数据的检查（找到时状态、线数、机高和离底线距离对得上渲染相机，丢失后是 searching、带拒绝原因、丢失 1 次）。
+- 全量 `swift test`：318 项，18 项跳过（都要显式开启的环境，例如模型目录、真机、外部视频），0 失败，用时 644 秒。
+- 真实视频走整条机位链（Mac 回放，不是 iPhone）：本机一段 1080p60 单打开发视频截 75 秒，`COURT_PROBE_INDEPENDENT=<FP16 模型> court-probe live`：80 行、界内外 10 个，诊断包里有记录 JSON、辅助检测日志、76 行的采集日志（56 KB，约每小时 2.7 MB）和摘要：第 1 秒内认出球场，记录中 74 秒都有球场，画面静止，求解和跟踪 75 次、最长 0.13 秒，机高约 3.1 米、底线后约 6.4 米、焦距 1401 像素、7 条线、对齐误差 0.36 像素，分析落后最多 0.19 秒，丢帧 0。
+- iOS：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 的 Debug 编译通过；在专用的 iPhone 17 Pro 模拟器（iOS 26.1，用完删除）上跑新 UI 用例 `testRecordDiagnosticPackageOpensTheShareSheet` 通过：记录详情「导出」菜单里有「诊断包（不含录像）」，点开出现系统分享面板，标题「Zacks Court 诊断包」，有「保存到"文件"」。之后还原了 `Info.plist`。
+
+没有验证：
+- iPhone 真机：采集日志的写入、手机上的求解耗时、在手机上实际打包并存到「文件」或发出去（模拟器上只打开了分享面板，没有选目标，打包本身是 Mac 上的单元测试）。
+- 球场实测：这一轮只是记录工具，不改识别，也不证明任何精度。
+- 看板那边的诊断包（只有记录 JSON 和看板写的 `-status.jsonl`，没有机位的采集日志）只在代码里，没单独跑。
+- 其余 UI 用例没有重跑（只在导出菜单里加了一项）。
+
+## 2026-11-05 TestFlight 1.1 (8)：机位采集日志与诊断包
+
+PR #24 合入 main（`b123ddb`）后从新的 main 打 1.1 (8)：`scripts/reference-chain.sh status` 为 `off`，`asc builds next-build-number` 返回 8，`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 生成工程，Release 归档并手动导出（Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」），之后还原 `Info.plist`。
+
+- 解包检查：只有 `tracknetv3-base-fp16-v1`、`tracknetv3-base-v1`，没有 `AnalysisModels`，`LocalReferenceChain` 0 处；`CFBundleShortVersionString` 1.1、`CFBundleVersion` 8；签名 Apple Distribution，TeamIdentifier=A2YR8HBQKY；二进制里有采集日志和诊断包的代码（`capture-`、`ZacksCourt-diagnostics`）。
+- 上传：`asc builds upload` 后构建 `9df57709` 为 `VALID`；zh-Hans 的「测试什么」写成 1.1 (8) 的说明（[testflight.md](app-store/testflight.md)），请测试者认不出球场也录 30 秒以上，再把诊断包和录像发回。
+- 内测组「Zacks Court 内测」：`internalBuildState` 为 `IN_BETA_TESTING`。
+- 公测组「Zacks Court 公测」：构建 8 已加入该组，`externalBuildState` 为 `READY_FOR_BETA_SUBMISSION`；Beta 审核提交仍被构建 2 的 Beta 审核挡住（「Another build in the same train is already in beta review」），等它审完再用 `asc builds add-groups --submit` 提交最新构建。
+
+没有验证：没装到真机上；构建 8 没有重跑全量 `swift test`（代码与 PR #24 相同，提 PR 前跑过全量，合并 main 后跑过相关的 18 项）；公测组还没拿到构建 8。

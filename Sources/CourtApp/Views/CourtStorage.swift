@@ -114,7 +114,7 @@ struct CourtStorageSheet: View {
     private var others: some View {
         CourtPanel("其他数据") {
             cleanRow(title: "单拍片段", detail: "从机位取来的击球片段，需要时可以再取", bytes: usage.clips, id: "court.storage.clips") { model.clearClips() }
-            cleanRow(title: "诊断日志", detail: "辅助检测和机位状态记录，只用于排查问题", bytes: usage.logs, id: "court.storage.logs") { model.clearLogs() }
+            cleanRow(title: "诊断日志", detail: "辅助检测、机位状态和机位采集日志，只用于排查问题", bytes: usage.logs, id: "court.storage.logs") { model.clearLogs() }
             if model.canJudgeLeftovers {
                 cleanRow(title: "残留文件", detail: "中断的回传、已删除记录留下的文件", bytes: usage.leftovers, id: "court.storage.leftovers") { model.clearLeftovers() }
             } else {
