@@ -2839,7 +2839,7 @@ PR #21 合入 main（`d9524b1`）后从新的 main 打 1.1 (6)：`scripts/refere
 
 ## 2026-11-05 现场诊断：机位采集日志与一键诊断包
 
-为什么：用户在球场上实测（手机不在这台 Mac 旁边），反馈「球场识别很差」，但单手机使用时机位什么都不记，开始记录之前架机位、等球场的那段也没有记录，没法诊断。设计见 [camera-side-analysis.md](camera-side-analysis.md) 第 14 节。
+为什么：用户在球场上实测（手机不在这台 Mac 旁边），反馈「球场识别很差」，但单手机使用时机位什么都不记，开始记录之前架机位、等球场的那段也没有记录，没法诊断。上一节「已放慢」查不出原因，也是因为机位不记录热状态与降载；采集日志每秒记下温度、相机压力和降载等级与原因，这一项一并补上。设计见 [camera-side-analysis.md](camera-side-analysis.md) 第 14 节。
 
 改动：
 - 自动球场报出诊断数据（`IndependentLiveCourt.diagnostics` → 引擎 → `CameraSideAnalyzer.Metrics.court` → `status.analysis.court`，可选字段）：在用或最近被拒的求解（线数、对齐误差、拒绝原因、焦距、机高、离底线多远）、画面运动、求解次数与总 / 最长 / 最近耗时、找到 / 移动 / 丢失次数。
