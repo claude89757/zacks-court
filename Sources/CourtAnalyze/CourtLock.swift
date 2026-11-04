@@ -18,6 +18,7 @@ import simd
 /// - `settle`: shaking for the first 8 s (hand-held mounting), then still at a new rotation.
 /// - `bump`: still for 15 s, knocked for 2 s, then still at another rotation.
 /// - `wobble`: a fixed rotation plus about 2 px of slow sway throughout (counted as still).
+/// - `net`: a phone hung on the net or a fence: slow sway plus a damped 5-10 Hz shiver every 2-6 s.
 /// - `drift`: slow continuous turning of about 5 px per second throughout (counted as still).
 /// "Right" means within the tolerance of the rotated steady solve, not physical truth.
 enum CourtLockCommand {
@@ -37,7 +38,7 @@ enum CourtLockCommand {
     }
 
     static func run(_ args: [String]) throws {
-        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway] [--keypoints MODEL.mlpackage]") }
+        guard args.count >= 3 else { throw CourtError.message("Usage: court-lock VIDEO OUT.json [--start S] [--duration D] [--scenarios steady,fixed,settle,bump,wobble,drift,handheld,shaky,net] [--seed N] [--latency K] [--before] [--first N] [--retry N] [--motion PX|off] [--shake PX] [--still-track S|off] [--moving S|off] [--no-predict] [--lookback S] [--tolerance PX] [--reference CAMERA.json] [--anyway] [--keypoints MODEL.mlpackage]") }
         let video = URL(fileURLWithPath: args[1]), out = URL(fileURLWithPath: args[2])
         func value(_ flag: String) -> String? { args.firstIndex(of: flag).flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } }
         let start = value("--start").flatMap(Double.init) ?? 0, duration = value("--duration").flatMap(Double.init) ?? 45
