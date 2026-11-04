@@ -144,6 +144,7 @@ struct LinkStats {
         #endif
         self.storageDirectory = storageDirectory ?? base.appendingPathComponent("Zacks Court/Sessions", isDirectory: true)
         VideoExport.clearLeftovers()
+        DiagnosticPackage.clearLeftovers()
         do {
             let store = try SessionStore(directory: self.storageDirectory)
             self.store = store
@@ -862,6 +863,10 @@ struct LinkStats {
         line["shedReason"] = status.shedReason
         line["analysisDelay"] = analysisProgressGap
         line["linkPath"] = linkPath?.rawValue
+        line["courtText"] = status.analysis.calibration?.reason
+        if let court = status.analysis.court, let data = try? JSONEncoder().encode(court) {
+            line["court"] = try? JSONSerialization.jsonObject(with: data)
+        }
         statusLog.append(line, session: id, directory: storageDirectory)
     }
 

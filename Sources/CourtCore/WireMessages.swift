@@ -59,6 +59,8 @@ public struct CameraAnalysisStatus: Codable, Equatable, Sendable {
     public var calibration: TennisCourtCalibrationState?
     public var modelVersion: String?
     public var limitations: [String] = []
+    /// Automatic court diagnostics (in-house lane); nil from older v2 cameras.
+    public var court: CameraCourtDiagnostics?
     public init() {}
 }
 
