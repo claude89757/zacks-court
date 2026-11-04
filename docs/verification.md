@@ -2615,3 +2615,15 @@ iPhone 录像（原样不变形，没有真值；`independent-live` 和 App 机�
 - 1.1 的「新功能」四种语言补上「手持拍摄也能自动识别」；`asc metadata validate` 0 个问题。TestFlight 的说明文字和 Beta 审核备注写在 `docs/app-store/testflight.md`。
 
 没有验证：这次只改了文字和构建号，没跑 `swift build` / `court-check` / `swift test`（PR #9 合入时已跑）；没在真机上装 1.1 (2)；手持识别在真实球场上的效果（见上一节）。
+
+## 2026-11-04 1.1 (2) 发到 TestFlight 并提交审核
+
+在 App Store Connect 上做的（`asc` 命令行，接着上一节的 1.1 (2) 构建，build `589586fd`，`usesNonExemptEncryption` 为 false）：
+
+- TestFlight：App 级说明（zh-Hans）和 Beta 审核备注换成 [testflight.md](app-store/testflight.md) 的文字（之前还是 0.2.0、带 S家模型的说明），联系人不变；1.1 (2) 加上 zh-Hans「测试什么」。内测组接收所有构建，内部状态 `IN_BETA_TESTING`；加进公测组并提交 Beta 审核，外部状态 `WAITING_FOR_BETA_REVIEW`。
+- 建 1.1 版本一直被拒（`You cannot create a new version of the App in the current state`，付费 App 协议没生效）。用户决定先改免费：价格从 ¥18 改为免费后，175 个地区全部 `AVAILABLE`，1.0 随即可下载；1.1 版本马上建成（`AFTER_APPROVAL`）。
+- `asc metadata plan/apply`：新建 zh-Hant、en-GB 两个本地化，更新 zh-Hans、en-US 的名称、副标题、描述、关键词，加上四种语言的推广文本和「新功能」；再 plan 一次，没有剩余差异。
+- 截图：四种语言各删掉沿用 1.0 的 5 张，上传新的 5 张（`APP_IPHONE_67`，1320×2868），全部 `COMPLETE`。
+- 关联 1.1 (2)，审核备注换成 [review-notes.md](app-store/review-notes.md) 英文版（逐词比对一致）；`asc review doctor` 0 错误 0 警告；`asc review submit` 后 1.1 为 `WAITING_FOR_REVIEW`。
+
+没有验证：网页上才能看的声明（法规与许可等，`review doctor` 不查，沿用 1.0 过审时的答案）；商店页面在各地区的实际显示；1.1 (2) 在真机上的安装和运行。

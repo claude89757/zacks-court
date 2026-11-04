@@ -4,16 +4,16 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 
 ## 1. 现状
 
-**1.0 已过审**（2026-11-03 提交），状态 `READY_FOR_SALE`，但 175 个地区都是 `CANNOT_SELL`：付费 App 协议、税务和银行没有生效，付费 App 在哪里都看不到。
+**1.0 已上架，免费**：2026-11-03 过审，但付费 App 协议、税务和银行一直没生效，175 个地区都是 `CANNOT_SELL`。2026-11-04 用户决定先改免费，改价后 175 个地区全部 `AVAILABLE`。
 
-**1.1 计划（2026-11-04 决定）：改成免费**，测速、界内外、录像这些基本功能全部免费；以后再规划收费的视频剪辑订阅（自动续期订阅，需要付费 App 协议、税务和银行）。1.1 的文字、截图和新图标已准备好（见下文），等主会话的修复合入后再构建、提交，见第 6 节。
+**1.1 计划（2026-11-04 决定）：改成免费**，测速、界内外、录像这些基本功能全部免费；以后再规划收费的视频剪辑订阅（自动续期订阅，需要付费 App 协议、税务和银行）。**1.1 (2) 已于 2026-11-04 提交审核**（`WAITING_FOR_REVIEW`，过审后自动发布）；同一个构建在 TestFlight 内测组可装，公测组在等 Beta 审核。见第 6 节。
 
 | 项目 | 状态 |
 | --- | --- |
 | 构建 | 1.0 (1)，`COURT_MODEL_SET=independent`，只带两个 TrackNetV3（MIT），包内逐文件检查没有 S家模型；已关联 1.0 |
 | 文字 | 中英文名称、副标题、描述、关键词、推广文本、隐私政策与技术支持网址；描述里不提其他平台（Android/安卓已删） |
 | 截图 | 6.9 英寸（`APP_IPHONE_67`）中英各 5 张，示例数据并有标注；1.1 起换成带大字说明的新版（见第 3 步） |
-| 价格 / 销售范围 | 1.0：中国 ¥18 为基准（美国自动 $2.99），全部 175 个地区；1.1 起免费（见第 2 节第 8 项） |
+| 价格 / 销售范围 | 免费（2026-11-04 起；之前中国 ¥18 为基准），全部 175 个地区 |
 | 年龄分级 | 全部为无，4+ |
 | 类别 | 体育，次类别健康健美（因此需要声明不是受监管医疗设备，已在网页声明「否」） |
 | 版权 / 内容版权 | 「2026 Zacks Court」；不含第三方内容 |
@@ -21,7 +21,7 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 | 审核信息 | 联系人由用户在网页填写；备注为 [review-notes.md](review-notes.md) 英文版；不需要登录；没有附演示视频 |
 | 中国大陆 ICP 备案 | 没有备案（App 不连互联网），审核或上架被卡时再处理 |
 
-开卖前还要用户本人处理：在「商务」页同意新版付费 App 协议、填写税务表格（W-8BEN 等）、在 2026-11-10 前续费开发者会员（协议和证书都到这天）。
+用户本人要处理：在 2026-11-10 前续费开发者会员（免费 App 协议、证书和描述文件都到这天，过期后 App 会下架、不能上传）。以后做收费订阅前，再同意付费 App 协议、填写税务表格（W-8BEN 等）、等银行信息生效。
 
 ## 2. 提交前必须做的事
 
@@ -56,7 +56,7 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 5. **出口合规**：`Info.plist` 里 `ITSAppUsesNonExemptEncryption` 是 `false`。App 只用系统自带的 TLS（Network.framework）和 HMAC 认证，属于豁免范围，6 号构建也是按「不使用非豁免加密」上传的。如果以后加了自己实现的加密算法，要改这一项。
 6. **App 隐私标签**：选「不收集数据」（Data Not Collected）。依据：App 不连开发者服务器，没有统计、广告或追踪 SDK，`PrivacyInfo.xcprivacy` 里收集的数据类型为空。
 7. **类别**：主类别「体育」，次类别「健康健美」。
-8. **价格**：**1.1 起免费**（2026-11-04 决定）。免费 App 不需要付费 App 协议，所以改价一生效，已过审的 1.0 就能在各地区下载；因此等 1.1 过审之后再改价，不提前改（见第 6 节）。命令：`asc pricing schedule create --app 6827224757 --free --base-territory CHN --start-date <当天>`。以后的视频剪辑订阅要另建订阅组和内购项目，并补上付费 App 协议、税务和银行。
+8. **价格**：**1.1 起免费**（2026-11-04 决定）。原计划等 1.1 过审再改价，但付费 App 协议一直没生效，App 付费时连 1.1 版本都建不了，所以 2026-11-04 用户决定先改免费（1.0 随即在 175 个地区可下载），再建 1.1。命令：`asc pricing schedule create --app 6827224757 --free --base-territory CHN --start-date <当天>`。以后的视频剪辑订阅要另建订阅组和内购项目，并补上付费 App 协议、税务和银行。
 
    以下是 1.0 的记录：付费下载，中国区 ¥18、美区 $2.99（2026-11-03 决定），没有内购。已在 2026-11-03 设好：以 $2.99 为基准时中国区会自动换算成 ¥22，所以基准地区选了中国大陆、价格档 ¥18，美国区自动换算正好是 $2.99；两种基准下其他 172 个地区的价格完全相同。命令是 `asc pricing schedule create --app 6827224757 --base-territory CHN --price-point <¥18 档的 ID>`，价格档 ID 用 `asc pricing price-points --app 6827224757 --territory CHN --paginate` 查。销售范围已设为全部地区（`asc pricing availability create --app 6827224757 --all-territories --available true --available-in-new-territories true`）。
 9. **中国大陆的备案**（2026-11-03 决定先不备案）：工信部的 APP 备案针对「从事互联网信息服务」的 App。这个 App 只在局域网里让设备互连，不连互联网、不连开发者服务器，按这个说法可以不备案。但苹果对中国区的执行可能更严，提交时 App 信息页可能要求填 ICP 备案号。被卡住时，先向审核说明是不联网的本地应用；不行就从销售范围里去掉中国大陆，或者办备案。以后加了任何联网功能（检查更新、统计等），都要先备案。
@@ -107,17 +107,17 @@ asc status --app 6827224757                     # 发布状态总览
 - **推广文本**随时可改，不用提交新版本；名称、副标题、关键词只能随新版本改。
 - **上线后**：在 App Store Connect 的「App 分析」里看「来源：App Store 搜索」的曝光和转化，一两周后按实际搜索词调整关键词。
 
-### 1.1 发版步骤（修复已在 2026-11-04 合入，等用户同意发版）
+### 1.1 发版记录（2026-11-04 已提交审核）
 
 先决条件（只能由账户持有人在网页上做）：
-- **同意新版付费 App 协议**（「商务」页）。2026-11-04 试着建 1.1 版本时，App Store Connect 拒绝了（`You cannot create a new version of the App in the current state`），版本页提示要先接受最新的付费 App 协议。App 目前还是付费的，所以建新版本前要先同意它。
+- **付费 App 不能建新版本**：2026-11-04 试着建 1.1 版本时，App Store Connect 一直拒绝（`You cannot create a new version of the App in the current state`），版本页提示要先接受最新的付费 App 协议；用户点了同意后仍不行（银行还在处理、税表没填，协议没生效）。改成免费后马上就能建。
 - **2026-11-10 前续费开发者会员**。协议、发布证书和描述文件都到这天为止，过期后不能上传。
 
-步骤（App Store Connect 的改动不用逐步问用户，由顾问模型把关；但改价只在 1.1 过审之后做）：
+实际顺序（App Store Connect 的改动不用逐步问用户，由顾问模型把关）：
 1. `apps/iphone/project.yml` 的 `MARKETING_VERSION` 已改成 `1.1`；构建号是 `2`：1.1 (1) 于 2026-11-04 上传后，又合入了手持拍摄的球场识别（PR #9），重新打了 1.1 (2)，内测、公测和正式版都用这一个构建。
 2. 确认 `scripts/reference-chain.sh status` 是 `off`，然后 `COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，Release 归档并导出（手动签名，Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」）。解开 IPA 逐个检查：只有两个 TrackNetV3，没有 `AnalysisModels`。然后上传。
 3. 「新功能」已写完（2026-11-04，包括 PR #6 球场跟踪和 PR #7 去掉手动标定）。建 1.1 版本（`asc versions create --app 6827224757 --version 1.1 --release-type AFTER_APPROVAL`）。推送四种语言的文字，其中 zh-Hant、en-GB 是新增的本地化，如果 `metadata apply` 不新建本地化，先用 `asc localizations create` 建。
 4. 截图：新版本会沿用 1.0 的 5 张旧截图，先删掉，再上传各语言目录里的新图。
-5. 关联构建，提交审核。
-6. **过审后再改免费**（见第 2 节第 8 项）。App 付费时在哪里都卖不了，所以 1.1 过审后自动发布也没人能下载，改成免费的那一刻用户拿到的就是 1.1。不要在过审前改价，那样会先把 1.0 放出去。
+5. TestFlight：内测组接收所有构建，1.1 (2) 处理完就能装；加进公测组并提交 Beta 审核（`asc builds add-groups --group <公测组> --submit --confirm`）。说明文字和 Beta 审核备注见 [testflight.md](testflight.md)。
+6. 用户决定先改免费（`asc pricing schedule create --app 6827224757 --free --base-territory CHN`），然后才建得了 1.1 版本；接着按第 3、4 步推送文字、换截图，关联构建，更新审核备注，`asc review submit` 提交。
 7. 技术支持站（zacks-court-site）的 `icon.png` 和 1.1 上线同时换成新图标。
