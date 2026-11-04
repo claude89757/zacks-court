@@ -2820,6 +2820,23 @@ PR #21 合入 main（`d9524b1`）后从新的 main 打 1.1 (6)：`scripts/refere
 
 没有验证：没装到真机上；构建 6 没有重跑 `swift test`（代码与 PR #21 完全相同，本机检查在提 PR 前跑过）；公测组还没拿到构建 6，它的 Beta 审核还没提交。
 
+## 2026-11-05 降载：相机压力按真机上报的原值判断
+
+起因：用户 2026-11-04 晚在 iPhone 17 Pro Max（iPhone18,2，TestFlight 1.1 (6)）上当机位试用，识别状态的「人员」一行显示「已放慢」（自研链降载 L1，人员检测从每 12 帧一次放慢到每 20 帧一次）。经 Wi-Fi 用 `devicectl` 取回 App 容器：23:35 之后没有开记录，所以没有数据；会话与录像旁记录都不含热状态、低电量或降载级别；系统日志要 root（`log collect --device-udid`），pymobiledevice3 在只有 Wi-Fi 时连不上，所以这次「已放慢」是发热（`fair`）还是低电量模式无法确认。查的过程中发现：机位 `status` 里的相机压力是 AVFoundation 原值（凌晨自动测试的日志里是 `AVCaptureSystemPressureLevelNominal`），`CameraLoadPolicy` 只认 `fair`/`shutdown` 这类短名，所以相机压力在真机上从没触发过降载，包括 L4（系统即将停相机时暂停记录）。
+
+改动：
+- `CameraLoadPolicy.pressureName` 去掉 `AVCaptureSystemPressureLevel` 前缀再比级别，短名照常认；
+- 回升时记住上一次升级是相机压力还是发热，逐级回升的原因文案保持同一来源（以前回升一律写成发热）；
+- `CameraPhase2Tests.testLoadPolicyReadsTheCameraRawPressureValues` 用真机原值覆盖 0–4 级、压力原因文案和两种回升；`docs/camera-side-analysis.md` 第 7 节补一句。
+
+跑了（macOS 26.6.2、Xcode 27.0、Swift 6.4）：
+- `swift build` 通过；`swift run court-check` 通过。
+- `swift test`：316 项，18 项跳过（都要显式开启的环境），0 失败，用时 632 秒。
+
+没有验证：
+- 没在真机上复现相机压力升高；改后真机上相机压力达到 `fair` 也会进入 L1，「已放慢」可能比以前更常出现，这是设计里写好的行为，但实际频率没测。
+- 这次的「已放慢」原因仍未确认（机位不记录热状态与降载，另提了任务补机位端诊断记录）。
+
 ## 2026-11-05 现场诊断：机位采集日志与一键诊断包
 
 为什么：用户在球场上实测（手机不在这台 Mac 旁边），反馈「球场识别很差」，但单手机使用时机位什么都不记，开始记录之前架机位、等球场的那段也没有记录，没法诊断。设计见 [camera-side-analysis.md](camera-side-analysis.md) 第 14 节。
