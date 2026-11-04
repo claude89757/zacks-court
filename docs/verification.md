@@ -2882,3 +2882,23 @@ PR #24 合入 main（`b123ddb`）后从新的 main 打 1.1 (8)：`scripts/refere
 - 公测组「Zacks Court 公测」：构建 8 已加入该组，`externalBuildState` 为 `READY_FOR_BETA_SUBMISSION`；Beta 审核提交仍被构建 2 的 Beta 审核挡住（「Another build in the same train is already in beta review」），等它审完再用 `asc builds add-groups --submit` 提交最新构建。
 
 没有验证：没装到真机上；构建 8 没有重跑全量 `swift test`（代码与 PR #24 相同，提 PR 前跑过全量，合并 main 后跑过相关的 18 项）；公测组还没拿到构建 8。
+
+## 2026-11-05 近端界内外漏判归因（只分析，规则不变）
+
+环境：Apple M4 Pro、macOS 26.6.2，main `cea2fbf`（规则 v26）。只用开发视频：test.MOV 用 11-02 的 trace（这台 Mac 上没有视频），double-test-003 用 11-03 的 trace，另外用当前 main 把 double-test-003 实时重跑了一遍。参照是这台 Mac 上 10-29 整理的 S家 App 老师行，留出视频没有打开，也没有打分。
+
+跑了什么：
+- `court-analyze independent-replay` 重放两段 trace，再按 `HawkEyeReferenceComparisonTests` 配对，用 `HawkEye.annotate` 的判法打分（Python 移植，计数和 Swift 测试相同）。
+- 本地诊断（不提交）：对每拍 S家 App 判了近端界内外、我们没判的拍，导出落地附近的球候选、轨迹段、交汇点和触地检验的数值，以及每个实时窗口里的结果；再看叠加了 S家 App 落点投影的画面，逐拍定下第一个断点。
+- 本地 what-if（改动没提交，已还原）：触地门限 4→5 px；把二次检验也当触地。
+
+结果：
+- S家 App 判了近端界内外的拍，test.MOV 37 拍，我们判出 23 拍；double-test-003 48 拍，判出 24 拍。判出的和 S家 App 一致 21/22、23/23（另各有 1 拍压线附近）。漏判两段合计 38 拍，第一个断点分布如下：触地检验没过 14 拍；落地处轨迹断开 7 拍；落地没检出 4 拍；远端击球没切开 3 拍；击球后跟不上球 1 拍；相邻碎段行抢走配对，或同首帧碎段覆盖了已发布的行，共 5 拍；同半场保护把低机位远端发球判成同半场 1 拍；S家 App 外推的落点（截击、落点在画面外）3 拍。每段的表格和例子时刻见 `.claude/skills/inhouse-model-research/references/frontier.md` 第 1 节第 8 条。
+- 门限 5 px 的 what-if：近端 test.MOV 23→26、double-test-003 24→28，新增的拍 6 拍和 S家 App 一致、1 拍压线附近，原来判出的一拍没丢；远端也多判；发球识别不变，±20% 内 26→26、28→29。
+- double-test-003 在当前 main 上实时重跑：近端 23、远端 12，和 trace 重放（24、12）基本一样。
+
+没有验证：
+- 留出视频；5 px 门限带来的假触地有多少，没有在画面上核对；对拉的类别和球速受不受影响。
+- what-if 只是本地实验，产品代码没有改动。
+- test.MOV 没有重新跑球模型，用的是 11-02 的球场和候选。
+- 和 S家 App 一致只说明两个软件结论相同，不是真值。
