@@ -2945,3 +2945,16 @@ review 了 PR #21 的环绕镜头回放（逐帧看 1.1 (6) 的商店预览录�
 - what-if 只是本地实验，产品代码没有改动。
 - test.MOV 没有重新跑球模型，用的是 11-02 的球场和候选。
 - 和 S家 App 一致只说明两个软件结论相同，不是真值。
+
+## 2026-11-05 TestFlight 1.1 (9)：回放结尾的俯视距离图
+
+PR #27 合入 main（`8f9caa9`）后从新的 main 打 1.1 (9)。`asc builds next-build-number` 返回 9。这个工作区不能合入 main 带来的受保护文件（`.claude/skills`），所以把 `8f9caa9` 用 `git archive` 导出到临时目录（不含 `.claude`），补上 Git LFS 的两个自研模型（main 上没改），只把构建号改成 9。之后照 1.1 (8) 的步骤：`scripts/reference-chain.sh status` 为 `off`，`COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 生成工程，Release 归档并手动导出（Apple Distribution 证书，描述文件「Zacks Court App Store 20261027」）。
+
+- 解包检查：只有 `tracknetv3-base-fp16-v1`、`tracknetv3-base-v1`，没有 `AnalysisModels`，`LocalReferenceChain` 0 处；`CFBundleShortVersionString` 1.1、`CFBundleVersion` 9；签名 Apple Distribution，TeamIdentifier=A2YR8HBQKY。新回放已打进包里：二进制里有「界内 · 球印压在」，浏览器看板的 `app.js` 里有 `measureCamera`。
+- 上传：`asc builds upload --test-notes … --locale zh-Hans --wait` 后，构建 `819c98a0` 为 `VALID`，zh-Hans 的「测试什么」是 1.1 (9) 的说明（[testflight.md](app-store/testflight.md)）。
+- 内测组「Zacks Court 内测」：`internalBuildState` 为 `IN_BETA_TESTING`。
+- 公测组「Zacks Court 公测」：`asc builds add-groups --submit` 这次提交成功（构建 2 的 Beta 审核已经结束，不再挡）。Beta 审核为 `APPROVED`，`externalBuildState` 为 `IN_BETA_TESTING`，公开链接的测试者拿到的就是构建 9。
+
+没有验证：
+- 没装到真机上。
+- 构建 9 没有重跑 `swift test`：代码与 PR #27 合入的 main 相同，合入前在本分支与 main 的合并结果上跑过全量。
