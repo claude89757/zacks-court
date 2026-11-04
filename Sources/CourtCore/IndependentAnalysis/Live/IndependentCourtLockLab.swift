@@ -21,6 +21,8 @@ public final class IndependentCourtLockLab {
         public var stillTrackInterval: Double?
         public var movingInterval: Double?
         public var predictTracking = true
+        /// The court keypoint model used for full solves, by file name (nil: lines only).
+        public var keypointModel: String?
         public init() {
             let o = IndependentLiveCourt.Options()
             sampleInterval = o.sampleInterval; frames = o.frames; firstAttemptFrames = o.firstAttemptFrames
@@ -69,7 +71,7 @@ public final class IndependentCourtLockLab {
     private var motionCost = (seconds: 0.0, count: 0)
     private var lastThumbnail: IndependentLiveCourt.Thumbnail?
 
-    public init(settings: Settings = Settings()) {
+    public init(settings: Settings = Settings(), keypointModel: IndependentCourtKeypointModel? = nil) {
         self.settings = settings
         var o = IndependentLiveCourt.Options()
         o.sampleInterval = settings.sampleInterval; o.frames = settings.frames
@@ -79,7 +81,7 @@ public final class IndependentCourtLockLab {
         o.shakePixels = settings.shakePixels; o.trackPixels = settings.trackPixels
         o.stillTrackInterval = settings.stillTrackInterval; o.movingInterval = settings.movingInterval
         o.predictTracking = settings.predictTracking
-        court = IndependentLiveCourt(options: o)
+        court = IndependentLiveCourt(options: o, keypointModel: keypointModel)
     }
 
     /// One full-resolution frame, the camera that took it, and whether that camera is still.

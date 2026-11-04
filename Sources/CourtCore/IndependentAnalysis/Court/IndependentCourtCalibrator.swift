@@ -26,6 +26,9 @@ public struct IndependentCourtCalibration: Sendable, Codable {
         case cameraHeightImplausible = "camera_height_implausible"
         case focalLengthUnstable = "focal_length_unstable"
         case coverageLow = "coverage_low"
+        /// Every refined candidate put the camera further behind the near baseline than any mount: a
+        /// line mislabelled (floor graphics, another court) shrinks the court towards the net.
+        case cameraTooFarBack = "camera_too_far_back"
 
         /// Short Chinese text for the camera screen.
         public var message: String {
@@ -40,6 +43,7 @@ public struct IndependentCourtCalibration: Sendable, Codable {
             case .cameraHeightImplausible: return "机位高度不合理，请调整机位"
             case .focalLengthUnstable: return "相机距离无法确定，近端底线和发球线都要在画面里"
             case .coverageLow: return "球场线覆盖不足，请调整机位"
+            case .cameraTooFarBack: return "未识别到可信的球场，请让近端半场完整进入画面"
             }
         }
     }
@@ -53,6 +57,10 @@ public struct IndependentCourtCalibration: Sendable, Codable {
     public struct Counts: Sendable, Codable {
         public var segments = 0, mergedLines = 0, transverse = 0, transverseBelowHorizon = 0, longitudinal = 0
         public var throughVanishingPoint = 0, hypotheses = 0, gated = 0, refined = 0
+        /// Start cameras taken from predicted keypoints (0 without a keypoint model).
+        public var fromKeypoints = 0
+        /// Refined candidates dropped for putting the camera more than `maxBehindBaseline` back.
+        public var tooFarBack = 0
     }
 
     public internal(set) var camera: IndependentPinholeCamera?
@@ -76,6 +84,8 @@ public struct IndependentCourtCalibration: Sendable, Codable {
     public internal(set) var principalOffset: Double?
     public internal(set) var timings = Timings()
     public internal(set) var counts = Counts()
+    /// The chosen camera was refined from a keypoint start rather than a line-search hypothesis.
+    public internal(set) var startedFromKeypoints = false
 
     public var found: Bool { camera != nil }
     /// Camera centre in court coordinates (accepted or rejected solve).
@@ -99,7 +109,8 @@ public struct IndependentCourtCalibration: Sendable, Codable {
 ///    pinhole camera (principal point at the image centre); plausible cameras are ranked by how well all
 ///    model lines cover the evidence;
 /// 4. the 4 best distinct cameras are refined: sub-pixel line profiles and a 7-parameter LM, 3 passes;
-/// 5. the best refinement is checked and refused with reasons when it is not trustworthy;
+/// 5. refinements that put the camera more than `maxBehindBaseline` behind the near baseline are dropped;
+///    the best remaining one is checked and refused with reasons when it is not trustworthy;
 /// 6. when it is refused only because the lines do not fit tightly enough (or the focal length is
 ///    unstable), the candidates are refined again with the horizontal principal coordinate free and
 ///    checked by the same gates. One ground plane fixes only two of f, cx, cy; with cy at the image centre
@@ -117,6 +128,11 @@ public enum IndependentCourtCalibrator {
         public var baselineWidth = IndependentCourtModel.baselineWidth
         /// Largest |cx - centre| accepted in stage 6; nil turns stage 6 off.
         public var freePrincipalPixels: Double? = 200
+        /// Largest distance of the camera behind the near baseline, m. A phone stands inside the back
+        /// fence (5.5-8 m of run-back): eleven mounts on six courts measured 6.1-6.6 m, while every
+        /// wrong solve on an indoor court with large white floor lettering in front of the baseline put it
+        /// 15-37 m back (2026-11-04). Candidates further back are dropped before the best is chosen.
+        public var maxBehindBaseline = 12.0
         public init() {}
     }
 
@@ -149,13 +165,16 @@ public enum IndependentCourtCalibrator {
 
     public static let width = 1920, height = 1080
 
-    public static func calibrate(_ image: IndependentCourtImage, options: Options = Options()) -> IndependentCourtCalibration {
+    public static func calibrate(_ image: IndependentCourtImage, options: Options = Options(),
+                                 keypoints: IndependentCourtKeypoints? = nil) -> IndependentCourtCalibration {
         var trace: Trace?
-        return calibrate(image, options: options, trace: &trace)
+        return calibrate(image, options: options, keypoints: keypoints, trace: &trace)
     }
 
-    /// Pass a non-nil `trace` to record every stage.
-    public static func calibrate(_ image: IndependentCourtImage, options: Options = Options(), trace: inout Trace?) -> IndependentCourtCalibration {
+    /// Pass a non-nil `trace` to record every stage. `keypoints` adds start cameras from a keypoint model;
+    /// they are refined and checked exactly like the line-search hypotheses.
+    public static func calibrate(_ image: IndependentCourtImage, options: Options = Options(),
+                                 keypoints: IndependentCourtKeypoints? = nil, trace: inout Trace?) -> IndependentCourtCalibration {
         let began = ProcessInfo.processInfo.systemUptime
         var out = IndependentCourtCalibration()
         guard image.width == width, image.height == height else {
@@ -199,7 +218,15 @@ public enum IndependentCourtCalibrator {
             out.timings.total = ProcessInfo.processInfo.systemUptime - began
             return out
         }
-        guard !search.candidates.isEmpty else { out.refusals = [.noPlausibleCombination]; return finish() }
+        let keyStarts = (keypoints?.hypotheses() ?? []).map { k in
+            IndependentCourtHypothesis(homography: k.homography, f: k.camera.f, rotation: k.camera.R, translation: k.camera.t,
+                                       centre: k.camera.C,
+                                       score: IndependentCourtSearch.score(k.homography, hit: evidence.hit, width: evidence.halfWidth,
+                                                                           height: evidence.halfHeight),
+                                       labels: [IndependentCourtHypothesis.fromKeypoints], lines: [])
+        }
+        out.counts.fromKeypoints = keyStarts.count
+        guard !search.candidates.isEmpty || !keyStarts.isEmpty else { out.refusals = [.noPlausibleCombination]; return finish() }
 
         struct Tried { var x: [Double]; var fit: RefinedCamera; var C: SIMD3<Double>; var fitRMS: Double; var rscore: Double; var q: Double; var start: IndependentCourtHypothesis }
         func attempt(_ c: IndependentCourtHypothesis, from start: [Double]) -> Tried? {
@@ -240,14 +267,24 @@ public enum IndependentCourtCalibrator {
             return (p, others.max().map { p.q - $0 }, reasons)
         }
 
-        let tried = distinct.prefix(options.refinedCandidates).compactMap { attempt($0, from: $0.parameters) }
-        out.counts.refined = tried.count
-        guard !tried.isEmpty else { out.timings.refine = lap(); out.refusals = [.refinementFailed]; return finish() }
+        let refined = (keyStarts + distinct.prefix(options.refinedCandidates)).compactMap { attempt($0, from: $0.parameters) }
+        out.counts.refined = refined.count
+        guard !refined.isEmpty else { out.timings.refine = lap(); out.refusals = [.refinementFailed]; return finish() }
+        func plausible(_ t: Tried) -> Bool { -t.C.y <= options.maxBehindBaseline }
+        let tried = refined.filter(plausible)
+        out.counts.tooFarBack = refined.count - tried.count
+        guard !tried.isEmpty else {
+            let best = refined.max { $0.q < $1.q }!
+            out.timings.refine = lap()
+            out.rejectedCamera = camera(best.x); out.refusals = [.cameraTooFarBack]
+            out.fitRMS = best.fitRMS; out.linesUsed = best.fit.use; out.perLineRMS = best.fit.per; out.focalLengthSD = best.fit.fSD
+            return finish()
+        }
         var (p, margin, reasons) = judge(tried)
         // stage 6: only the fit itself failed; try again with the horizontal principal coordinate free
         if let limit = options.freePrincipalPixels, reasons.contains(where: { $0 == .fitResidualHigh || $0 == .focalLengthUnstable }) {
             let free = tried.compactMap { t in attempt(t.start, from: Array(t.x.prefix(7)) + [Double(width) / 2]) }
-                .filter { abs(principalX($0.x) - Double(width) / 2) <= limit }
+                .filter { abs(principalX($0.x) - Double(width) / 2) <= limit && plausible($0) }
             if !free.isEmpty {
                 let second = judge(free)
                 if second.reasons.isEmpty {
@@ -258,6 +295,7 @@ public enum IndependentCourtCalibrator {
         }
         out.timings.refine = lap()
         out.searchScore = p.start.score; out.refinedScore = p.rscore; out.rankScore = p.q
+        out.startedFromKeypoints = p.start.labels == [IndependentCourtHypothesis.fromKeypoints]
         out.margin = margin
         let x = p.x, use = p.fit.use
         let cam = camera(x)

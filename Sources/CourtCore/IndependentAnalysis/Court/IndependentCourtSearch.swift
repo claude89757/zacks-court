@@ -14,6 +14,9 @@ public struct IndependentCourtHypothesis: Sendable {
     /// Indices into the sorted transverse (two) and longitudinal (two) search lines.
     public let lines: [Int]
 
+    /// Label of a start camera that came from predicted keypoints, not from two pairs of lines.
+    public static let fromKeypoints = "keypoints"
+
     /// Start vector for refinement: f, Rodrigues vector, translation.
     var parameters: [Double] {
         let r = IndependentPinholeCamera.rotationVector(rotation)

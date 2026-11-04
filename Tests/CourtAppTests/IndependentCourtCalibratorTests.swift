@@ -53,6 +53,24 @@ final class IndependentCourtCalibratorTests: XCTestCase {
         XCTAssertEqual(again.camera.principal[0], cam.principal[0], accuracy: 2)
     }
 
+    /// A camera 20 m behind the near baseline is further back than any mount stands, which is what a
+    /// mislabelled line (floor lettering in front of the baseline) produces: refused unless the limit
+    /// is raised, and then found, so the drop is the only thing in the way.
+    func testCameraFarBehindTheBaselineIsRefused() throws {
+        let far = IndependentPinholeCamera.lookingAt(SIMD3(0, 9, 0), from: SIMD3(0.3, -20, 6), f: 2600)
+        let image = try CourtRenderer(camera: far).render()
+        let result = IndependentCourtCalibrator.calibrate(image)
+        XCTAssertFalse(result.found)
+        XCTAssertEqual(result.refusals, [.cameraTooFarBack])
+        XCTAssertNotNil(result.rejectedCamera)
+        XCTAssertGreaterThan(result.counts.tooFarBack, 0)
+        var lenient = IndependentCourtCalibrator.Options()
+        lenient.maxBehindBaseline = 30
+        let found = IndependentCourtCalibrator.calibrate(image, options: lenient)
+        XCTAssertTrue(found.found, "refusals: \(found.refusals)")
+        XCTAssertLessThan(simd_length(try XCTUnwrap(found.camera).centre - far.centre), 0.3)
+    }
+
     /// With the near baseline painted over, focal length and distance trade off; the solve must refuse
     /// rather than return a camera (the prototype refuses all five such masked medians).
     func testRefusesWhenNearBaselineIsHidden() throws {

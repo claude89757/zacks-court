@@ -3,7 +3,7 @@ import CryptoKit
 import Foundation
 import ImageIO
 
-/// court-analyze court-calibrate MEDIAN.png [MORE.png ...] OUT.json [--trace TRACE.json] [--starts STARTS.json]
+/// court-analyze court-calibrate MEDIAN.png [MORE.png ...] OUT.json [--trace TRACE.json] [--starts STARTS.json] [--keypoints KP.json | --keypoint-model MODEL.mlpackage]
 ///
 /// Runs `IndependentCourtCalibrator` on a median image (PNG or any ImageIO format, 8-bit, decoded bytes
 /// used as stored, no colour management) and writes the calibration. With several images it first takes
@@ -11,7 +11,9 @@ import ImageIO
 /// `scripts/speed-fullvideo/court_auto.py`; a found court is a calibration, not evidence of speed or
 /// landing accuracy. `--trace` writes every stage (segments, merged lines, hypotheses, refinements) and
 /// hashes of the evidence planes in the layout of the Python parity dump. `--starts` refines from each
-/// start vector (f, rvec, tvec) in a JSON array and adds the results to the trace.
+/// start vector (f, rvec, tvec) in a JSON array and adds the results to the trace. `--keypoints` reads 14
+/// full-resolution [u, v] pairs (null where unseen) in `IndependentCourtKeypoints.names` order and adds
+/// them as start cameras; `--keypoint-model` predicts them with the court keypoint model instead.
 enum CourtCalibrateCommand {
     static func run(_ allArgs: [String]) throws {
         var args = Array(allArgs.dropFirst())
@@ -19,7 +21,7 @@ enum CourtCalibrateCommand {
             guard let i = args.firstIndex(of: name), i + 1 < args.count else { return nil }
             let v = args[i + 1]; args.removeSubrange(i...(i + 1)); return v
         }
-        let tracePath = option("--trace"), startsPath = option("--starts")
+        let tracePath = option("--trace"), startsPath = option("--starts"), keypointsPath = option("--keypoints"), modelPath = option("--keypoint-model")
         guard args.count >= 2 else {
             throw CourtError.message("Usage: court-analyze court-calibrate MEDIAN.png [MORE.png ...] OUT.json [--trace TRACE.json] [--starts STARTS.json]")
         }
@@ -34,10 +36,22 @@ enum CourtCalibrateCommand {
         let image = try IndependentCourtMedian.median(of: frames)
         let medianSeconds = frames.count > 1 ? ProcessInfo.processInfo.systemUptime - medianBegan : 0
         var trace: IndependentCourtCalibrator.Trace? = tracePath == nil ? nil : .init()
-        let result = IndependentCourtCalibrator.calibrate(image, trace: &trace)
+        let model = try modelPath.map { try IndependentCourtKeypointModel(modelURL: URL(fileURLWithPath: $0)) }
+        let predictBegan = ProcessInfo.processInfo.systemUptime
+        let predicted = model.flatMap { $0.keypoints(image) }
+        let predictSeconds = ProcessInfo.processInfo.systemUptime - predictBegan
+        let keypoints = try predicted ?? keypointsPath.map { path -> IndependentCourtKeypoints in
+            let raw = try JSONDecoder().decode([[Double]?].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+            guard raw.count == IndependentCourtKeypoints.names.count else { throw CourtError.message("--keypoints needs 14 entries") }
+            return IndependentCourtKeypoints(pixels: raw.map { $0.map { SIMD2($0[0], $0[1]) } })
+        }
+        let result = IndependentCourtCalibrator.calibrate(image, keypoints: keypoints, trace: &trace)
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.nonConformingFloatEncodingStrategy = .convertToString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
-        try encoder.encode(Report(result, imageLoadSeconds: loadSeconds, frames: frames.count, medianSeconds: medianSeconds)).write(to: out, options: .withoutOverwriting)
+        var report = Report(result, imageLoadSeconds: loadSeconds, frames: frames.count, medianSeconds: medianSeconds)
+        report.keypoints = keypoints?.pixels.map { $0.map { [$0.x, $0.y] } }
+        report.keypointSeconds = model == nil ? nil : predictSeconds
+        try encoder.encode(report).write(to: out, options: .withoutOverwriting)
         if let tracePath, let trace {
             var dump = traceDictionary(trace, image: image, result: result)
             if let startsPath {
@@ -58,7 +72,8 @@ enum CourtCalibrateCommand {
               + (c.map { String(format: " f=%.1f", $0.f) } ?? "")
               + (C.map { String(format: " C=(%.2f,%.2f,%.2f)", $0.x, $0.y, $0.z) } ?? "")
               + (result.fitRMS.map { String(format: " rms=%.2f", $0) } ?? "") + (result.principalOffset.map { String(format: " cx_offset=%.1f", $0) } ?? "")
-              + String(format: " seconds=%.3f", result.timings.total))
+              + (keypoints == nil ? "" : " keypoint_starts=\(result.counts.fromKeypoints) from_keypoints=\(result.startedFromKeypoints)")
+            + String(format: " seconds=%.3f", result.timings.total))
     }
 
     struct Report: Encodable {
@@ -69,6 +84,8 @@ enum CourtCalibrateCommand {
         let evidenceThreshold: Float?, referencePixels: [String: [Double]]?
         let timings: IndependentCourtCalibration.Timings, counts: IndependentCourtCalibration.Counts
         let imageLoadSeconds: Double, frames: Int, medianSeconds: Double
+        let keypointStarts: Int, startedFromKeypoints: Bool
+        var keypoints: [[Double]?]?, keypointSeconds: Double?
         let calibrationOnly = "Camera calibration from court lines; says nothing about speed or landing accuracy."
         init(_ r: IndependentCourtCalibration, imageLoadSeconds: Double, frames: Int, medianSeconds: Double) {
             found = r.found; quality = r.quality?.rawValue; refusals = r.refusals.map(\.rawValue); refusalMessages = r.refusals.map(\.message)
@@ -77,6 +94,7 @@ enum CourtCalibrateCommand {
             fitRMS = r.fitRMS; linesUsed = r.linesUsed.map(\.rawValue); perLineRMS = r.perLineRMS; checkLineRMS = r.checkLineRMS
             focalLengthSD = r.focalLengthSD; searchScore = r.searchScore; refinedScore = r.refinedScore; rankScore = r.rankScore; margin = r.margin
             evidenceThreshold = r.evidenceThreshold
+            keypointStarts = r.counts.fromKeypoints; startedFromKeypoints = r.startedFromKeypoints
             referencePixels = r.referencePixels()?.mapValues { [$0.x, $0.y] }
             timings = r.timings; counts = r.counts
             self.imageLoadSeconds = imageLoadSeconds; self.frames = frames; self.medianSeconds = medianSeconds
