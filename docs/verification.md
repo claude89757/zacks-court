@@ -3012,5 +3012,5 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 - 公测组「Zacks Court 公测」：`asc builds add-groups --submit --confirm` 提交成功，Beta 审核为 `APPROVED`，`externalBuildState` 为 `IN_BETA_TESTING`，公开链接的测试者拿到的就是构建 10。
 
 没有验证：
-- TestFlight 的构建 10 没装到真机上；装在用户 iPhone 上的是同一份代码（`df8dc52`）用开发签名打的 Release 包。
+- TestFlight 的构建 10 没装到真机上；装在用户 iPhone 上的是 PR #30 合入前、分支上带这次修复的代码用开发签名打的 Release 包（02:10 打包，早于最后两次合入 main），不是构建 10 本身。
 - 构建 10 没有重跑 `swift test`：代码与 PR #30 合入的 main 相同，合入前在本分支与 main 的合并结果上跑过相关测试。
