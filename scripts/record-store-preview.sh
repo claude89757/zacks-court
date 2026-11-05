@@ -6,7 +6,9 @@
 #
 # Use a dedicated new iPhone 17 Pro Max simulator (booted ones are shared with other sessions).
 # The record is made up by `court-probe demo-session` and titled 演示数据; the video says so in its
-# corner. Writes <OUT_DIR>/preview-raw.mov, marks.txt and preview-1920x886.mp4.
+# corner. Writes <OUT_DIR>/preview-raw.mov, marks.txt, preview-1920x886.mp4 and frames/ (stills from each
+# replay to compare with the app). It fails when the recording's timeline drifts from the clock or the
+# picture freezes: the simulator recorder has silently done both on a busy Mac.
 # Needs ffmpeg (with overlay; Homebrew's build has no drawtext) and Pillow for the caption.
 set -euo pipefail
 UDID=${1:?simulator UDID}
@@ -45,6 +47,7 @@ START=$(python3 -c 'import time; print(time.time())')
 TEST_RUNNER_COURT_UI_STORE_PREVIEW="$OUT" xcodebuild test-without-building -project apps/iphone/ZacksCourt.xcodeproj -scheme ZacksCourt \
   -configuration Release -destination "id=$UDID" -derivedDataPath "$DD" \
   -only-testing:ZacksCourtUITests/WorkspaceUITests/testStorePreviewFlow -quiet || { kill -INT $REC; wait $REC || true; exit 1; }
+STOP=$(python3 -c 'import time; print(time.time())')
 kill -INT $REC; wait $REC || true
 [[ -s "$OUT/marks.txt" ]] || { echo "The UI test wrote no marks.txt" >&2; exit 1; }
 
@@ -81,3 +84,32 @@ ffmpeg -y -loglevel error -i "$RAW" -i "$CAP" -f lavfi -i anullsrc=channel_layou
   -map "[v]" -map 2:a -ss "$FROM" -t "$LENGTH" -c:v libx264 -profile:v high -pix_fmt yuv420p -b:v 10M -c:a aac -b:a 128k -shortest \
   -movflags +faststart "$OUT/preview-1920x886.mp4"
 ffprobe -v error -show_entries stream=codec_type,width,height,r_frame_rate:format=duration -of compact "$OUT/preview-1920x886.mp4"
+
+# The recording must keep time with the clock: on a loaded Mac it once held 4 s for 31 s of app time.
+RAWLEN=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$RAW")
+python3 - "$RAWLEN" "$START" "$STOP" <<'PY' || exit 1
+import sys
+raw, start, stop = map(float, sys.argv[1:])
+wall = stop - start
+print(f"recording {raw:.1f} s for {wall:.1f} s of clock time")
+if abs(raw - wall) > 0.1 * wall:
+    sys.exit("The recording drifted from the clock; record again on a quieter Mac")
+PY
+# No frozen stretch after the speed board: a replay stuck on its title once went unnoticed (a stuck
+# replay stays still for its whole 7 s). The board (first 3 s) and each verdict hold (2–4 s, longer for
+# the first replay while the test waits for it) are still on purpose.
+FREEZES=$(ffmpeg -hide_banner -nostats -i "$OUT/preview-1920x886.mp4" -vf "trim=start=3.3,freezedetect=n=0.002:d=5" -an -f null - 2>&1 | grep -c freeze_start || true)
+[[ "$FREEZES" == 0 ]] || { echo "The picture froze $FREEZES time(s) after the speed board; record again" >&2; exit 1; }
+# Stills through each replay (title, flight, bounce, overhead, verdict) to check against the app.
+mkdir -p "$OUT/frames"; rm -f "$OUT/frames"/*.png
+python3 - "$OUT/marks.txt" <<'PY' | while read -r NAME AT; do
+import sys
+marks = dict(line.split() for line in open(sys.argv[1]) if line.strip())
+start = float(marks["start"])
+for key in sorted(k for k in marks if k.startswith("replay")):
+    for offset in (0.4, 2.0, 3.4, 4.8, 6.2, 7.2):
+        print(f"{key}-{offset:.1f} {float(marks[key]) - start + offset:.2f}")
+PY
+  ffmpeg -nostdin -y -loglevel error -i "$OUT/preview-1920x886.mp4" -vf "trim=start=$AT,setpts=PTS-STARTPTS" -frames:v 1 "$OUT/frames/$NAME.png"
+done
+ls "$OUT/frames" | wc -l | xargs echo "stills:"

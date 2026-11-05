@@ -117,14 +117,14 @@ asc status --app 6827224757                     # 发布状态总览
   - zh-Hans `d2c00019-6ef2-8eb5-8022-a0e8be458eaf`（creative-1.1-zh-Hans）
   - zh-Hant `50400019-6ef2-8eb5-8025-5480b09ff30c`（creative-1.1-zh-Hant）
   - en-US 和 en-GB 共用 `82c00019-6ef2-8eb5-8000-fcbcfa78ef4d`（creative-1.1-en）
-- **还没提交、没挂到版本上**：1.1 的审核提交（现在是 `361112b4`）还开着，同一平台同时只能有一个审核提交；也不能改正在审核的版本。接下来：
+- **还没提交、没挂到版本上**：当时 1.1 的审核提交 `361112b4` 还开着，同一平台同时只能有一个审核提交。2026-11-05 查到这个提交已经 `COMPLETE`、1.1 已上架，第 1、3 步的前提都满足了，第 2、4 步还没做。接下来：
   1. 前提：1.1 的审核提交已关闭（过审或被拒，`asc review submissions list --app 6827224757`）。
   2. 单独提交素材审核：`asc review submissions-create --app 6827224757 --platform IOS`，把三张图逐个加进去（`asc review items add --submission <ID> --item-type appAssetLibraryImages --item-id <图片 ID>`），再 `asc review submissions-submit --id <ID> --confirm`。
   3. 前提：三张图都是 `APPROVED`（`asc asset-library images list --library-id 6827224757`），且 1.1 已上线。
   4. 挂到线上 1.1 的四个语言上，每个语言两种位置都用同一张图（creative assets 用 `DEFAULT_PROFILE`）：`asc localizations placements create --localization-id <本地化 ID> --image-id <图片 ID> --placement-type PRODUCT_PAGE_HEADER_ASSET`，再用 `APP_STORE_SEARCH_RESULTS_ASSET` 跑一遍。1.1 的本地化 ID：zh-Hans `ee27abea-f73b-4bf1-8b55-2f7dfd624285`、en-US `d24d0791-bd14-4112-b948-094e8d482661`、zh-Hant `b413f760-e9f5-4299-82e2-4bd8d4908b7f`、en-GB `b3ea238e-65ca-45c3-91f6-1aece2cac2ef`。苹果文档说线上版本换上已审过的素材不用提交新版本；如果命令行挂不上，就在网页上 1.1 版本页「标题和搜索结果」里「浏览素材」选图后点「发布」。
 - 上线后再考虑（这次不做，免得多一道审核）：店内活动、自定义产品页、产品页优化（A/B 测试）、App 预览视频。新 App 刚上线流量小，A/B 测试和自定义产品页看不出差别。
 
-### 预览视频（计划随 1.2 上传，2026-11-04）
+### 预览视频（2026-11-05 已传到 1.2）
 
 商店页面可以放视频，App Store Connect 的规格（`asc asset-library specs`，2026-11-04 读取）：
 
@@ -137,8 +137,13 @@ asc status --app 6827224757                     # 发布状态总览
 | 其他 | 必须有音轨（静音也行） | 不需要音轨 |
 
 - 预览视频只能用 App 自己的画面（可以加字幕）。规则和截图一样：数据来自 `court-probe demo-session` 的示例记录，画面角上写「画面为演示数据 · Demo data」；不出现配对二维码、用户录像，不写「鹰眼」。
-- 录法：`./scripts/record-store-preview.sh <新建的 iPhone 17 Pro Max 模拟器 UDID> <目录>`。脚本用 Release、不带模型打包，装进模拟器，写入示例记录，一边录屏一边跑 `testStorePreviewFlow`。流程是看板全屏测速牌 3 秒，然后点「回放」连看三拍界内外回放。脚本按测试写下的时间点剪成 15–30 秒，转成 1920×886、30 帧，加角标和静音音轨，输出 `preview-1920x886.mp4`。角标先用 Pillow 画成透明 PNG，再让 ffmpeg `overlay` 叠上（Homebrew 的 ffmpeg 没有 `drawtext`）；裁剪写在 `-i` 之后（输出侧），因为这段录屏是变帧率的，输入侧 `-ss` 会从关键帧算起、把结尾切掉。App 界面只有中文，四种语言先共用这一段。
-- 上传：预览视频跟着版本一起审核，正在审核的版本加不进去，所以放到 1.2。命令：`asc video-previews upload --version-localization <1.2 的本地化 ID> --path <目录> --device-type IPHONE_69`，四种语言各传一次，再用 `asc video-previews set-poster-frame` 选封面帧（选回放判定那一帧）。
+- 录法：`./scripts/record-store-preview.sh <新建的 iPhone 17 Pro Max 模拟器 UDID> <目录>`，要在最新的 main 上跑（脚本用它所在的那份代码打包）。脚本用 Release、不带模型打包，装进模拟器，写入示例记录，一边录屏一边跑 `testStorePreviewFlow`。流程是看板全屏测速牌 3 秒，然后点「回放」连看三拍界内外回放，每拍 7.4 秒（回放 5.8 秒，结论和量尺再停 1.6 秒）。脚本按测试写下的时间点剪成 15–30 秒，转成 1920×886、30 帧，加角标和静音音轨，输出 `preview-1920x886.mp4`。角标先用 Pillow 画成透明 PNG，再让 ffmpeg `overlay` 叠上（Homebrew 的 ffmpeg 没有 `drawtext`）；裁剪写在 `-i` 之后（输出侧），因为这段录屏是变帧率的，输入侧 `-ss` 会从关键帧算起、把结尾切掉。App 界面只有中文，四种语言先共用这一段。
+- 自动检查：模拟器录屏在 Mac 忙的时候会悄悄出错，一次时间轴变慢（时钟过了 31 秒，录屏只有 4 秒），一次第 51 拍一直停在标题上。所以脚本录完会检查两件事，不通过就失败退出：录屏时长和时钟相差不超过 10%；测速牌之后没有超过 5 秒不动的画面（结论停留 2–4 秒是正常的，卡住的回放会停 7 秒以上）。它还把每拍 6 个时间点的画面存到 `frames/`，上传前对着 App 看一遍。
+- 上传：预览视频跟着版本一起审核，正在审核或已上架的版本都改不了，所以放到 1.2。命令：`asc video-previews upload --version-localization <1.2 的本地化 ID> --path <文件> --device-type IPHONE_69`（会放进 `IPHONE_67` 预览组，和截图组 `APP_IPHONE_67` 对应），四种语言各传一次，再用 `asc video-previews set-poster-frame --id <预览 ID> --time-code 00:00:10:15` 选封面帧。时间码只能写成「时:分:秒:帧」，写毫秒苹果会拒。
+- **现状（2026-11-05）**：
+  - 预览视频：11-04 那段录的是旧的环绕镜头回放，没有用。2026-11-05 在 main `6927bec` 上重录，27.9 秒，测速牌之后依次是第 53 拍出界 55 厘米、第 52 拍界内 256 厘米、第 51 拍界内 58 厘米，都放到俯视量尺和顶部结论卡。1.2 的四种语言各传一份，处理完成；封面是第一拍的出界结论（10 秒 15 帧）。预览 ID：zh-Hans `c5400019-6ef2-8eb5-8121-4a68eaf0f7e0`、zh-Hant `e5800019-6ef2-8eb5-8101-52ec1f41a6ce`、en-US `7b400019-6ef2-8eb5-8107-5885341b1813`、en-GB `9a400019-6ef2-8eb5-8123-1b126a82db3a`。
+  - 截图：第 2 张「电子司线」里嵌的是旧回放（结论卡盖住球印），同日用 `render-store-screens.sh` 重渲染，换成俯视量尺加顶部结论卡；第 1、3 张跟着换成浏览器看板现在的「回放」按钮文字。1.2 四种语言的 5 张截图都已换成新图，线上 1.1 的截图没动。
+  - 1.2 的本地化 ID：zh-Hans `33a332ac-dedb-43aa-9ea9-0c2256c8929b`、zh-Hant `635cf17f-d48d-4e06-8fd0-552aa85728c9`、en-US `d775cc82-8419-4430-8415-564118674b78`、en-GB `f07d60ce-b76c-4f4e-94eb-80b3a6c456ac`。
 - 标题视频要 3840×1646，模拟器录屏的分辨率不够，暂不做。
 
 ### 1.1 发版记录（2026-11-04 提交审核，2026-11-05 已上架）
@@ -162,5 +167,5 @@ asc status --app 6827224757                     # 发布状态总览
 
 1. `MARKETING_VERSION` 改成 `1.2`，构建号从 `1` 重新开始（`asc builds next-build-number --version 1.2` 返回 1）。1.2 (1) 从 `091726b`（PR #33 合入后）打包，构建 `f7fa8048`，内测组可装；新版本号的第一个外部构建要重新过 Beta 审核，提交后是 `WAITING_FOR_REVIEW`。PR #34（司线语音）和 PR #35（分析落后触发降载）在打包之后才合入，由另一个会话打 1.2 (2)。
 2. 「新功能」写在 `metadata/version/1.2/`（四种语言，其余文字与 1.1 相同）：3D 回放与量尺、司线语音（PR #34）、手持不再凭空多拍并提示画面在动、诊断包、降载（含 PR #35 分析落后触发）、保存失败和误报模型未就绪的修复。
-3. 1.2 版本不用手动建：1.2 (1) 提交 Beta 审核时 App Store Connect 自动建了 1.2（`34e5a8f7`，`PREPARE_FOR_SUBMISSION`，`AFTER_APPROVAL`），再 `asc versions create` 会报版本号已用过。2026-11-05 用 `asc metadata plan/approve/apply --version 1.2` 推送了四种语言的「新功能」（计划里只有这四项，其余文字和 1.1 相同）。截图（每种语言 5 张）和审核信息从 1.1 带过来了，还没关联构建。
+3. 1.2 版本（`34e5a8f7`，`PREPARE_FOR_SUBMISSION`，`AFTER_APPROVAL`）是 2026-11-05 09:19 为了放预览视频，用 `asc versions create --app 6827224757 --version 1.2 --platform IOS --release-type AFTER_APPROVAL --copy-metadata-from 1.1 --exclude-fields whatsNew` 建的，描述、关键词、推广文本和网址从 1.1 复制；之后再 `asc versions create` 会报版本号已用过。同日用 `asc metadata plan/approve/apply --version 1.2` 推送了四种语言的「新功能」（计划里只有这四项，其余文字和 1.1 相同）。审核信息从 1.1 带过来了。截图换成了重渲染的 5 张，并加了预览视频，见第 6 节「预览视频」。还没关联构建。
 4. 提交审核前由用户决定：关联当时最新的 1.2 构建（要带 PR #34），`asc review submit`。三张 iOS 27 创意素材也可以加进同一个审核提交（`asc review items add … --item-type appAssetLibraryImages`），省一轮审核。
