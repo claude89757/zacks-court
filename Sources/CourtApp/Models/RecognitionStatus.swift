@@ -32,6 +32,8 @@ struct RecognitionStatus: Equatable {
         var streamID: UUID?
         /// Session ledger in order (or recent rows outside a session).
         var events: [TennisShotEvent] = []
+        /// The camera's picture moved in the last few seconds and shots are not being counted (in-house lane).
+        var pictureMoving = false
     }
 
     /// Speed and landing rows count this many recent shots that are no longer waiting on a result.
@@ -83,8 +85,15 @@ struct RecognitionStatus: Equatable {
                    tone: people.count > 0 ? .good : .idle)
     }
 
+    /// Shots found while the picture moved would be false flights, so none are counted then.
+    static let movingDetail = "画面在动，暂不记击球；机位架稳后自动继续。"
+
     static func shots(_ input: Input) -> Row {
         let id = "court.recognition.shots", title = "击球"
+        if input.isLive, input.pictureMoving {
+            return Row(id: id, title: title, value: input.events.isEmpty ? "尚无击球" : "\(input.events.count) 拍",
+                       detail: movingDetail, tone: .warning)
+        }
         guard let last = input.events.last else {
             return Row(id: id, title: title, value: "尚无击球", detail: input.isLive ? "等待第一拍。" : nil, tone: .idle)
         }

@@ -349,6 +349,15 @@ public final class IndependentLiveEngine {
     static let backgroundMovedPixels = 6.0
     /// How often the background was rebuilt because the picture moved.
     public private(set) var backgroundRebuilds = 0
+    /// Last frame time at which ball positions were dropped because the picture moved: discarded while
+    /// moving with no court, or a background rebuilt.
+    private var pictureMovedAt = -Double.infinity
+    /// Seconds `pictureMoving` stays on after the last drop. A hand-held phone reads still and moving
+    /// in alternate seconds (2026-11-05 log), and a rebuilt background needs about a second of warm-up
+    /// before shots count again, so a shorter hold would flash on and off.
+    static let movingHoldSeconds = 3.0
+    /// The picture moved within the last `movingHoldSeconds`: shots are not being counted now.
+    public var pictureMoving: Bool { lastPTS - pictureMovedAt <= Self.movingHoldSeconds }
     /// Seconds of candidates kept while the court is unknown, analysed once it is found.
     static let pendingSeconds = 30.0
     /// Diagnostics: every batch of ball candidates (analysis queue).
@@ -405,6 +414,7 @@ public final class IndependentLiveEngine {
         processed += 1; lastPTS = pts
         if self.streamID != streamID {
             self.streamID = streamID; ids.removeAll(); shots = IndependentLiveShots(); movedUntil = -.infinity
+            pictureMovedAt = -.infinity
             traceObserver?(.newStream)
             court?.streamChanged(pts: pts)
             if configuration.camera != nil { catchUpPending = false }
@@ -419,7 +429,7 @@ public final class IndependentLiveEngine {
         if full != nil, let court, court.moving, configuration.camera == nil {
             // ball positions seen while the phone moves and no court is known belong to no single pose:
             // never caught up later (a court being tracked keeps them)
-            movedUntil = pts; shots.trim(keeping: 0, now: pts); traceObserver?(.discard(before: pts))
+            movedUntil = pts; pictureMovedAt = pts; shots.trim(keeping: 0, now: pts); traceObserver?(.discard(before: pts))
         }
         if let full {
             let found = personsStage.detect(full, pts: pts, camera: configuration.camera)
@@ -448,7 +458,7 @@ public final class IndependentLiveEngine {
         guard ball.backgroundReady else { backgroundView = nil; return }
         guard let reference = backgroundView else { backgroundView = view; return }
         guard IndependentLiveCourt.motion(reference, view) > Self.backgroundMovedPixels else { return }
-        ball.reset(); shots.reset(); backgroundView = nil; backgroundRebuilds += 1
+        ball.reset(); shots.reset(); backgroundView = nil; backgroundRebuilds += 1; pictureMovedAt = lastPTS
         traceObserver?(.reset)
     }
 
@@ -514,13 +524,15 @@ public final class IndependentLiveEngine {
         public var courtSolves = 0, courtSolveSeconds = 0.0, courtSamples = 0, courtFound = 0, courtMoved = 0, courtLost = 0
         /// Ball backgrounds rebuilt because the picture moved away from them (counted in `ballResets` too).
         public var backgroundRebuilds = 0
+        /// The picture moved within the last few seconds, so shots are not being counted (`pictureMoving`).
+        public var pictureMoving = false
         /// The court right now, for the camera's field log (nil with neither automatic nor given court).
         public var court: CameraCourtDiagnostics?
     }
     public var stats: Stats {
         var s = Stats(batches: ball.batches, inferenceSeconds: ball.inferenceSeconds, personSamples: personsStage.samples, personSeconds: personsStage.seconds,
                       ballResets: ball.resets, published: shots.published.count, candidates: candidates)
-        s.backgroundRebuilds = backgroundRebuilds
+        s.backgroundRebuilds = backgroundRebuilds; s.pictureMoving = pictureMoving
         if let c = court?.stats {
             s.courtSolves = c.solves; s.courtSolveSeconds = c.solveSeconds; s.courtSamples = c.samples
             s.courtFound = c.found; s.courtMoved = c.moved; s.courtLost = c.lost

@@ -61,6 +61,9 @@ public struct CameraAnalysisStatus: Codable, Equatable, Sendable {
     public var limitations: [String] = []
     /// Automatic court diagnostics (in-house lane); nil from older v2 cameras.
     public var court: CameraCourtDiagnostics?
+    /// True while the picture moves and shots are not counted (in-house lane); nil otherwise and from
+    /// older v2 cameras.
+    public var pictureMoving: Bool?
     public init() {}
 }
 

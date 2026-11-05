@@ -404,6 +404,9 @@ final class CameraModel {
         let metrics = controller.metrics
         if let failure = metrics.loadError { warnings.append("分析模型未能加载（\(failure)），本次只录像。") }
         else if streaming, metrics.ready, !metrics.tennisAvailable { warnings.append("分析模型不可用，本次只录像。") }
+        if streaming, metrics.pictureMoving {
+            warnings.append("画面在动：暂不记击球，录像照常。把机位架稳或靠住，画面停稳后自动继续。")
+        }
         if streaming, let lag = controller.analysisLag, lag > CameraLoadPolicy.lagHighSeconds {
             warnings.append(Self.lagWarning(lag, shed: controller.shed.level, cause: controller.shedCause,
                                             thermal: ProcessInfo.processInfo.thermalState))

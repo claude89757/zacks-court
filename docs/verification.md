@@ -3015,6 +3015,23 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 - TestFlight 的构建 10 没装到真机上；装在用户 iPhone 上的是 PR #30 合入前、分支上带这次修复的代码用开发签名打的 Release 包（02:10 打包，早于最后两次合入 main），不是构建 10 本身。
 - 构建 10 没有重跑 `swift test`：代码与 PR #30 合入的 main 相同，合入前在本分支与 main 的合并结果上跑过相关测试。
 
+## 2026-11-05 机位页说明「画面在动，暂不记击球」
+
+用户手持拍屏幕时拍数凭空增长；PR #30 改成画面离开球背景就重建背景、一直在动就不记击球，但机位页没有说明，看起来像分析坏了。这一轮把这件事显示出来。
+
+- 信号：`IndependentLiveEngine.pictureMoving`。没球场时画面在动而丢掉球点、或因画面移动重建球背景时记下当时的帧时间，之后 3 秒内为真。没有直接用球场模块每秒的晃动读数：用户那次手持录像的采集日志里，读数在「静止」和「漂移」之间几乎每秒来回跳（83 秒里切换了 30 次），直接用会让提示一闪一闪。
+- 传递：引擎统计 → `CameraSideAnalyzer.Metrics.pictureMoving` → 机位的 `status.analysis.pictureMoving`（新的可选字段，只在为真时发送，旧 v2 版本照常解码）。
+- 显示：机位页顶部提示「画面在动：暂不记击球，录像照常。把机位架稳或靠住，画面停稳后自动继续。」，这条提示也随机位状态发给 App 看板和浏览器看板；「识别状态 › 击球」保留拍数，说明改成「画面在动，暂不记击球；机位架稳后自动继续。」，橙色。S家链没有这个信号，一直为假。
+- 用用户那段 83 秒的手持录像在 Mac 上的回放 trace（PR #30 修复后）估算：提示约 79% 的时间亮着。
+- 测试：`IndependentLiveEngineTests.testBackgroundIsRebuiltWhenThePictureMovesAwayFromIt` 加了断言：画面不动时为假，移动后为真，停住超过 3 秒后变回假（用暂存的 FP16 模型，实际运行，没有跳过）。新增 `RecognitionStatusTests.testShotsRowSaysShotsAreNotCountedWhileThePictureMoves`。
+- `swift build`、`swift run court-check` 通过；`RecognitionStatusTests`、`IndependentLiveEngineTests`、`SessionSyncTests`、`WebDisplayTests`、`CameraDiagnosticsTests` 共 32 项，1 项跳过（要显式开启的环境），0 失败。
+- iOS：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 的 Debug 编译通过，之后还原了 `Info.plist`。
+
+没有验证：
+- 没在 iPhone 上看过提示的实际样子，也没在模拟器里截图（模拟器没有相机，出不来这个状态）。
+- 浏览器看板只是收到同一条提示文字，页面没改，也没打开看过。
+- 没跑全量 `swift test`；规则和逐拍结果不变（这个标志不进规则，trace 重放不受影响）。
+
 ## 2026-11-05 分析持续落后也会触发降载
 
 起因：用户手持 iPhone18,2 拍电脑屏幕上的比赛，机位页显示分析落后约 1.3 秒，降载等级却一直是 L0，因为 `CameraLoadPolicy` 只看温度和相机压力；机位页的落后提示还建议「遮阳降温」，而那次并不热。PR #30 去掉了多出来的主要工作量，但分析慢于实时时落后仍会累积。
@@ -3024,7 +3041,7 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 - 降载原因写「实时分析跟不上画面」，不提温度；`CameraStatus` 和采集日志多一个可选字段 `shedCause`（`heat` / `pressure` / `lowPower` / `lag`），诊断包摘要写「最高降载等级：L1，降载 N 秒（原因：分析落后）」。落后和发热撑着同一级、其中一个撤掉时，原因改成仍在的那个。
 - 机位页的「实时分析落后 X 秒」提示改用同一个落后读数，只在手机偏暖（`fair` 及以上）时建议遮阳降温；因落后降载时说明机位在减负追赶。
 
-环境：macOS 26.6.2 / Xcode 27.0 / Swift 6.4，分支基于 `2059a24`。
+环境：macOS 26.6.2 / Xcode 27.0 / Swift 6.4，分支基于 `2059a24`，合入前与 main `6927bec`（PR #33、#34）合并后重跑了下面的检查。
 
 - `swift build`、`swift run court-check`（3 组 PASS）通过。
 - 新增 4 项测试（`CameraPhase2Tests`）：持续落后逐级降到 L2、不进 L3、0.5–1 秒保持、恢复后每 60 秒回升一级且仍写落后原因；短暂尖峰和正在追上的积压不降载、没有读数按恢复处理；落后叠加偏暖时升到 L2 并在落后撤掉后改写成发热原因；机位页提示与采集日志的原因字段。`CameraDiagnosticsTests` 的摘要用例加了降载原因一行。
