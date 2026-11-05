@@ -71,11 +71,27 @@ struct HawkEyeSettingsSheet: View {
                                  title: \.text, identifier: { "court.hawkeye.format.\($0.rawValue)" })
                     Toggle("也判远端半场", isOn: Binding(get: { settings.farHalf }, set: { v in update { $0.farHalf = v } }))
                         .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.far")
-                    Toggle("出界时语音播报 Out!", isOn: Binding(get: { model.hawkEyeSound }, set: { model.hawkEyeSound = $0 }))
-                        .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.sound")
                 } footer: {
                     Text(settings.farHalf ? "远端落点看得斜，误差是近端的几倍，远端的判定更常显示「压线附近」。"
                                           : "只判近端半场：远端的落点误差大，默认不判。")
+                }
+                Section {
+                    Toggle("出界时语音播报 Out!", isOn: Binding(get: { model.hawkEyeSound }, set: { model.hawkEyeSound = $0 }))
+                        .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.sound")
+                    Picker("语音", selection: Binding(get: { model.hawkEyeVoice }, set: { model.hawkEyeVoice = $0 })) {
+                        ForEach(LineCallVoice.Gender.allCases, id: \.self) { gender in
+                            Section(gender.text) {
+                                ForEach(LineCallVoice.all.filter { $0.gender == gender }) { voice in
+                                    Text("\(gender.text) · \(voice.name)").tag(voice)
+                                }
+                            }
+                        }
+                    }
+                    .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.voice")
+                    Button { model.previewHawkEyeVoice() } label: { Label("试听", systemImage: "speaker.wave.2") }
+                        .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.preview")
+                } footer: {
+                    Text("只在明确出界、挑战回放给出结论时播报。语音由 AI 合成（OpenAI），不是真人录音。")
                 }
                 if model.hawkEyePending != nil {
                     Section { Label("等待机位确认…", systemImage: "hourglass").foregroundStyle(CourtStyle.muted) }

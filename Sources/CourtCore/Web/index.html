@@ -247,6 +247,11 @@
     <label class="check"><input type="checkbox" id="hawkeye-far" data-testid="court.hawkeye.far"> 也判远端半场</label>
     <p id="hawkeye-far-note" class="muted small"></p>
     <label class="check"><input type="checkbox" id="hawkeye-voice" data-testid="court.hawkeye.sound"> 出界时语音播报 Out!</label>
+    <div class="row voice-pick">
+      <select id="hawkeye-voice-name" aria-label="语音" data-testid="court.hawkeye.voice"></select>
+      <button id="hawkeye-voice-preview" data-testid="court.hawkeye.preview">▶ 试听</button>
+    </div>
+    <p class="muted small">只在明确出界、挑战回放给出结论时播报。语音由 AI 合成（OpenAI），不是真人录音。</p>
     <p id="hawkeye-pending" class="muted small" hidden>等待机位确认…</p>
     <p class="notice">界内外是单机位模型估计，不是判罚。落点离线不到误差范围时显示「压线附近」，不报出界；只有明确出界才播报 Out!。</p>
     <div class="row"><button id="hawkeye-off" class="danger" data-testid="court.hawkeye.off">关闭界内外</button></div>
