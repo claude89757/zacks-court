@@ -127,6 +127,35 @@ final class CameraDiagnosticsTests: XCTestCase {
         XCTAssertEqual(again.first?.lines.map(\.kind), [.start, .status, .stop], "restarted with its start line")
     }
 
+    /// A capture log last written long before the record is not read at all (14 days of logs are not
+    /// decoded for one package), and court numbers that are not finite become unknown instead of
+    /// breaking the JSON of the status and the log.
+    func testOldLogFilesAreSkippedAndCourtNumbersStayFinite() throws {
+        let root = makeRoot("court-log-dates")
+        let store = try SessionStore(directory: root)
+        let session = CourtSession(title: "日期测试", startedAt: Date().addingTimeInterval(-60))
+        try store.save(session)
+        let folder = DiagnosticBundle.folder(in: root)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let t = session.startedAt.timeIntervalSince1970
+        let lines = [CameraLogLine(kind: .start, t: t), CameraLogLine(kind: .status, t: t + 1)]
+        let fresh = folder.appendingPathComponent("capture-fresh.jsonl"), stale = folder.appendingPathComponent("capture-stale.jsonl")
+        try write(lines, to: fresh)
+        try write(lines, to: stale)
+        let old = Date().addingTimeInterval(-3 * 86_400)
+        try FileManager.default.setAttributes([.modificationDate: old, .creationDate: old], ofItemAtPath: stale.path)
+        XCTAssertEqual(DiagnosticBundle.captureLogs(for: session, storageDirectory: root).map(\.url.lastPathComponent), ["capture-fresh.jsonl"],
+                       "the file dates rule out the stale one before it is read")
+
+        var court = CameraCourtDiagnostics(state: .found)
+        court.rmsPixels = .nan; court.motionPixels = .infinity; court.solveSeconds = .nan; court.heightMeters = 3.1
+        XCTAssertThrowsError(try JSONEncoder().encode(court), "JSON refuses NaN")
+        let clean = court.finiteOnly
+        XCTAssertNoThrow(try JSONEncoder().encode(clean))
+        XCTAssertNil(clean.rmsPixels); XCTAssertNil(clean.motionPixels)
+        XCTAssertEqual(clean.solveSeconds, 0); XCTAssertEqual(clean.heightMeters, 3.1)
+    }
+
     private func write(_ lines: [CameraLogLine], to url: URL) throws {
         try lines.compactMap(CameraCaptureLog.encode).reduce(Data(), +).write(to: url)
     }

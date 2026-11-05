@@ -65,6 +65,9 @@ struct HawkEyeChallengeView: View {
     var close: () -> Void
     @State private var index: Int
     @State private var started = Date()
+    /// `started` of the replay that has played to its end: the timeline then stops redrawing a picture
+    /// that no longer changes (it may stay up on the camera phone while it records).
+    @State private var stillAt: Date?
     @State private var playback: PlaybackItem?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -134,14 +137,20 @@ struct HawkEyeChallengeView: View {
 
     private func replay(_ scene: HawkEyeReplayScene, number: Int, challenged: Bool) -> some View {
         let timing = HawkEyeReplayTiming(hasFlight: scene.flight != nil)
-        return TimelineView(.animation(paused: reduceMotion)) { context in
-            let t = reduceMotion ? timing.total : context.date.timeIntervalSince(started)
+        let done = reduceMotion || stillAt == started
+        return TimelineView(.animation(paused: done)) { context in
+            let t = done ? timing.total : context.date.timeIntervalSince(started)
             let frame = timing.frame(t, scene: scene)
             ZStack {
                 Canvas { gc, size in HawkEyeReplayPainter(scene: scene, frame: frame).paint(&gc, size: size) }
                 if frame.titleOpacity > 0 { titleCard(number: number, challenged: challenged).opacity(frame.titleOpacity) }
                 if frame.verdict { verdict(scene.judgement, challenged: challenged).transition(.opacity) }
             }
+        }
+        .task(id: started) {
+            let start = started
+            try? await Task.sleep(for: .seconds(max(0, timing.total - Date().timeIntervalSince(start)) + 0.05))
+            if !Task.isCancelled { stillAt = start }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("第 \(number) 拍\(challenged ? "挑战" : "界内外回放")：\(scene.judgement.call.text)，\(scene.judgement.detailText)")
@@ -501,7 +510,7 @@ struct HawkEyeReplayPainter {
             var bar = Path(); bar.move(to: a); bar.addLine(to: b)
             for q in [a, b] { bar.move(to: CGPoint(x: q.x - nx, y: q.y - ny)); bar.addLine(to: CGPoint(x: q.x + nx, y: q.y + ny)) }
             gc.stroke(bar, with: .color(.white), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            label("\(Int((gap.metres * 100).rounded())) 厘米", right: Double(min(a.x, bFull.x)) - 12, y: Double(a.y + bFull.y) / 2, size: 20)
+            label("约 \(Int((gap.metres * 100).rounded())) 厘米", right: Double(min(a.x, bFull.x)) - 12, y: Double(a.y + bFull.y) / 2, size: 20)
         } else if let p = project(scene.bounce + side) {
             let text = j.call == .close ? "误差 ±\(Int((j.marginM * 100).rounded())) 厘米" : "球印压线"
             label(text, right: Double(p.x) - 6, y: Double(p.y) - 30, size: 17)   // above the line it sits on

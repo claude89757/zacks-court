@@ -49,6 +49,18 @@ public struct CameraCourtDiagnostics: Codable, Equatable, Sendable {
         heightMeters = (c.z * 100).rounded() / 100
         behindBaselineMeters = (-c.y * 100).rounded() / 100
     }
+
+    /// The same with every non-finite number dropped (unknown) or zeroed (totals). JSONEncoder refuses
+    /// NaN, and this rides the 1 Hz status and the capture log, so one bad value would cost both.
+    public var finiteOnly: CameraCourtDiagnostics {
+        func known(_ v: Double?) -> Double? { v.flatMap { $0.isFinite ? $0 : nil } }
+        func total(_ v: Double) -> Double { v.isFinite ? v : 0 }
+        var d = self
+        d.motionPixels = known(motionPixels); d.rmsPixels = known(rmsPixels)
+        d.focalPixels = known(focalPixels); d.heightMeters = known(heightMeters); d.behindBaselineMeters = known(behindBaselineMeters)
+        d.solveSeconds = total(solveSeconds); d.maxSolveSeconds = total(maxSolveSeconds); d.lastSolveSeconds = known(lastSolveSeconds)
+        return d
+    }
 }
 
 /// One line of the camera's capture log (`Diagnostics/capture-*.jsonl`): a `start` line when capture
@@ -231,8 +243,17 @@ public enum DiagnosticBundle {
     public static func captureLogs(for session: CourtSession, storageDirectory: URL, now: Date = Date()) -> [CaptureLog] {
         let from = session.startedAt.timeIntervalSince1970 - leadSeconds
         let to = (session.endedAt ?? now).timeIntervalSince1970 + 60
-        let urls = (try? FileManager.default.contentsOfDirectory(at: folder(in: storageDirectory), includingPropertiesForKeys: nil)) ?? []
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .creationDateKey]
+        let urls = (try? FileManager.default.contentsOfDirectory(at: folder(in: storageDirectory), includingPropertiesForKeys: Array(keys))) ?? []
         return urls.filter { $0.lastPathComponent.hasPrefix("capture-") && $0.pathExtension == "jsonl" }
+            .filter { url in
+                // Logs are kept 14 days: a file last written before the window, or begun after it, is not
+                // read at all (two weeks of daily use is 100 MB and more). Slack for clocks and buffering.
+                let values = try? url.resourceValues(forKeys: keys)
+                if let modified = values?.contentModificationDate, modified.timeIntervalSince1970 < from - 120 { return false }
+                if let created = values?.creationDate, created.timeIntervalSince1970 > to + 120 { return false }
+                return true
+            }
             .compactMap(readLog)
             .filter { log in
                 guard let start = log.start, let end = log.end else { return false }

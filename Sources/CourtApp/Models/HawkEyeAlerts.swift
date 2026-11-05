@@ -60,7 +60,8 @@ struct HawkEyeAlert: Equatable, Identifiable {
 /// `LineCallVoice`: plays that voice's recorded clips from CourtCore's `Web` folder (the browser display
 /// plays the same files) and falls back to speech synthesis when a clip is missing. Only the chosen
 /// voice's two clips are loaded. On iPhone it uses the playback audio category so the ring/silent
-/// switch does not mute it, and ducks other audio while calling.
+/// switch does not mute it, and ducks other audio only while calling: the session is let go once the
+/// call has played, so the user's music comes back up.
 @MainActor final class HawkEyeVoice {
     /// The chosen voice; changing it drops the loaded clips so the next call loads the new ones.
     var voice = LineCallVoice.voice(id: nil) {
@@ -70,6 +71,8 @@ struct HawkEyeAlert: Equatable, Identifiable {
     private lazy var synthesizer = AVSpeechSynthesizer()
     private var players: [HawkEyeCall: AVAudioPlayer] = [:]
     private var sessionReady = false
+    private var sessionActive = false
+    private var release: Task<Void, Never>?
     private var loaded = false
 
     func sayOut() { say(.out) }
@@ -84,6 +87,7 @@ struct HawkEyeAlert: Equatable, Identifiable {
         player.pause()
         player.currentTime = 0
         player.play()
+        releaseWhenQuiet()
     }
 
     /// Fallback when the recorded clip is not bundled.
@@ -96,17 +100,38 @@ struct HawkEyeAlert: Equatable, Identifiable {
         utterance.pitchMultiplier = 1.1
         utterance.volume = 1
         synthesizer.speak(utterance)
+        releaseWhenQuiet()
+    }
+
+    /// Deactivates the audio session once nothing is playing, so other apps' audio is no longer ducked.
+    private func releaseWhenQuiet() {
+        #if os(iOS)
+        release?.cancel()
+        release = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled, let self else { return }
+                if self.players.values.contains(where: \.isPlaying) || self.synthesizer.isSpeaking { continue }
+                try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                self.sessionActive = false
+                return
+            }
+        }
+        #endif
     }
 
     private func prepare() {
+        release?.cancel()
+        #if os(iOS)
+        let session = AVAudioSession.sharedInstance()
         if !sessionReady {
             sessionReady = true
-            #if os(iOS)
-            let session = AVAudioSession.sharedInstance()
             try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers, .mixWithOthers])
-            try? session.setActive(true)
-            #endif
         }
+        if !sessionActive { try? session.setActive(true); sessionActive = true }
+        #else
+        sessionReady = true
+        #endif
         // Loaded on the first call (and after a voice change), after the audio session is set, so opening
         // the app never touches the user's music; each clip is a few kilobytes, so this adds no audible delay.
         guard !loaded else { return }
