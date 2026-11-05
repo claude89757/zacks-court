@@ -77,6 +77,9 @@ public struct CameraStatus: Codable, Equatable, Sendable {
     /// Load-shedding level 0–4 (docs/camera-side-analysis.md §7).
     public var shed = 0
     public var shedReason: String?
+    /// What raised `shed`: `heat`, `pressure`, `lowPower` or `lag` (analysis behind capture). nil at L0
+    /// or from an older v2 camera.
+    public var shedCause: String?
     public var warnings: [String] = []
     public var near: TennisHandedness = .right
     public var far: TennisHandedness = .right
@@ -99,7 +102,7 @@ public struct CameraStatus: Codable, Equatable, Sendable {
         lhs.capturing == rhs.capturing && lhs.recording == rhs.recording && lhs.saving == rhs.saving &&
             lhs.fps == rhs.fps && lhs.captureDrops == rhs.captureDrops && lhs.recordingSeconds == rhs.recordingSeconds &&
             lhs.sessionID == rhs.sessionID && lhs.analysis == rhs.analysis && lhs.device == rhs.device &&
-            lhs.shed == rhs.shed && lhs.shedReason == rhs.shedReason && lhs.warnings == rhs.warnings &&
+            lhs.shed == rhs.shed && lhs.shedReason == rhs.shedReason && lhs.shedCause == rhs.shedCause && lhs.warnings == rhs.warnings &&
             lhs.near == rhs.near && lhs.far == rhs.far &&
             lhs.previewing == rhs.previewing && lhs.people?.pts == rhs.people?.pts &&
             lhs.sessionState == rhs.sessionState && lhs.busy == rhs.busy && lhs.zoom == rhs.zoom &&

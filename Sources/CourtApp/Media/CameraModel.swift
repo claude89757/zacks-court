@@ -404,8 +404,9 @@ final class CameraModel {
         let metrics = controller.metrics
         if let failure = metrics.loadError { warnings.append("分析模型未能加载（\(failure)），本次只录像。") }
         else if streaming, metrics.ready, !metrics.tennisAvailable { warnings.append("分析模型不可用，本次只录像。") }
-        if streaming, let latest = controller.counters.latestPTS, let analyzed = metrics.lastAnalyzedPTS, latest - analyzed > 1 {
-            warnings.append(String(format: "实时分析落后 %.1f 秒：录像不受影响，让机位遮阳降温、关掉其他 App 可以缓解。", latest - analyzed))
+        if streaming, let lag = controller.analysisLag, lag > CameraLoadPolicy.lagHighSeconds {
+            warnings.append(Self.lagWarning(lag, shed: controller.shed.level, cause: controller.shedCause,
+                                            thermal: ProcessInfo.processInfo.thermalState))
         }
         if ProcessInfo.processInfo.isLowPowerModeEnabled { warnings.append("低电量模式已开启，可能影响实时分析：接上电源后在设置里关闭低电量模式。") }
         switch ProcessInfo.processInfo.thermalState {
@@ -418,6 +419,17 @@ final class CameraModel {
             warnings.append("最近 30 秒相机丢帧：关掉其他占用相机或耗电的 App，或让机位降温。")
         }
         return warnings
+    }
+
+    /// The camera page's analysis-lag line. It suggests cooling only when the phone is warm: lag on a
+    /// cool phone comes from the work itself, and the camera sheds load for it on its own.
+    nonisolated static func lagWarning(_ lag: Double, shed: Int, cause: CameraLoadPolicy.Cause?,
+                                       thermal: ProcessInfo.ThermalState) -> String {
+        let text = String(format: "实时分析落后 %.1f 秒：录像不受影响", lag)
+        if cause == .lag, shed >= 2 { return text + "。" }     // the shedding notice beside it says what was cut
+        if cause == .lag, shed == 1 { return text + "，机位已减少预览和人员检测来追赶。" }
+        if [.fair, .serious, .critical].contains(thermal) { return text + "，让机位遮阳降温、关掉其他 App 可以缓解。" }
+        return text + "；持续落后时机位会自动减少预览和人员检测。关掉机位上其他 App 也有帮助。"
     }
 
     nonisolated static func deviceState(pressure: String?, standby: Bool) -> CameraDeviceState {
