@@ -3052,3 +3052,14 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 - 没在 iPhone 上跑：真机上落后是否真的触发降载、降到 L1/L2 后能不能追上、阈值（1 秒 / 5 秒 / 0.5 秒）是否合适，都只在单元测试里按假定的读数检查过。
 - 控制器每秒算落后的那段（`CameraSessionController.analysisLag`）没有单独的测试，只经编译和上面这些集成测试间接走过。
 - 浏览器看板和 App 看板没有显示 `shedCause`，只显示原因文字。
+
+## 2026-11-05 1.1 已上架；TestFlight 改用 1.2，1.2 (1)
+
+- 1.1 (11)（`091726b`，PR #33 合入后）上传后被拒：ITMS-90186（版本列车 1.1 已关闭）和 ITMS-90062（`CFBundleShortVersionString` 必须高于已过审的 1.1）。查到 1.1 已是 `READY_FOR_SALE`，线上构建是 1.1 (5)（`83460abd`）。
+- 改成 1.2 (1)：`asc builds next-build-number --version 1.2` 返回 1。同一个 `build8.sh`（`scripts/reference-chain.sh status` 为 `off`）。解包检查：只有两个 TrackNetV3，没有 `AnalysisModels`，`LocalReferenceChain` 0 处，`CFBundleShortVersionString` 1.2、`CFBundleVersion` 1，签名 Apple Distribution；二进制里有「画面在动：暂不记击球」。之后还原了 `Info.plist`。
+- 上传：构建 `f7fa8048` 为 `VALID`，带 zh-Hans 的「测试什么」。内测组 `IN_BETA_TESTING`；公测组已提交，新版本号的第一个外部构建要重新过 Beta 审核，现在是 `WAITING_FOR_REVIEW`。
+- App Store 1.2 的「新功能」写在 `docs/app-store/metadata/version/1.2/`。
+
+没有验证：
+- 1.2 (1) 没装到真机上。
+- 1.2 (1) 不含 PR #34（司线语音）和 PR #35（分析落后触发降载）：它们在打包之后才合入。
