@@ -197,7 +197,8 @@ public final class WebDisplayServer: @unchecked Sendable {
 
     static let contentTypes = ["html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8",
                                "css": "text/css; charset=utf-8", "svg": "image/svg+xml", "png": "image/png",
-                               "json": "application/json", "ico": "image/x-icon", "mp4": "video/mp4"]
+                               "json": "application/json", "ico": "image/x-icon", "mp4": "video/mp4",
+                               "m4a": "audio/mp4"]
 
     fileprivate func authenticate(_ peer: Peer, _ request: WebAuthRequest) {
         guard credentials.isValid() else {
