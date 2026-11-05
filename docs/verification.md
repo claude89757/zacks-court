@@ -3045,7 +3045,7 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 
 - `swift build`、`swift run court-check`（3 组 PASS）通过。
 - 新增 4 项测试（`CameraPhase2Tests`）：持续落后逐级降到 L2、不进 L3、0.5–1 秒保持、恢复后每 60 秒回升一级且仍写落后原因；短暂尖峰和正在追上的积压不降载、没有读数按恢复处理；落后叠加偏暖时升到 L2 并在落后撤掉后改写成发热原因；机位页提示与采集日志的原因字段。`CameraDiagnosticsTests` 的摘要用例加了降载原因一行。
-- 相关 9 组测试（`CameraPhase2Tests`、`CameraDiagnosticsTests`、`SessionSyncTests`、`WebDisplayTests`、`RecognitionStatusTests`、`CameraStandbyTests`、`CameraSideAnalysisTests`、`WorkspaceIntegrationTests`、`VideoImportTests`）：54 项，45 通过，9 跳过（要模型或显式开启的环境），0 失败。没有跑全量 `swift test`。
+- 相关 9 组测试（`CameraPhase2Tests`、`CameraDiagnosticsTests`、`SessionSyncTests`、`WebDisplayTests`、`RecognitionStatusTests`、`CameraStandbyTests`、`CameraSideAnalysisTests`、`WorkspaceIntegrationTests`、`VideoImportTests`）：合并 main 前 54 项（45 通过），合并后 55 项（46 通过，多出的是 PR #33 的用例），都是 9 跳过（要模型或显式开启的环境）、0 失败。没有跑全量 `swift test`。
 - iOS：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 的 Debug 编译通过，之后还原了 `Info.plist`。
 
 **没有验证**：
