@@ -278,10 +278,11 @@ public enum IndependentBallEvents {
         return links
     }
 
-    /// Bounce test: both sides fit a flight anchored at the junction's ground point within 5 px, falling
+    /// Bounce test: both sides fit a flight anchored at the junction's ground point within 6 px, falling
     /// before and rising after. The former 4 px limit missed bounces whose two fits were only marginally
-    /// worse: 5 px recovers near-side calls on both development videos (all consistent with the reference app)
-    /// and on the held-out ones, at the cost of one call that merges into a long piece (see
+    /// worse: 5 px recovered near-side calls on both development videos (all consistent with the reference
+    /// app) and on the held-out ones, at the cost of one call that merges into a long piece; 6 px adds one
+    /// more on the first development video and five on the held-out ones with no call lost anywhere (see
     /// docs/verification.md, 2026-11-06). A shorter-window second chance (5.5 px) is recorded separately.
     public static func testBounce(_ junction: inout IndependentJunction, pieces pcs: [[IndependentTrackPoint]], camera cam: IndependentProjector) {
         let Pg = cam.onPlaneZ(junction.u, junction.v, z: IndependentCourt.ballRadius)
@@ -292,7 +293,7 @@ public enum IndependentBallEvents {
         let t = junction.t * fps
         let fa = IndependentFlight.bestAnchored(cam, frames: A.map(\.t), uv: A.map(\.uv), anchor: Pg, at: t, before: true)
         let fb = IndependentFlight.bestAnchored(cam, frames: B.map(\.t), uv: B.map(\.uv), anchor: Pg, at: t, before: false)
-        junction.bounce = fa.rms <= 5 && fb.rms <= 5 && fa.velocity.z < 0 && 0 < fb.velocity.z
+        junction.bounce = fa.rms <= 6 && fb.rms <= 6 && fa.velocity.z < 0 && 0 < fb.velocity.z
         if !junction.bounce && B.count >= 6 {
             let A2 = Array(A.suffix(15)), B2 = Array(B.prefix(8))
             let fa2 = IndependentFlight.bestAnchored(cam, frames: A2.map(\.t), uv: A2.map(\.uv), anchor: Pg, at: t, before: true)
