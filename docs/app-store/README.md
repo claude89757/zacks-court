@@ -162,5 +162,5 @@ asc status --app 6827224757                     # 发布状态总览
 
 1. `MARKETING_VERSION` 改成 `1.2`，构建号从 `1` 重新开始（`asc builds next-build-number --version 1.2` 返回 1）。1.2 (1) 从 `091726b`（PR #33 合入后）打包，构建 `f7fa8048`，内测组可装；新版本号的第一个外部构建要重新过 Beta 审核，提交后是 `WAITING_FOR_REVIEW`。PR #34（司线语音）和 PR #35（分析落后触发降载）在打包之后才合入，由另一个会话打 1.2 (2)。
 2. 「新功能」写在 `metadata/version/1.2/`（四种语言，其余文字与 1.1 相同）：3D 回放与量尺、司线语音（PR #34）、手持不再凭空多拍并提示画面在动、诊断包、降载（含 PR #35 分析落后触发）、保存失败和误报模型未就绪的修复。
-3. 建 1.2 版本（`asc versions create --app 6827224757 --version 1.2 --release-type AFTER_APPROVAL`），推送四种语言的「新功能」。截图沿用 1.1 的。
+3. 1.2 版本不用手动建：1.2 (1) 提交 Beta 审核时 App Store Connect 自动建了 1.2（`34e5a8f7`，`PREPARE_FOR_SUBMISSION`，`AFTER_APPROVAL`），再 `asc versions create` 会报版本号已用过。2026-11-05 用 `asc metadata plan/approve/apply --version 1.2` 推送了四种语言的「新功能」（计划里只有这四项，其余文字和 1.1 相同）。截图（每种语言 5 张）和审核信息从 1.1 带过来了，还没关联构建。
 4. 提交审核前由用户决定：关联当时最新的 1.2 构建（要带 PR #34），`asc review submit`。三张 iOS 27 创意素材也可以加进同一个审核提交（`asc review items add … --item-type appAssetLibraryImages`），省一轮审核。
