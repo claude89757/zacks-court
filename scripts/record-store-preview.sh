@@ -101,7 +101,7 @@ PY
 FREEZES=$(ffmpeg -hide_banner -nostats -i "$OUT/preview-1920x886.mp4" -vf "trim=start=3.3,freezedetect=n=0.002:d=5" -an -f null - 2>&1 | grep -c freeze_start || true)
 [[ "$FREEZES" == 0 ]] || { echo "The picture froze $FREEZES time(s) after the speed board; record again" >&2; exit 1; }
 # Stills through each replay (title, flight, bounce, overhead, verdict) to check against the app.
-mkdir -p "$OUT/frames"; rm -f "$OUT/frames"/*.png
+mkdir -p "$OUT/frames"   # ffmpeg -y overwrites; no rm of a glob, which zsh aborts on when frames/ is empty
 python3 - "$OUT/marks.txt" <<'PY' | while read -r NAME AT; do
 import sys
 marks = dict(line.split() for line in open(sys.argv[1]) if line.strip())
