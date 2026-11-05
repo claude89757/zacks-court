@@ -3098,3 +3098,13 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 - 1.2 版本记录已经存在（`34e5a8f7`，`PREPARE_FOR_SUBMISSION`，建于 1.2 (1) 提交 Beta 审核的同一时刻），`asc versions create` 报版本号已用过，所以直接用它。
 - `asc metadata plan --version 1.2`：只新增四种语言的 `whatsNew`，没有其他改动；批准后 `apply` 成功，读回四种语言都有文字。截图每种语言 5 张（`APP_IPHONE_67`），审核信息（联系人、备注）也从 1.1 带过来了。
 - 没有关联构建，也没有提交审核：要等带司线语音（PR #34）的 1.2 (2)，提交时间由用户决定。
+
+## 2026-11-05 TestFlight 1.2 (2)：可选的界内外语音、分析落后时降载
+
+- 来源：main `3d49b15`（PR #37 合入后，含 PR #34 界内外语音和 PR #35 分析落后时降载；之后的 PR #38 只改文档）。用 `git archive` 取出干净副本（不含 `.claude`，也没有本地 S家链），放进 LFS 的自研模型权重，`COURT_MODEL_SET=independent` 按 Release 归档并导出。
+- IPA 检查：两个自研模型包都在；没有 `AnalysisModels`；二进制里 `LocalReferenceChain` 出现 0 次；`CourtModelSet` 为 `independent`；版本 1.2 (2)；`ZacksCourt_CourtCore.bundle/Web/` 里 8 段 `voice-*.m4a` 都在；二进制里有 PR #35 的「实时分析跟不上画面」提示文字。
+- 上传：构建 `7a5c5d41-4209-4ecb-9c46-67cbff61df1f`，处理结果 `VALID`；中文「测试什么」与 `docs/app-store/testflight.md` 的 1.2 (2) 一节相同（582 字）。内测组（接收全部构建）已有这个构建。
+- 公测组：已把构建加进组里，但提交 Beta 审核被拒，原因是「同一版本系列已有构建在 Beta 审核中」：1.2 (1) `f7fa8048` 是 1.2 的第一个外部构建，2026-11-05 01:20（UTC）起 `WAITING_FOR_REVIEW`。等它审完后再提交 1.2 (2)（`asc builds add-groups --build-id 7a5c5d41-… --group <公测组> --submit --confirm`），在那之前公开链接拿不到 1.2 (2)。
+- 提交前构建号已用 `asc builds next-build-number --version 1.2` 核对过。导出时会先占一个 `AWAITING_UPLOAD` 的上传记录，所以提前导出的那一次（基于 `6927bec`，没上传）也留下一条 1.2 (2) 记录；上传后只有 `7a5c5d41` 这一个构建。
+
+没有验证：没装到 iPhone 上，没听过播放；公测组还没收到这个构建。
