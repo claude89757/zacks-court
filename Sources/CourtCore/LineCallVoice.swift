@@ -16,15 +16,12 @@ public struct LineCallVoice: Identifiable, Hashable, Sendable {
     public let name: String
     public let gender: Gender
 
+    /// More voices (Onyx, Marin, Nova, Sage) follow once their clips are generated.
     public static let all: [LineCallVoice] = [
         LineCallVoice(id: "ash", name: "Ash", gender: .male),
-        LineCallVoice(id: "onyx", name: "Onyx", gender: .male),
         LineCallVoice(id: "cedar", name: "Cedar", gender: .male),
         LineCallVoice(id: "verse", name: "Verse", gender: .male),
         LineCallVoice(id: "coral", name: "Coral", gender: .female),
-        LineCallVoice(id: "marin", name: "Marin", gender: .female),
-        LineCallVoice(id: "nova", name: "Nova", gender: .female),
-        LineCallVoice(id: "sage", name: "Sage", gender: .female),
     ]
     public static let defaultID = "ash"
 

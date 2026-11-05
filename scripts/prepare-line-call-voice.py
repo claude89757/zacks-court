@@ -116,6 +116,9 @@ def process(x, threshold_db=-40.0, loudness_db=-9.0, ceiling_db=-1.0, max_reduct
         raise ValueError("the take is empty")
     trimmed = trim(x, threshold_db)
     peak = max(abs(v) for v in trimmed)
+    if db(peak) < -40:
+        # A failed take (no speech): raising it to the target would only amplify noise.
+        raise ValueError(f"the take is nearly silent (peak {db(peak):.1f} dBFS)")
     # Limiting a peaky take pulls its loudness down again, so the gain is raised until the loudest 50 ms
     # sits at the target, but never so far that the limiter takes more than max_reduction_db off a peak.
     most = 10 ** ((ceiling_db + max_reduction_db) / 20) / peak

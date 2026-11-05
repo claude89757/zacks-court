@@ -2833,7 +2833,7 @@ PR #21 合入 main（`d9524b1`）后从新的 main 打 1.1 (6)：`scripts/refere
 
 ## 2026-11-05 界内外语音：男女声可选（AI 合成）
 
-界内外与挑战的语音改为 8 个可选语音：男声 Ash（默认）、Onyx、Cedar、Verse，女声 Coral、Marin、Nova、Sage。`LineCallVoice`（CourtCore）是 App 的列表，`Web/app.js` 的 `VOICES` 是浏览器的一份，两边只载入所选语音的 `voice-<语音>-out.m4a` / `voice-<语音>-in.m4a`，缺文件时退回系统语音合成。App 与浏览器的界内外设置里加了语音选择和「试听」按钮；选语音不出声，出声的时机不变（界内外开着且明确出界；挑战回放给出结论），设置下写明语音由 AI 合成（OpenAI 的使用条款要求）。`scripts/generate-line-call-voices.py` 用 OpenAI 语音接口（`gpt-4o-mini-tts`、司线员指令）生成，`scripts/prepare-line-call-voice.py` 处理：裁静音，最响 50 ms 拉到 −9 dBFS RMS，前视限幅峰值 −1 dBFS（最多压 10 dB），淡入淡出，单声道 48 kHz AAC。
+界内外与挑战的语音改为可选语音：先上男声 Ash（默认）、Cedar、Verse 和女声 Coral 4 个（原计划 8 个，见下文下载上限）。`LineCallVoice`（CourtCore）是 App 的列表，`Web/app.js` 的 `VOICES` 是浏览器的一份，两边只载入所选语音的 `voice-<语音>-out.m4a` / `voice-<语音>-in.m4a`，缺文件时退回系统语音合成。App 与浏览器的界内外设置里加了语音选择和「试听」按钮；选语音不出声，出声的时机不变（界内外开着且明确出界；挑战回放给出结论），设置下写明语音由 AI 合成（OpenAI 的使用条款要求）。`scripts/generate-line-call-voices.py` 用 OpenAI 语音接口（`gpt-4o-mini-tts`、司线员指令）生成，`scripts/prepare-line-call-voice.py` 处理：裁静音，最响 50 ms 拉到 −9 dBFS RMS，前视限幅峰值 −1 dBFS（最多压 10 dB），淡入淡出，单声道 48 kHz AAC。
 
 试听阶段在 openai.fm 演示页上听过男女声样例；演示页不允许把音频传出（CSP）且很快限流（429），正式音频没有从演示页取。
 
@@ -2841,5 +2841,4 @@ PR #21 合入 main（`d9524b1`）后从新的 main 打 1.1 (6)：`scripts/refere
 - `swift test --filter LineCallVoiceTests`：3 项，2 通过，1 跳过（当时 `Web/` 还没有录音）。
 - `court-probe web`（合成画面，网页目录指向放了 Ash、Coral 两组测试录音的临时目录），内置浏览器（Chromium）里：语音下拉框分「男声」「女声」两组，默认 Ash，只预载 Ash 两段；切到 Coral 不出声，点「试听」播 `voice-coral-out.m4a`；切到没有文件的 Nova，「试听」退回语音合成；刷新后保留所选语音。修了两处：快速切换时被自己暂停的播放（AbortError）不再误退回语音合成；页面初始化时下拉框对上已保存的语音。
 - 提交 `2fdb9a5` 上：`swift run court-check` 全部 PASS；`swift test` 318 项，295 通过、23 跳过、0 失败（跳过的是需显式启用的实机与真视频检查，以及还没有录音时的 `testEveryVoiceHasBothClips`）；`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 后 iOS 模拟器 SDK 编译 BUILD SUCCEEDED，之后还原 `Info.plist`。
-
-待做（等 OpenAI key）：生成 16 段录音、试听、把录音的响度数字补进来、`testEveryVoiceHasBothClips` 变成真检查后再合入。没有验证：没在 iPhone、Mac App 里实际听到播放；没在 iOS Safari 上验证静音试播能解锁之后的有声播放。
+没有验证：没在 iPhone、Mac App 里实际听到播放；没在 iOS Safari 上验证静音试播能解锁之后的有声播放。

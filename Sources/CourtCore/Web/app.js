@@ -569,10 +569,8 @@ const VOICE_NAME_KEY = "court.web.hawkeye.voiceName";
 /// Line-call voices; mirrors CourtCore/LineCallVoice.swift (a test checks the two lists agree and every
 /// clip exists). AI-generated clips (OpenAI), named voice-<id>-out.m4a / voice-<id>-in.m4a beside this page.
 const VOICES = [
-  { id: "ash", name: "Ash", gender: "male" }, { id: "onyx", name: "Onyx", gender: "male" },
-  { id: "cedar", name: "Cedar", gender: "male" }, { id: "verse", name: "Verse", gender: "male" },
-  { id: "coral", name: "Coral", gender: "female" }, { id: "marin", name: "Marin", gender: "female" },
-  { id: "nova", name: "Nova", gender: "female" }, { id: "sage", name: "Sage", gender: "female" },
+  { id: "ash", name: "Ash", gender: "male" }, { id: "cedar", name: "Cedar", gender: "male" },
+  { id: "verse", name: "Verse", gender: "male" }, { id: "coral", name: "Coral", gender: "female" },
 ];
 const DEFAULT_VOICE = "ash";
 const GENDERS = { male: "男声", female: "女声" };
