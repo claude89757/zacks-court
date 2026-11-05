@@ -3092,3 +3092,9 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 - 分支上 `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 编译 BUILD SUCCEEDED，App 包的 `ZacksCourt_CourtCore.bundle/Web/` 里有全部 8 段录音；之后还原了 `Info.plist`。
 
 没有验证：没在 iPhone、Mac App 里实际听到播放；没在 iOS Safari 上验证静音试播能解锁之后的有声播放。
+
+## 2026-11-05 App Store 1.2：推送「新功能」，等用户决定提交
+
+- 1.2 版本记录已经存在（`34e5a8f7`，`PREPARE_FOR_SUBMISSION`，建于 1.2 (1) 提交 Beta 审核的同一时刻），`asc versions create` 报版本号已用过，所以直接用它。
+- `asc metadata plan --version 1.2`：只新增四种语言的 `whatsNew`，没有其他改动；批准后 `apply` 成功，读回四种语言都有文字。截图每种语言 5 张（`APP_IPHONE_67`），审核信息（联系人、备注）也从 1.1 带过来了。
+- 没有关联构建，也没有提交审核：要等带司线语音（PR #34）的 1.2 (2)，提交时间由用户决定。
