@@ -1023,7 +1023,8 @@ function drawReplay(g, w, h, scene, t, timing) {
     const gr = g.createLinearGradient(0, hy, w * 0.3, h); gr.addColorStop(0, RP.courtFar); gr.addColorStop(1, RP.courtNear); g.fillStyle = gr; g.fill();
   }
   g.beginPath();
-  for (const p of (scene.grain ||= surfaceGrain(scene.focus))) {
+  if (!scene.grain) scene.grain = surfaceGrain(scene.focus);   // no logical assignment operator: older Android browsers
+  for (const p of scene.grain) {
     const q = cam.view(p); if (q[2] < 0.1) continue;
     const r = Math.min(1.6, 0.006 * cam.f / q[2]); if (r < 0.3) continue;
     const s = cam.screen(q); g.rect(s[0], s[1], r, r * 0.6);
@@ -1140,7 +1141,7 @@ function paintMeasure(g, cam, scene, m) {
     g.lineWidth = 2; g.lineCap = "round"; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
     for (const q of [a, b]) { g.moveTo(q[0] - nx, q[1] - ny); g.lineTo(q[0] + nx, q[1] + ny); }
     g.stroke();
-    label(`${Math.round(scene.measure.metres * 100)} 厘米`, Math.min(a[0], bFull[0]) - 12, (a[1] + bFull[1]) / 2, 20);
+    label(`约 ${Math.round(scene.measure.metres * 100)} 厘米`, Math.min(a[0], bFull[0]) - 12, (a[1] + bFull[1]) / 2, 20);
   } else {
     const p = cam.project(v3.add(scene.bounce, side));
     if (p) label(j.call === "close" ? `误差 ±${Math.round(j.marginM * 100)} 厘米` : "球印压线", p[0] - 6, p[1] - 30, 17);

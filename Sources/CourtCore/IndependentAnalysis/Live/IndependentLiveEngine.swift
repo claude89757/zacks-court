@@ -537,9 +537,9 @@ public final class IndependentLiveEngine {
             s.courtSolves = c.solves; s.courtSolveSeconds = c.solveSeconds; s.courtSamples = c.samples
             s.courtFound = c.found; s.courtMoved = c.moved; s.courtLost = c.lost
         }
-        if let court { s.court = court.diagnostics }
+        if let court { s.court = court.diagnostics.finiteOnly }
         else if let camera = configuration.camera {
-            var fixed = CameraCourtDiagnostics(state: .fixed); fixed.geometry(of: camera); s.court = fixed
+            var fixed = CameraCourtDiagnostics(state: .fixed); fixed.geometry(of: camera); s.court = fixed.finiteOnly
         }
         return s
     }

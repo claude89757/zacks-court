@@ -3160,3 +3160,28 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 没有验证：
 - 司线语音和手持修复都没在 iPhone 上实际听过、看过；1.2 (2) 在 TestFlight 内测组。
 - 审查发现的 6 条还没修，留到下一个构建。
+
+## 2026-11-05 修上架前审查的 6 条发现；查国区为什么没上架
+
+用户说「修！另外，为什么中国区还没上架」。
+
+**国区**
+- `asc api GET /v2/appAvailabilities/6827224757/territoryAvailabilities`：175 个地区都已勾选、`available: true`，其中 174 个 `contentStatuses` 为 `AVAILABLE`。中国大陆是 `ICP_NUMBER_MISSING`，发布日期 2026-11-03，也就是从 1.0 起就没在国区上架，与审核无关。
+- 解决办法要用户本人去办：做 APP 备案，拿到备案号后填到 App 信息里；或者从销售范围里去掉中国大陆。记在 [app-store/README.md](app-store/README.md)。
+
+**6 条发现的修复**（都留在下一个构建，App Store 正在审的 1.2 (2) 不含这些）
+1. 挑战回放播完后，`TimelineView` 暂停在最后一帧：`stillAt == started` 时不再刷新。换一拍、重播或判定到达时 `started` 会变，回放从头播。
+2. `app.js` 把 `scene.grain ||= …` 改成普通的赋值；全文件扫过，没有其他逻辑赋值运算符。`node --check` 通过。
+3. 诊断包选采集日志前，先按文件的修改时间和创建时间排除窗口外的文件（留 2 分钟余量），排除的文件不读不解码。
+4. `CameraCourtDiagnostics.finiteOnly`：可选数值不是有限值时置空，累计值置 0。自研链的引擎统计里，自动球场和外部给定的球场都先经过它，再进入每秒的状态和采集日志。
+5. 司线语音播完（录音和合成都算）后约 0.4 秒内释放音频会话（`notifyOthersOnDeactivation`），其他 App 的音乐恢复原来的音量；下一次播报再激活。只影响 iPhone。
+6. App 和浏览器回放量尺上的数字改成「约 N 厘米」。
+
+**检查**
+- 新增测试 `CameraDiagnosticsTests.testOldLogFilesAreSkippedAndCourtNumbersStayFinite`：修改时间在三天前的日志不被读进来；含 NaN 的球场诊断直接编码会失败，经过 `finiteOnly` 后可以编码。
+- `swift build` 通过。`swift run court-check` 通过。相关测试（`CameraDiagnosticsTests`、`HawkEyeReplayTests`、`LineCallVoiceTests`、`WebDisplayTests`、`IndependentLiveEngineTests`）共 32 项，2 项跳过，0 失败。
+- `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 后，iOS 模拟器 SDK 的 Debug 编译通过，之后还原了 `Info.plist`。
+
+没有验证：
+- 回放停帧、音乐音量恢复都没在 iPhone 上看过、听过：回放停帧没有自动化测试，音频会话只能在真机上验证。
+- 旧版浏览器没有实际打开测试，只检查了语法。
