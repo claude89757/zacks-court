@@ -60,6 +60,101 @@ final class CameraPhase2Tests: XCTestCase {
         XCTAssertEqual(heat.reason?.hasPrefix("机位偏暖"), true, heat.reason ?? "nil")
     }
 
+    /// Analysis lag on a cool phone (2026-11-05: about 1.3 s behind on iPhone18,2, level never moved).
+    /// Lag that stays above 1 s for 5 s sheds one level, another 5 s the next, never past L2; the
+    /// reason names lag, not heat; once lag is low the usual 60 s per level brings it back.
+    func testSustainedAnalysisLagShedsStepByStepAndRecovers() {
+        var policy = CameraLoadPolicy()
+        func tick(_ now: Double, lag: Double?, thermal: String = "nominal") -> Bool {
+            policy.update(thermal: thermal, pressure: "AVCaptureSystemPressureLevelNominal", lowPower: false, analysisLag: lag, now: now)
+        }
+        XCTAssertFalse(tick(0, lag: 0.3))
+        for now in 1...5 { XCTAssertFalse(tick(Double(now), lag: 1.3), "not before 5 s of lag (t=\(now))") }
+        XCTAssertTrue(tick(6, lag: 1.3))
+        XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .lag)
+        let first = policy.reason
+        XCTAssertEqual(first?.hasPrefix("实时分析跟不上画面"), true, first ?? "nil")
+        for word in ["温度", "阴凉", "降温", "过热"] { XCTAssertFalse(first?.contains(word) ?? true, word) }
+        // Still behind and not draining at L1: the next window sheds L2.
+        for now in 7...10 { XCTAssertFalse(tick(Double(now), lag: 1.4)) }
+        XCTAssertTrue(tick(11, lag: 1.4))
+        XCTAssertEqual(policy.level, 2); XCTAssertEqual(policy.cause, .lag)
+        XCTAssertEqual(policy.reason, CameraLoadPolicy.lagReason(level: 2))
+        // Lag never pauses analysis: L3 would stop the very thing that is behind.
+        for now in 12...120 { XCTAssertFalse(tick(Double(now), lag: 3)) }
+        XCTAssertEqual(policy.level, 2)
+        // Between 0.5 s and 1 s the demand holds: no recovery.
+        for now in 121...300 { XCTAssertFalse(tick(Double(now), lag: 0.8)) }
+        XCTAssertEqual(policy.level, 2)
+        // Caught up: 60 s per level, still naming lag on the way down.
+        XCTAssertFalse(tick(301, lag: 0.2))
+        XCTAssertFalse(tick(360, lag: 0.2))
+        XCTAssertTrue(tick(361, lag: 0.2))
+        XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .lag)
+        XCTAssertEqual(policy.reason, CameraLoadPolicy.lagReason(level: 1))
+        XCTAssertFalse(tick(400, lag: 0))
+        XCTAssertTrue(tick(421, lag: 0))
+        XCTAssertEqual(policy.level, 0); XCTAssertNil(policy.reason); XCTAssertNil(policy.cause)
+    }
+
+    /// A short spike (a court solve holding the queue) or a backlog that is already draining does not
+    /// shed; lag that cannot be measured (capture stopped, analysis paused) counts as low.
+    func testShortOrDrainingLagDoesNotShedAndUnmeasuredLagRecovers() {
+        var policy = CameraLoadPolicy()
+        func tick(_ now: Double, lag: Double?) -> Bool {
+            policy.update(thermal: "nominal", pressure: nil, lowPower: false, analysisLag: lag, now: now)
+        }
+        var now = 0.0
+        for _ in 0..<10 { for lag in [2.0, 2.6, 1.9, 1.2, 0.3] { XCTAssertFalse(tick(now, lag: lag)); now += 1 } }
+        // 3 s behind, catching up 0.1 s a second: the current level keeps up.
+        for step in 0..<21 { XCTAssertFalse(tick(now, lag: 3 - Double(step) * 0.1)); now += 1 }
+        XCTAssertEqual(policy.level, 0)
+        // Flat lag sheds; then capture stops (no measurement) and the level recovers.
+        for _ in 0...5 { _ = tick(now, lag: 1.5); now += 1 }
+        XCTAssertEqual(policy.level, 1)
+        XCTAssertFalse(tick(now, lag: nil))
+        XCTAssertTrue(tick(now + 60, lag: nil))
+        XCTAssertEqual(policy.level, 0)
+    }
+
+    /// Lag stacks on heat: warm (L1) and behind sheds L2 for lag. When lag clears while heat holds the
+    /// level, the reason switches to heat; lag never adds a level to serious heat.
+    func testAnalysisLagStacksOnHeatAndHandsTheReasonBack() {
+        var policy = CameraLoadPolicy()
+        XCTAssertTrue(policy.update(thermal: "fair", pressure: nil, lowPower: false, analysisLag: 1.5, now: 0))
+        XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .heat)
+        for now in 1...4 { policy.update(thermal: "fair", pressure: nil, lowPower: false, analysisLag: 1.5, now: Double(now)) }
+        XCTAssertTrue(policy.update(thermal: "fair", pressure: nil, lowPower: false, analysisLag: 1.5, now: 5))
+        XCTAssertEqual(policy.level, 2); XCTAssertEqual(policy.cause, .lag)
+        XCTAssertFalse(policy.update(thermal: "serious", pressure: nil, lowPower: false, analysisLag: 1.5, now: 6))
+        XCTAssertEqual(policy.cause, .lag)
+        XCTAssertTrue(policy.update(thermal: "serious", pressure: nil, lowPower: false, analysisLag: 0.1, now: 7))
+        XCTAssertEqual(policy.level, 2); XCTAssertEqual(policy.cause, .heat)
+        XCTAssertEqual(policy.reason?.hasPrefix("机位温度偏高"), true, policy.reason ?? "nil")
+        for now in 8...60 { policy.update(thermal: "serious", pressure: nil, lowPower: false, analysisLag: 2, now: Double(now)) }
+        XCTAssertEqual(policy.level, 2, "lag does not take serious heat on to L3")
+    }
+
+    /// The camera page suggests cooling only when the phone is warm, and says the camera is catching up
+    /// when it shed for lag; the capture log carries the cause.
+    func testLagWarningAndLogNameTheCause() {
+        let cool = CameraModel.lagWarning(1.3, shed: 0, cause: nil, thermal: .nominal)
+        XCTAssertTrue(cool.hasPrefix("实时分析落后 1.3 秒"), cool)
+        XCTAssertFalse(cool.contains("降温"), cool)
+        XCTAssertTrue(CameraModel.lagWarning(1.3, shed: 1, cause: .lag, thermal: .nominal).contains("追赶"))
+        XCTAssertTrue(CameraModel.lagWarning(1.3, shed: 0, cause: nil, thermal: .fair).contains("遮阳降温"))
+        XCTAssertFalse(CameraModel.lagWarning(1.3, shed: 2, cause: .lag, thermal: .nominal).contains("降温"))
+
+        var status = CameraStatus()
+        status.shed = 1; status.shedReason = CameraLoadPolicy.lagReason(level: 1); status.shedCause = CameraLoadPolicy.Cause.lag.rawValue
+        status.analysis.latestPTS = 10.3; status.analysis.analyzedPTS = 9
+        let line = CameraLogLine(status: status, t: 0, shots: nil, display: false, browsers: 0, linkPath: nil)
+        XCTAssertEqual(line.shed, 1); XCTAssertEqual(line.shedCause, "lag"); XCTAssertEqual(line.analysisDelay, 1.3)
+        XCTAssertEqual(line.shedReason?.hasPrefix("实时分析跟不上画面"), true)
+        let decoded = try? JSONDecoder().decode(CameraStatus.self, from: JSONEncoder().encode(status))
+        XCTAssertEqual(decoded?.shedCause, "lag")
+    }
+
     @MainActor func testCriticalLoadPausesAnalysisRecordsAGapAndKeepsRecording() async throws {
         let rig = CameraRig(root: makeRoot("court-shed"))
         rig.camera.appliesLoadPolicy = false

@@ -77,6 +77,7 @@ final class CameraDiagnosticsTests: XCTestCase {
                 court.focalPixels = 1400; court.rmsPixels = 0.8; line.court = court }
             line.courtText = text; line.thermal = "fair"; line.captureDrops = 0
             if inSession { line.session = session.id; line.sessionState = .active }
+            if t - t0 >= 6 { line.shed = 1; line.shedCause = "lag" }     // analysis fell behind for the last 4 s
             return line
         }
         var start = CameraLogLine(kind: .start, t: t0); start.app = "1.1 (7)"; start.hardware = "iPhone18,2"
@@ -99,6 +100,7 @@ final class CameraDiagnosticsTests: XCTestCase {
         XCTAssertTrue(text.contains("机高约 3.1 米"), text)
         XCTAssertTrue(text.contains("App：1.1 (7)"), text)
         XCTAssertTrue(text.contains("最高温度状态：fair"), text)
+        XCTAssertTrue(text.contains("最高降载等级：L1，降载 4 秒（原因：分析落后）"), text)
     }
 
     /// Capture logs count as diagnostic logs, are never leftovers, and are cleared with the logs; a run

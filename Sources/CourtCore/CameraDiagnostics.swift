@@ -80,6 +80,8 @@ public struct CameraLogLine: Codable, Sendable {
     public var screen: String?
     public var shed: Int?
     public var shedReason: String?
+    /// `heat`, `pressure`, `lowPower` or `lag` while shedding.
+    public var shedCause: String?
     /// Capture clock minus analysis clock, seconds; frames waiting; analysis restarts so far.
     public var analysisDelay: Double?
     public var pendingFrames: Int?
@@ -104,7 +106,7 @@ public struct CameraLogLine: Codable, Sendable {
         recordingSeconds = status.recordingSeconds.map { ($0 * 10).rounded() / 10 }; zoom = status.zoom
         thermal = status.device.thermal; pressure = status.device.pressure; battery = status.device.battery
         charging = status.device.charging; lowPower = status.device.lowPowerMode; freeBytes = status.device.freeBytes
-        screen = status.device.screen; shed = status.shed; shedReason = status.shedReason
+        screen = status.device.screen; shed = status.shed; shedReason = status.shedReason; shedCause = status.shedCause
         let a = status.analysis
         if let latest = a.latestPTS, let analyzed = a.analyzedPTS { analysisDelay = (max(0, latest - analyzed) * 100).rounded() / 100 }
         pendingFrames = a.pendingFrames; restarts = a.restarts; analysisReason = a.reason
@@ -356,7 +358,16 @@ public enum DiagnosticBundle {
             let order = ["nominal", "fair", "serious", "critical"]
             let hottest = status.compactMap(\.thermal).max { (order.firstIndex(of: $0) ?? 0) < (order.firstIndex(of: $1) ?? 0) }
             if let hottest { out.append("- 最高温度状态：\(hottest)") }
-            if let shed = status.compactMap(\.shed).max(), shed > 0 { out.append("- 最高降载等级：L\(shed)") }
+            if let shed = status.compactMap(\.shed).max(), shed > 0 {
+                // Why it shed, in the order first seen: heat and analysis lag need different fixes.
+                var causes: [String] = []
+                for line in status where (line.shed ?? 0) > 0 {
+                    let name = line.shedCause.map { ["heat": "发热", "pressure": "相机负载", "lowPower": "低电量模式", "lag": "分析落后"][$0] ?? $0 }
+                    if let name, !causes.contains(name) { causes.append(name) }
+                }
+                let seconds = status.filter { ($0.shed ?? 0) > 0 }.count
+                out.append("- 最高降载等级：L\(shed)，降载 \(seconds) 秒" + (causes.isEmpty ? "" : "（原因：\(causes.joined(separator: "、"))）"))
+            }
             let delays = status.compactMap(\.analysisDelay).sorted()
             if !delays.isEmpty { out.append(String(format: "- 分析落后：中位 %.2f 秒，最多 %.2f 秒", delays[delays.count / 2], delays.last!)) }
             let drops = status.compactMap(\.captureDrops)

@@ -84,6 +84,16 @@ public final class CameraSessionController {
     public var notice: String?
     /// Load-shedding level and reason, set by the camera's load policy (Phase 2).
     public var shed: (level: Int, reason: String?) = (0, nil) { didSet { applyShed() } }
+    /// What raised `shed` (heat, camera pressure, Low Power Mode or analysis lag); nil at L0 or when a
+    /// caller set `shed` itself.
+    public private(set) var shedCause: CameraLoadPolicy.Cause?
+    /// Seconds the analysis is behind capture (both from the camera clock), nil when it cannot be
+    /// measured: not capturing, models loading, or analysis paused (L3). An empty analysis queue means it
+    /// has caught up, so a `lastAnalyzedPTS` left over from an earlier capture run never reads as lag.
+    public var analysisLag: Double? {
+        guard capturing, metrics.ready, shed.level < 3, let latest = counters.latestPTS, let analyzed = metrics.lastAnalyzedPTS else { return nil }
+        return metrics.pendingFrames > 0 ? max(0, latest - analyzed) : 0
+    }
     /// The record this camera finished last (here or from a display), until another opens: the
     /// camera's 记录 page shows its summary card.
     public private(set) var finishedSessionID: UUID?
@@ -870,7 +880,7 @@ public final class CameraSessionController {
         analysis.pictureMoving = metrics.pictureMoving ? true : nil
         status.analysis = analysis
         status.device = deviceState()
-        status.shed = shed.level; status.shedReason = shed.reason
+        status.shed = shed.level; status.shedReason = shed.reason; status.shedCause = shed.level > 0 ? shedCause?.rawValue : nil
         status.warnings = extraWarnings()
         status.near = nearHandedness; status.far = farHandedness
         status.zoom = capturing ? zoomFactor : nil
@@ -1119,7 +1129,9 @@ public final class CameraSessionController {
         if uptime - lastSnapshotAt > 4 { tennisAnalysis = nil }
         if appliesLoadPolicy {
             let device = deviceState()
-            if loadPolicy.update(thermal: device.thermal, pressure: device.pressure, lowPower: device.lowPowerMode, now: uptime) {
+            if loadPolicy.update(thermal: device.thermal, pressure: device.pressure, lowPower: device.lowPowerMode,
+                                 analysisLag: analysisLag, now: uptime) {
+                shedCause = loadPolicy.cause
                 shed = (loadPolicy.level, loadPolicy.reason)
                 if loadPolicy.level >= 4, session?.state == .active {
                     Task { await pause(reason: loadPolicy.reason) }

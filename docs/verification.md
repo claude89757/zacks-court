@@ -3031,3 +3031,24 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 - 没在 iPhone 上看过提示的实际样子，也没在模拟器里截图（模拟器没有相机，出不来这个状态）。
 - 浏览器看板只是收到同一条提示文字，页面没改，也没打开看过。
 - 没跑全量 `swift test`；规则和逐拍结果不变（这个标志不进规则，trace 重放不受影响）。
+
+## 2026-11-05 分析持续落后也会触发降载
+
+起因：用户手持 iPhone18,2 拍电脑屏幕上的比赛，机位页显示分析落后约 1.3 秒，降载等级却一直是 L0，因为 `CameraLoadPolicy` 只看温度和相机压力；机位页的落后提示还建议「遮阳降温」，而那次并不热。PR #30 去掉了多出来的主要工作量，但分析慢于实时时落后仍会累积。
+
+改动：
+- `CameraLoadPolicy` 多一个输入「分析落后」（采集 PTS − 最后分析帧 PTS），由 `CameraSessionController` 每秒给出；分析队列为空时按 0，没在采集、模型加载中或分析暂停时没有读数。连续 5 秒超过 1 秒且没在缩短（5 秒内缩短不到 0.25 秒）就比当前再降一级，最多到 L2；低于 0.5 秒才撤掉，之后照常 60 秒回升一级，0.5–1 秒之间保持。不进 L3：暂停分析不能让分析追上，暂停后也量不到落后。
+- 降载原因写「实时分析跟不上画面」，不提温度；`CameraStatus` 和采集日志多一个可选字段 `shedCause`（`heat` / `pressure` / `lowPower` / `lag`），诊断包摘要写「最高降载等级：L1，降载 N 秒（原因：分析落后）」。落后和发热撑着同一级、其中一个撤掉时，原因改成仍在的那个。
+- 机位页的「实时分析落后 X 秒」提示改用同一个落后读数，只在手机偏暖（`fair` 及以上）时建议遮阳降温；因落后降载时说明机位在减负追赶。
+
+环境：macOS 26.6.2 / Xcode 27.0 / Swift 6.4，分支基于 `2059a24`，合入前与 main `6927bec`（PR #33、#34）合并后重跑了下面的检查。
+
+- `swift build`、`swift run court-check`（3 组 PASS）通过。
+- 新增 4 项测试（`CameraPhase2Tests`）：持续落后逐级降到 L2、不进 L3、0.5–1 秒保持、恢复后每 60 秒回升一级且仍写落后原因；短暂尖峰和正在追上的积压不降载、没有读数按恢复处理；落后叠加偏暖时升到 L2 并在落后撤掉后改写成发热原因；机位页提示与采集日志的原因字段。`CameraDiagnosticsTests` 的摘要用例加了降载原因一行。
+- 相关 9 组测试（`CameraPhase2Tests`、`CameraDiagnosticsTests`、`SessionSyncTests`、`WebDisplayTests`、`RecognitionStatusTests`、`CameraStandbyTests`、`CameraSideAnalysisTests`、`WorkspaceIntegrationTests`、`VideoImportTests`）：合并 main 前 54 项（45 通过），合并后 55 项（46 通过，多出的是 PR #33 的用例），都是 9 跳过（要模型或显式开启的环境）、0 失败。没有跑全量 `swift test`。
+- iOS：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 的 Debug 编译通过，之后还原了 `Info.plist`。
+
+**没有验证**：
+- 没在 iPhone 上跑：真机上落后是否真的触发降载、降到 L1/L2 后能不能追上、阈值（1 秒 / 5 秒 / 0.5 秒）是否合适，都只在单元测试里按假定的读数检查过。
+- 控制器每秒算落后的那段（`CameraSessionController.analysisLag`）没有单独的测试，只经编译和上面这些集成测试间接走过。
+- 浏览器看板和 App 看板没有显示 `shedCause`，只显示原因文字。
