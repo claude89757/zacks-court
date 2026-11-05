@@ -23,3 +23,7 @@ Tests/CourtAppTests/Reference/
 
 # Rendered creative assets (about 9 MB each); regenerate with scripts/render-creative-assets.sh
 docs/app-store/creative-assets/*/universal*.png
+
+# Python bytecode from the research scripts
+__pycache__/
+*.pyc
