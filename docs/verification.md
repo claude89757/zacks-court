@@ -3185,3 +3185,14 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 没有验证：
 - 回放停帧、音乐音量恢复都没在 iPhone 上看过、听过：回放停帧没有自动化测试，音频会话只能在真机上验证。
 - 旧版浏览器没有实际打开测试，只检查了语法。
+
+## 2026-11-05 TestFlight 1.2 (3)：上架前审查的 6 条修复
+
+PR #43 合入 main（`d6f9879`）后打 1.2 (3)。`asc builds next-build-number --version 1.2` 返回 3，只改了构建号。`scripts/reference-chain.sh status` 为 `off`，用同一个 `build8.sh` 打包，之后还原了 `Info.plist`。
+
+- 解包检查：只有两个 TrackNetV3，没有 `AnalysisModels`，`LocalReferenceChain` 0 处；版本 1.2、构建号 3；签名 Apple Distribution，TeamIdentifier=A2YR8HBQKY。8 个 `voice-*.m4a` 都在；包里的 `app.js` 已是去掉 `||=` 的版本。
+- 上传：构建 `9cf11f2a` 为 `VALID`，带 zh-Hans 的「测试什么」。内测组 `IN_BETA_TESTING`。
+- 公测组：组已经加上，但 Beta 审核提交被拒，因为同一版本号的 1.2 (1) 还在 `WAITING_FOR_REVIEW`（1.2 (2) 也是这样）。等 1.2 (1) 审完，由语音会话把 1.2 (3) 提交给公测组。
+- App Store 正在审核的仍是 1.2 (2)（提交 `f480d8af`），不含这 6 条修复。
+
+没有验证：1.2 (3) 没装到真机上。
