@@ -1121,13 +1121,16 @@ final class WorkspaceUITests: XCTestCase {
         mark("start")
         Thread.sleep(forTimeInterval: 3.0)
         app.buttons["court.speedboard.challenge"].firstMatch.tap()
+        mark("replay1")
         XCTAssertTrue(app.descendants(matching: .any)["court.hawkeye.replay"].firstMatch.waitForExistence(timeout: 5))
-        Thread.sleep(forTimeInterval: 6.6)
-        for _ in 0..<2 {
+        // A replay runs 5.8 s; the extra 1.6 s keeps its verdict and dimension bar on screen long enough to read.
+        Thread.sleep(forTimeInterval: 7.4)
+        for index in 2...3 {
             let previous = app.buttons["上一个"].firstMatch
             guard previous.isEnabled else { break }
             previous.tap()
-            Thread.sleep(forTimeInterval: 6.6)
+            mark("replay\(index)")
+            Thread.sleep(forTimeInterval: 7.4)
         }
         mark("end")
         try marks.write(to: URL(fileURLWithPath: folder).appendingPathComponent("marks.txt"), atomically: true, encoding: .utf8)
