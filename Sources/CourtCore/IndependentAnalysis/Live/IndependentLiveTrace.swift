@@ -23,6 +23,25 @@ public enum IndependentLiveTraceEvent: Sendable, Codable, Equatable {
 }
 
 public enum IndependentLiveTrace {
+    /// Swaps a trace's ball candidates for another detector's candidate set, keeping every other event
+    /// where it was: a replacement lands in the first candidate batch whose last candidate is not later
+    /// than it, so trims, resets and updates between batches still apply to the candidates in their own
+    /// time. Used to measure a model end to end without running the live lane (`independent-replay
+    /// --candidates`); candidates must be sorted by time.
+    public static func replacingCandidates(in events: [IndependentLiveTraceEvent],
+                                           with candidates: [IndependentShotCandidate]) -> [IndependentLiveTraceEvent] {
+        var next = 0, merged = [IndependentLiveTraceEvent]()
+        for event in events {
+            guard case .candidates(let batch) = event else { merged.append(event); continue }
+            guard let last = batch.map(\.time).max() else { merged.append(event); continue }
+            var take = [IndependentShotCandidate]()
+            while next < candidates.count, candidates[next].time <= last { take.append(candidates[next]); next += 1 }
+            merged.append(.candidates(take.isEmpty ? batch : take))
+        }
+        if next < candidates.count { merged.append(.candidates(Array(candidates[next...]))) }
+        return merged
+    }
+
     /// Replays a trace through `IndependentLiveShots` with the current rules. Returns the last version of
     /// every published shot, per stream, in publication order: what the lane's rows end as.
     public static func replay(_ events: [IndependentLiveTraceEvent]) -> [[IndependentShotResult]] {

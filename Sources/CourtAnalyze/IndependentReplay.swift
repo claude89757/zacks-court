@@ -10,13 +10,17 @@ import CourtCore
 /// unchanged rules it reproduces the live run's rows; it measures rule changes only, not detection.
 enum IndependentReplayCommand {
     static func run(_ args: [String]) throws {
-        guard args.count >= 3 else { throw CourtError.message("Usage: court-analyze independent-replay TRACE.json OUT.json") }
+        guard args.count >= 3 else { throw CourtError.message("Usage: court-analyze independent-replay TRACE.json OUT.json [--candidates CANDIDATES.json]") }
         let out = URL(fileURLWithPath: args[2])
         guard !FileManager.default.fileExists(atPath: out.path) else { throw CourtError.message("Output already exists; choose a new output path.") }
         let began = ProcessInfo.processInfo.systemUptime
         let decoder = JSONDecoder()
         decoder.nonConformingFloatDecodingStrategy = .convertFromString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
-        let events = try decoder.decode([IndependentLiveTraceEvent].self, from: Data(contentsOf: URL(fileURLWithPath: args[1])))
+        var events = try decoder.decode([IndependentLiveTraceEvent].self, from: Data(contentsOf: URL(fileURLWithPath: args[1])))
+        if let flag = args.firstIndex(of: "--candidates"), flag + 1 < args.count {
+            let candidates = try decoder.decode([IndependentShotCandidate].self, from: Data(contentsOf: URL(fileURLWithPath: args[flag + 1])))
+            events = IndependentLiveTrace.replacingCandidates(in: events, with: candidates.sorted { (a: IndependentShotCandidate, b: IndependentShotCandidate) -> Bool in a.time < b.time })
+        }
         let streams = IndependentLiveTrace.replay(events)
         var paired = [(TennisShotEvent, IndependentShotResult)]()
         for shots in streams {
