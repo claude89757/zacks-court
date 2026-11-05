@@ -3126,6 +3126,7 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
   - 内容：每 0.5 秒取一张拼成总览，逐张看过。测速牌 3.5 秒；第 53 拍出界 55 厘米（过角）、第 52 拍界内 256 厘米、第 51 拍界内 58 厘米，三拍都从 REPLAY 标题、飞行、落地、升到俯视、量尺一直放到顶部结论卡，结论卡不挡球印和量尺。
   - 输出 27.9 秒、1920×886、30 帧 H.264，44.1 kHz 双声道静音 AAC，35 MB。
 - 改完测试里的计时点后，`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK `build-for-testing`（Release）通过，之后还原了 `Info.plist`。没有用改后的版本再录一次。
+- 截帧那一段在合入 PR #40 之后才单独跑过：脚本原来先 `rm -f "$OUT/frames"/*.png`，`frames/` 是空的时候 zsh 报「no matches found」，加上 `set -e`，第一次录制在检查都通过后会直接退出。去掉这行 `rm` 后（`ffmpeg -y` 会覆盖同名文件），对这次的输出跑截帧，18 张都生成了。
 - App Store Connect（`asc`）：
   - 1.1 是 `READY_FOR_SALE`，四个审核提交都是 `COMPLETE`。
   - 09:19 新建 1.2（`34e5a8f7`，`AFTER_APPROVAL`），四种语言的文字从 1.1 复制，不含「新功能」。「新功能」是另一个会话同一时间推送的（PR #38）；它的记录以为 1.2 是 App Store Connect 自动建的，这次在 `docs/app-store/README.md` 里改正了。
