@@ -3063,3 +3063,32 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 没有验证：
 - 1.2 (1) 没装到真机上。
 - 1.2 (1) 不含 PR #34（司线语音）和 PR #35（分析落后触发降载）：它们在打包之后才合入。
+
+## 2026-11-05 界内外语音改播录音文件（换声准备）
+
+界内外与挑战的「Out!」「In.」从运行时语音合成改为播放打包的录音：`Sources/CourtCore/Web/voice-out.m4a`、`voice-in.m4a`，App（`HawkEyeVoice`，`AVAudioPlayer`）和浏览器看板（`<audio>`，点按页面时静音试播一次解锁）用同一份文件；文件缺失或加载失败时退回原来的系统语音合成。浏览器看板服务端新增 `m4a` → `audio/mp4`。新增 `scripts/prepare-line-call-voice.py`（标准库 + `afconvert`）：把任意来源的录音裁掉首尾静音、峰值归一到 −1 dBFS、首尾 8 ms 淡入淡出、转单声道 48 kHz AAC。这一轮**没有提交录音文件**，行为与之前相同（仍是系统语音），换声要等选定配音来源。
+
+- `swift build` 通过；`swift test --filter "WebDisplayTests|HawkEye"`：26 项，23 通过、3 跳过（需显式启用的实机与真视频检查）、0 失败。这轮测试在「播放器改为第一次报判定时载入」之前编译，那处改动之后只重跑了 `swift build`。
+- `scripts/prepare-line-call-voice.py --self-test` 通过。
+- 用 macOS `say -v Daniel` 临时生成两段测试录音（只放在临时目录，不提交），经脚本处理后：`afinfo` 为单声道 48 kHz AAC；`AVAudioPlayer` 能打开并 `prepareToPlay`。
+- `COURT_WEB_ROOT=<临时目录> swift run court-probe web`（合成画面）：`curl` 取两段录音为 200 / `audio/mp4`，不存在的文件 404；内置浏览器（Chromium）打开看板页即预载两段录音（Range 请求 206），能解码、静音播放成功；不存在的文件触发 `error`（页面据此退回语音合成）。
+
+没有验证：没在 iPhone、Mac App 里实际听到播放；没在 iOS Safari 上验证静音试播能解锁之后的有声播放；没跑 `court-check` 和全量 `swift test`。
+
+## 2026-11-05 界内外语音：男女声可选（AI 合成）
+
+界内外与挑战的语音改为可选语音：先上男声 Ash（默认）、Cedar、Verse 和女声 Coral 4 个（原计划 8 个，见下文下载上限）。`LineCallVoice`（CourtCore）是 App 的列表，`Web/app.js` 的 `VOICES` 是浏览器的一份，两边只载入所选语音的 `voice-<语音>-out.m4a` / `voice-<语音>-in.m4a`，缺文件时退回系统语音合成。App 与浏览器的界内外设置里加了语音选择和「试听」按钮；选语音不出声，出声的时机不变（界内外开着且明确出界；挑战回放给出结论），设置下写明语音由 AI 合成（OpenAI 的使用条款要求）。`scripts/generate-line-call-voices.py` 用 OpenAI 语音接口（`gpt-4o-mini-tts`、司线员指令）生成，`scripts/prepare-line-call-voice.py` 处理：裁静音，最响 50 ms 拉到 −9 dBFS RMS，前视限幅峰值 −1 dBFS（最多压 10 dB），淡入淡出，单声道 48 kHz AAC。
+
+录音来源：OpenAI 的语音演示站 openai.fm（同一模型、同一指令），用户同意后用它的下载按钮取得，每句一遍；原始文件在本机 `.local/line-call-takes/`，不提交。没有 API key；演示站不让页面把音频传给本机（CSP），脚本直接请求会被限流（429），都没有绕过。演示站限每天 20 次生成、每周 10 次下载，所以只拿到 4 个完整语音；Onyx 的「In.」下载下来是静音，处理脚本加了「峰值低于 −40 dBFS 就拒绝」的检查。Onyx、Marin、Nova、Sage 等下载额度恢复或有 key 后补上。
+
+- `scripts/prepare-line-call-voice.py --self-test` 通过（响度、限幅、10 dB 上限三项）。macOS `say` 的测试录音里，Daniel 的「Out!」波形很尖，在 10 dB 上限下只到 −14.3 dBFS RMS，其余在 −9 到 −11；正式录音的数字见下。
+- `swift test --filter LineCallVoiceTests`：3 项，2 通过，1 跳过（当时 `Web/` 还没有录音）。
+- `court-probe web`（合成画面，网页目录指向放了 Ash、Coral 两组测试录音的临时目录），内置浏览器（Chromium）里：语音下拉框分「男声」「女声」两组，默认 Ash，只预载 Ash 两段；切到 Coral 不出声，点「试听」播 `voice-coral-out.m4a`；切到没有文件的 Nova，「试听」退回语音合成；刷新后保留所选语音。修了两处：快速切换时被自己暂停的播放（AbortError）不再误退回语音合成；页面初始化时下拉框对上已保存的语音。
+- 提交 `2fdb9a5` 上：`swift run court-check` 全部 PASS；`swift test` 318 项，295 通过、23 跳过、0 失败（跳过的是需显式启用的实机与真视频检查，以及还没有录音时的 `testEveryVoiceHasBothClips`）；`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 后 iOS 模拟器 SDK 编译 BUILD SUCCEEDED，之后还原 `Info.plist`。
+- 8 段录音（处理后，单声道 48 kHz AAC，共约 100 KB）：Ash 0.46 / 0.48 秒，Cedar 0.40 / 0.40 秒，Verse 0.44 / 0.40 秒，Coral 0.50 / 1.31 秒（「Out!」/「In.」）。Coral 的「In.」偏长，用户听后不合适再换一遍。`AVAudioPlayer` 能打开全部 8 段。
+- 放进录音后 `LineCallVoiceTests` 3 项全部通过（`testEveryVoiceHasBothClips` 不再跳过）。
+- 和 main `2059a24` 合并后的代码（用 `git merge-tree` 加 `git archive` 在临时目录里检查，没改本机 main）：`swift run court-check` 全部 PASS；`swift test` 327 项，304 通过、23 跳过（需显式启用的实机与真视频检查）、0 失败。
+- 和 main `091726b` 合并后的代码：`swift build` 通过，`swift run court-check` 3 项 PASS，相关测试（`LineCallVoiceTests`、`WebDisplayTests`、`HawkEye*` 等）51 项，44 通过、7 跳过、0 失败。合入为 PR #34（`6927bec`）。
+- 分支上 `COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 编译 BUILD SUCCEEDED，App 包的 `ZacksCourt_CourtCore.bundle/Web/` 里有全部 8 段录音；之后还原了 `Info.plist`。
+
+没有验证：没在 iPhone、Mac App 里实际听到播放；没在 iOS Safari 上验证静音试播能解锁之后的有声播放。
