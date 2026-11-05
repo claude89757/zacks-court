@@ -142,6 +142,29 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertEqual(replayed[0].map(\.stroke), live.published.map(\.shot.stroke))
     }
 
+    /// The candidate override keeps every other event where it was (2026-11-06): a detector's candidates
+    /// land in the batch whose last candidate is not earlier than them, so trims and updates between
+    /// batches still apply to the candidates in their own time.
+    func testCandidateOverrideKeepsTheOtherEventsInPlace() throws {
+        let a = IndependentShotCandidate(decodeIndex: 1, time: 10, u: 100, v: 100, peak: 0.9)
+        let b = IndependentShotCandidate(decodeIndex: 2, time: 20, u: 110, v: 100, peak: 0.9)
+        let events: [IndependentLiveTraceEvent] = [.newStream, .candidates([a]), .trim(now: 0.3), .candidates([b]), .update(now: 0.5)]
+        let replaced = IndependentLiveTrace.replacingCandidates(in: events, with: [
+            IndependentShotCandidate(decodeIndex: 1, time: 5, u: 1, v: 2, peak: 0.4),
+            IndependentShotCandidate(decodeIndex: 2, time: 15, u: 3, v: 4, peak: 0.4),
+            IndependentShotCandidate(decodeIndex: 3, time: 25, u: 5, v: 6, peak: 0.4),
+        ])
+        guard case .candidates(let first) = replaced[1], case .candidates(let second) = replaced[3] else { return XCTFail("the batches moved") }
+        XCTAssertEqual(first.map(\.u), [1], "a candidate later than the batch's last one waits for the next batch")
+        XCTAssertEqual(second.map(\.u), [3])
+        guard case .candidates(let tail) = replaced[5] else { return XCTFail("the trailing candidates are dropped") }
+        XCTAssertEqual(tail.map(\.u), [5], "candidates after the last batch are appended, not lost")
+        guard case .trim(let now) = replaced[2] else { return XCTFail("the trim moved") }
+        XCTAssertEqual(now, 0.3)
+        guard case .update(let updated) = replaced[4] else { return XCTFail("the update moved") }
+        XCTAssertEqual(updated, 0.5)
+    }
+
     /// The picture moved while the shot flew: the live chain drops those candidates (`discard`), the
     /// catch-up publishes nothing from them, and the trace replays to the same empty list.
     func testDiscardedCandidatesAreNotCaughtUp() throws {
