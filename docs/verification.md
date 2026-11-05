@@ -3014,3 +3014,20 @@ PR #30 合入 main（`df8dc52`）后从新的 main 打 1.1 (10)。`asc builds ne
 没有验证：
 - TestFlight 的构建 10 没装到真机上；装在用户 iPhone 上的是 PR #30 合入前、分支上带这次修复的代码用开发签名打的 Release 包（02:10 打包，早于最后两次合入 main），不是构建 10 本身。
 - 构建 10 没有重跑 `swift test`：代码与 PR #30 合入的 main 相同，合入前在本分支与 main 的合并结果上跑过相关测试。
+
+## 2026-11-05 机位页说明「画面在动，暂不记击球」
+
+用户手持拍屏幕时拍数凭空增长；PR #30 改成画面离开球背景就重建背景、一直在动就不记击球，但机位页没有说明，看起来像分析坏了。这一轮把这件事显示出来。
+
+- 信号：`IndependentLiveEngine.pictureMoving`。没球场时画面在动而丢掉球点、或因画面移动重建球背景时记下当时的帧时间，之后 3 秒内为真。没有直接用球场模块每秒的晃动读数：用户那次手持录像的采集日志里，读数在「静止」和「漂移」之间几乎每秒来回跳（83 秒里切换了 30 次），直接用会让提示一闪一闪。
+- 传递：引擎统计 → `CameraSideAnalyzer.Metrics.pictureMoving` → 机位的 `status.analysis.pictureMoving`（新的可选字段，只在为真时发送，旧 v2 版本照常解码）。
+- 显示：机位页顶部提示「画面在动：暂不记击球，录像照常。把机位架稳或靠住，画面停稳后自动继续。」，这条提示也随机位状态发给 App 看板和浏览器看板；「识别状态 › 击球」保留拍数，说明改成「画面在动，暂不记击球；机位架稳后自动继续。」，橙色。S家链没有这个信号，一直为假。
+- 用用户那段 83 秒的手持录像在 Mac 上的回放 trace（PR #30 修复后）估算：提示约 79% 的时间亮着。
+- 测试：`IndependentLiveEngineTests.testBackgroundIsRebuiltWhenThePictureMovesAwayFromIt` 加了断言：画面不动时为假，移动后为真，停住超过 3 秒后变回假（用暂存的 FP16 模型，实际运行，没有跳过）。新增 `RecognitionStatusTests.testShotsRowSaysShotsAreNotCountedWhileThePictureMoves`。
+- `swift build`、`swift run court-check` 通过；`RecognitionStatusTests`、`IndependentLiveEngineTests`、`SessionSyncTests`、`WebDisplayTests`、`CameraDiagnosticsTests` 共 32 项，1 项跳过（要显式开启的环境），0 失败。
+- iOS：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh` 加模拟器 SDK 的 Debug 编译通过，之后还原了 `Info.plist`。
+
+没有验证：
+- 没在 iPhone 上看过提示的实际样子，也没在模拟器里截图（模拟器没有相机，出不来这个状态）。
+- 浏览器看板只是收到同一条提示文字，页面没改，也没打开看过。
+- 没跑全量 `swift test`；规则和逐拍结果不变（这个标志不进规则，trace 重放不受影响）。

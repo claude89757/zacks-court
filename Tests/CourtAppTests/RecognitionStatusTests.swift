@@ -61,6 +61,20 @@ final class RecognitionStatusTests: XCTestCase {
         XCTAssertNil(other.detail, "Clocks of different streams are not compared")
     }
 
+    /// While the picture moves the row keeps its count and says why no shot is being added.
+    func testShotsRowSaysShotsAreNotCountedWhileThePictureMoves() throws {
+        var input = RecognitionStatus.Input(isLive: true, calibration: nil, latestPTS: 100, streamID: stream, events: [shot(80), shot(92)])
+        input.pictureMoving = true
+        let moving = try row(RecognitionStatus(input), "shots")
+        XCTAssertEqual(moving.value, "2 拍")
+        XCTAssertEqual(moving.detail, "画面在动，暂不记击球；机位架稳后自动继续。")
+        XCTAssertEqual(moving.tone, .warning)
+        input.events = []
+        XCTAssertEqual(try row(RecognitionStatus(input), "shots").value, "尚无击球")
+        input.isLive = false
+        XCTAssertNotEqual(try row(RecognitionStatus(input), "shots").tone, .warning, "only a live picture can be moving")
+    }
+
     /// Shaped like the 2026-10-28 screen-filmed run: most bounce candidates fail ball localization.
     func testLandingCountsSettledShotsAndNamesTheMainReasonInPlainWords() throws {
         let focus = TennisBounceEstimate(sourcePTS: 0, confidence: 0, reason: "Focus球位置缺失、低分或存在竞争目标")

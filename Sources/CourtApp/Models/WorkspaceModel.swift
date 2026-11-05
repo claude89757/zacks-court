@@ -196,14 +196,15 @@ struct LinkStats {
             return RecognitionStatus(.init(isLive: isLive, calibration: controller.tennisAnalysis?.calibration,
                                            shed: controller.shed.level,
                                            inHouse: Self.isInHouse(controller.tennisAnalysis), people: people, latestPTS: controller.counters.latestPTS,
-                                           streamID: controller.streamID, events: events))
+                                           streamID: controller.streamID, events: events, pictureMoving: controller.metrics.pictureMoving))
         }
         let status = isLive ? cameraStatus : nil
         let people = analysis.map { RecognitionStatus.People(streamID: $0.streamID, pts: $0.pts, count: $0.people.count) }
         return RecognitionStatus(.init(isLive: isLive, calibration: tennisAnalysis?.calibration,
                                        shed: status?.shed ?? 0,
                                        inHouse: Self.isInHouse(tennisAnalysis), people: people, latestPTS: status?.analysis.latestPTS,
-                                       streamID: status?.analysis.streamID, events: dashboardEvents))
+                                       streamID: status?.analysis.streamID, events: dashboardEvents,
+                                       pictureMoving: status?.analysis.pictureMoving == true))
     }
     /// Rows from the in-house live lane carry its model version (`IndependentLiveConfiguration`).
     static func isInHouse(_ snapshot: TennisAnalysisSnapshot?) -> Bool { snapshot?.modelVersion.hasPrefix("independent-") == true }

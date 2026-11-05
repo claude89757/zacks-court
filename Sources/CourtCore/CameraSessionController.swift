@@ -867,6 +867,7 @@ public final class CameraSessionController {
         analysis.calibration = tennisAnalysis?.calibration; analysis.modelVersion = tennisAnalysis?.modelVersion
         analysis.limitations = tennisAnalysis?.limitations ?? []
         analysis.court = metrics.court
+        analysis.pictureMoving = metrics.pictureMoving ? true : nil
         status.analysis = analysis
         status.device = deviceState()
         status.shed = shed.level; status.shedReason = shed.reason
