@@ -406,6 +406,10 @@ public enum IndependentStrokeRules {
                 guard j != i else { return false }
                 if let a = shots[i].hitterSide, let b = shots[j].hitterSide, a != b {
                     guard abs(shots[j].tHit - t) < Serve.returnWithin else { return false }
+                    // a fitted landing in the service box is stronger evidence than a faster fit: at
+                    // double-test-003 462.27 the receiver's false "serve" (no bounce, 80.2 km/h) won over the
+                    // real serve's landing (54.8 km/h, bounce, 2026-11-06)
+                    if shots[i].bounceFound != shots[j].bounceFound { return shots[j].bounceFound }
                     let vi: Double = shots[i].speedKmh ?? 0, vj: Double = shots[j].speedKmh ?? 0
                     return vj > vi || (vj == vi && shots[j].tHit < t)
                 }

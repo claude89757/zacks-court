@@ -489,6 +489,23 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertNil(IndependentLiveShots.match(shot(253.0, 15200), in: published, from: 0))
     }
 
+    /// 2026-11-06: of two serve-like flights from opposite ends, the one with a fitted landing wins, even when
+    /// the other one fits faster (double-test-003 462.27: the receiver's false serve beat the real one).
+    func testTheServeLikeFlightWithALandingWinsOverAFasterOne() {
+        func serve(_ t: Double, _ side: String, _ speed: Double, bounce: Bool) -> IndependentShotResult {
+            var s = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: bounce, contactUV: [0, 0],
+                                          hitterBox: nil, incoming: nil, hitterSide: side, tHit: t, nObs: 33, firstFrame: 0, lastFrame: 60)
+            s.serveFit = true; s.fromToss = true; s.serveRise = 0; s.speedKmh = speed; s.accepted = true; s.crossesNet = true
+            return s
+        }
+        let fast = serve(461.97, "near", 80.2, bounce: false)
+        let real = serve(462.23, "far", 64.8, bounce: true)
+        XCTAssertEqual(IndependentStrokeRules.serves([fast, real], priorRally: []), [1], "the landing decides")
+        let return_ = serve(461.97, "near", 80.2, bounce: true)
+        XCTAssertEqual(IndependentStrokeRules.serves([return_, serve(462.23, "far", 64.8, bounce: true)], priorRally: []), [0],
+                       "with a landing on both sides the faster fit still wins")
+    }
+
     /// 2026-11-06: a shorter recomputation without a bounce must not erase the row that already had one
     /// (a same-frame fragment published over it, test.MOV 264.02).
     func testShorterBounceLessRecomputationKeepsABouncedRow() {
