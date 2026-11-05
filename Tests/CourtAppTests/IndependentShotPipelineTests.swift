@@ -489,6 +489,19 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertNil(IndependentLiveShots.match(shot(253.0, 15200), in: published, from: 0))
     }
 
+    /// 2026-11-06: a shorter recomputation without a bounce must not erase the row that already had one
+    /// (a same-frame fragment published over it, test.MOV 264.02).
+    func testShorterBounceLessRecomputationKeepsABouncedRow() {
+        func shot(_ n: Int, bounce: Bool) -> IndependentShotResult {
+            IndependentShotResult(hitKind: "hit junction", hitterFound: true, bounceFound: bounce, contactUV: [0, 0], hitterBox: nil,
+                                  incoming: nil, hitterSide: "near", tHit: 264.02, nObs: n, firstFrame: 15841, lastFrame: 15881)
+        }
+        XCTAssertFalse(IndependentLiveShots.replaces(shot(40, bounce: true), with: shot(8, bounce: false)))
+        XCTAssertTrue(IndependentLiveShots.replaces(shot(40, bounce: true), with: shot(60, bounce: false)), "a longer recomputation may revise it")
+        XCTAssertTrue(IndependentLiveShots.replaces(shot(40, bounce: true), with: shot(8, bounce: true)))
+        XCTAssertTrue(IndependentLiveShots.replaces(shot(40, bounce: false), with: shot(8, bounce: false)))
+    }
+
     /// v18: a serve into the net. The track runs on as the ball drops down the net, so no single flight
     /// fits it; the tracker's "bounce" lies at the foot of the net. The refit ends the flight on the net
     /// plane and gives the hit-to-net speed.

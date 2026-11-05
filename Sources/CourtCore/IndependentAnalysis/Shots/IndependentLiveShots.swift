@@ -105,6 +105,7 @@ public struct IndependentLiveShots: Sendable {
             && (Double(shot.lastFrame) / 60 < now - options.settleLag || shot.tHit < now - options.maxLag) {
             if let i = Self.match(shot, in: published, from: historyStart) {
                 guard !published[i].frozen, !Self.same(published[i].shot, shot) else { continue }
+                guard Self.replaces(published[i].shot, with: shot) else { continue }
                 published[i].shot = shot; published[i].revisions += 1
                 if published[i].speedPublished == nil, shot.reportedSpeedKmh != nil { published[i].speedPublished = now }
                 changed.append(i)
@@ -127,6 +128,13 @@ public struct IndependentLiveShots: Sendable {
             if d < 0.25, best == nil || d < best!.d { best = (i, d) }
         }
         return best?.i
+    }
+
+    /// A recomputation may replace an existing row, except as a shorter, bounce-less version of a row that
+    /// already found a bounce: with the same flight start a fragment (8 points) was published over the row
+    /// that had the bounce (test.MOV 264.02, 2026-11-06) and the near-side call was lost.
+    static func replaces(_ existing: IndependentShotResult, with shot: IndependentShotResult) -> Bool {
+        !(existing.bounceFound && !shot.bounceFound && shot.nObs < existing.nObs)
     }
 
     static func same(_ a: IndependentShotResult, _ b: IndependentShotResult) -> Bool {
