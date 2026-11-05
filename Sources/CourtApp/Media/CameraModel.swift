@@ -404,6 +404,9 @@ final class CameraModel {
         let metrics = controller.metrics
         if let failure = metrics.loadError { warnings.append("分析模型未能加载（\(failure)），本次只录像。") }
         else if streaming, metrics.ready, !metrics.tennisAvailable { warnings.append("分析模型不可用，本次只录像。") }
+        if streaming, metrics.pictureMoving {
+            warnings.append("画面在动：暂不记击球，录像照常。把机位架稳或靠住，画面停稳后自动继续。")
+        }
         if streaming, let latest = controller.counters.latestPTS, let analyzed = metrics.lastAnalyzedPTS, latest - analyzed > 1 {
             warnings.append(String(format: "实时分析落后 %.1f 秒：录像不受影响，让机位遮阳降温、关掉其他 App 可以缓解。", latest - analyzed))
         }

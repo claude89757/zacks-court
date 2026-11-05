@@ -129,13 +129,18 @@ final class IndependentLiveEngineTests: XCTestCase {
         }
         try run(0..<120, still)
         XCTAssertEqual(engine.stats.backgroundRebuilds, 0, "a still picture keeps its background")
+        XCTAssertFalse(engine.stats.pictureMoving)
         XCTAssertGreaterThan(engine.stats.batches, 0)
         try run(120..<132, moved)
         XCTAssertEqual(engine.stats.backgroundRebuilds, 1, "45 px away from the background's view")
+        XCTAssertTrue(engine.stats.pictureMoving, "shots are not counted while the picture moves")
         let resets = engine.stats.ballResets
         try run(132..<300, moved)
         XCTAssertEqual(engine.stats.backgroundRebuilds, 1, "the new background was taken from the new view")
         XCTAssertEqual(engine.stats.ballResets, resets)
+        XCTAssertTrue(engine.stats.pictureMoving, "held for a few seconds after the last drop")
+        try run(300..<420, moved)
+        XCTAssertFalse(engine.stats.pictureMoving, "still again for longer than the hold")
     }
 
     /// The in-house rules need person boxes, so load shedding slows person frames instead of stopping
