@@ -200,9 +200,30 @@ def score(teacher, run, fmt):
         j, _ = annotate(row, fmt)
         if j is not None and not j['far']:
             extra += 1
+    # A line call is only as good as the abstention it replaces: answer "in" for every reference call and see
+    # how often that is already right. Calls that say "out" are where the ability actually shows.
+    ref_in = sum(1 for row in calls if CALL[row['result']] == 'in')
+    out_rows = [row for row in calls if CALL[row['result']] == 'out']
+    ours_out, ours_out_hit = 0, 0
+    used2 = set()
+    for row in calls:
+        i = nearest(run, row['anchor'], used2, CALL_TOL)
+        if i is None:
+            continue
+        used2.add(i)
+        j, _ = annotate(run[i], fmt)
+        if j is None or j['far'] or j['call'] != 'out':
+            continue
+        ours_out += 1
+        ours_out_hit += CALL[row['result']] == 'out'
     out['near'] = {'reference': len(calls), 'judged': verdicts, 'agree': agree,
                    'agreement_of_judged': round(agree / verdicts, 4) if verdicts else None,
                    'coverage': round(verdicts / len(calls), 4) if calls else None,
+                   'always_in_agreement': round(ref_in / len(calls), 4) if calls else None,
+                   'reference_out': len(out_rows),
+                   'said_out': ours_out, 'said_out_right': ours_out_hit,
+                   'out_recall': round(ours_out_hit / len(out_rows), 4) if out_rows else None,
+                   'out_precision': round(ours_out_hit / ours_out, 4) if ours_out else None,
                    'not_judged': reasons, 'unreferenced_calls': extra}
     return out
 
@@ -229,7 +250,10 @@ def report(s):
         if b:
             print(f"bounces {axis} : {b['n']} pairs, median {num(b['median'])} m, mean absolute {num(b['mean_abs'])} m")
     print(f"near side : reference {nr['reference']}, judged {nr['judged']} ({pct(nr['coverage'])}), "
-          f"agree {nr['agree']} ({pct(nr['agreement_of_judged'])} of judged), "
+          f"agree {nr['agree']} ({pct(nr['agreement_of_judged'])} of judged; "
+          f"always-in would be {pct(nr['always_in_agreement'])}), "
+          f"out {nr['said_out_right']}/{nr['said_out']} said ({pct(nr['out_precision'])}), "
+          f"recall {pct(nr['out_recall'])} of {nr['reference_out']}, "
           f"unreferenced calls {nr['unreferenced_calls']}")
     if nr['not_judged']:
         print('            not judged: ' + ', '.join(f'{k} {v}' for k, v in sorted(nr['not_judged'].items())))
