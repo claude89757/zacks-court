@@ -257,7 +257,13 @@ public enum IndependentBallEvents {
     }
 
     /// Best successor for each piece (one-to-one, smallest kink miss); gaps up to 24 frames.
-    public static func junctions(_ pcs: [[IndependentTrackPoint]], maxGap: Double = 24, maxMiss: Double = 25) -> [IndependentJunction] {
+    ///
+    /// With a camera, a flight that would end on a dead-end fragment (a blip with no successor of its own) is
+    /// re-pointed to a piece the bounce test verifies (2026-11-06). At double-test-003 142.8 the flight from
+    /// the far hit ended on a five-point fragment and the real landing, 21.7 px of kink away, was never used;
+    /// re-pointing recovers that call while every other call and speed row stays (docs/verification.md).
+    public static func junctions(_ pcs: [[IndependentTrackPoint]], maxGap: Double = 24, maxMiss: Double = 25,
+                                 camera cam: IndependentProjector? = nil) -> [IndependentJunction] {
         let starts = pcs.map { $0[0].t }
         var cand = [(Double, Int, Int, Double, SIMD2<Double>)]()
         for (i, A) in pcs.enumerated() {
@@ -275,7 +281,53 @@ public enum IndependentBallEvents {
             usedA.insert(i); usedB.insert(j)
             links.append(IndependentJunction(a: i, b: j, t: t, u: uv.x, v: uv.y, miss: miss))
         }
+        guard let cam else { return links }
+        // a blip that ends a flight must not hide the landing the ball really made: a link the bounce test
+        // verifies may take over from a dead-end fragment (2026-11-06, docs/verification.md)
+        var strong = Set<Int>()
+        for (miss, i, j, t, uv) in cand where verifiedLanding(pcs, i, j, t: t, uv: uv, camera: cam) {
+            strong.insert(i * 100000 + j)
+            _ = miss
+        }
+        guard !strong.isEmpty else { return links }
+        let hasSucc = Set(links.map(\.a))
+        var predOf = [Int: Int]()
+        for (k, l) in links.enumerated() { predOf[l.b] = k }
+        for (miss, i, j, t, uv) in cand {
+            guard strong.contains(i * 100000 + j) else { continue }
+            guard let k = links.firstIndex(where: { $0.a == i }) else { continue }
+            let c = links[k].b
+            guard c != j, pcs[c].count <= deadEndPoints, !hasSucc.contains(c) else { continue }
+            if let pk = predOf[j] {
+                let pa = links[pk].a
+                if strong.contains(pa * 100000 + j) { continue }
+                links.remove(at: pk)
+                predOf = [:]
+                for (n, l) in links.enumerated() { predOf[l.b] = n }
+            }
+            links[k] = IndependentJunction(a: i, b: j, t: t, u: uv.x, v: uv.y, miss: miss)
+            predOf[j] = k
+        }
         return links
+    }
+
+    /// A piece short enough to be a detection blip rather than a flight.
+    static let deadEndPoints = 8
+
+    /// True when the two pieces fit one flight either side of the kink, falling into it and rising out of it:
+    /// the bounce test of `IndependentShotFlights.testBounce` (6 px, falling before, rising after), asked here
+    /// to decide which link is the landing.
+    static func verifiedLanding(_ pcs: [[IndependentTrackPoint]], _ a: Int, _ b: Int, t: Double,
+                                uv: SIMD2<Double>, camera cam: IndependentProjector) -> Bool {
+        let Pg = cam.onPlaneZ(uv.x, uv.y, z: IndependentCourt.ballRadius)
+        guard -8 < Pg.y, Pg.y < 32, abs(Pg.x) < 9 else { return false }
+        let A = Array(pcs[a].suffix(25)), B = Array(pcs[b].prefix(15))
+        guard A.count >= 4, B.count >= 4 else { return false }
+        let tt = t * fps
+        let fa = IndependentFlight.bestAnchored(cam, frames: A.map(\.t), uv: A.map(\.uv), anchor: Pg, at: tt, before: true)
+        guard fa.rms <= 6, fa.velocity.z < 0 else { return false }
+        let fb = IndependentFlight.bestAnchored(cam, frames: B.map(\.t), uv: B.map(\.uv), anchor: Pg, at: tt, before: false)
+        return fb.rms <= 6 && 0 < fb.velocity.z
     }
 
     /// Bounce test: both sides fit a flight anchored at the junction's ground point within 6 px, falling
