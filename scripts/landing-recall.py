@@ -35,14 +35,34 @@ def rodrigues(r):
             [kz * kx * v - ky * s, kz * ky * v + kx * s, c + kz * kz * v]]
 
 
-def camera_from(trace):
+def cameras_from(trace):
+    """(seconds, camera) in the order they took effect: the court recognition updates as it runs,
+    so a single camera cannot describe a whole video (2026-11-07)."""
+    out = []
+    now = 0.0
     for event in trace:
-        if 'camera' not in event:
-            continue
-        for value in event['camera'].values():
-            if value:
-                return value
-    return None
+        if 'candidates' in event:
+            for value in event['candidates'].values():
+                for c in value:
+                    now = max(now, float(c.get('time') or 0))
+        elif 'update' in event and isinstance(event['update'], dict):
+            now = max(now, float(event['update'].get('now') or 0))
+        elif 'camera' in event:
+            for value in event['camera'].values():
+                if value:
+                    out.append((now, value))
+    return out
+
+
+def camera_at(cameras, t):
+    """The camera in force at time t."""
+    chosen = None
+    for when, cam in cameras:
+        if when <= t:
+            chosen = cam
+        else:
+            break
+    return chosen if chosen is not None else (cameras[0][1] if cameras else None)
 
 
 def candidates_from(trace):
@@ -85,7 +105,7 @@ def nearest_candidate(frames, u, v, t0, t1):
     return best
 
 
-def self_check(frames, run, shift_of, window=0.35):
+def self_check(frames, run, shift_of, cameras, window=0.35):
     """Fraction of the chain's own landings that have a candidate within 60 px."""
     hits, total = 0, 0
     for row in run:
@@ -93,7 +113,10 @@ def self_check(frames, run, shift_of, window=0.35):
         if bounce.get('yMeters') is None or bounce.get('sourcePTS') is None:
             continue
         total += 1
-        point = shift_of(bounce['xMeters'], bounce['yMeters'])
+        cam = camera_at(cameras, bounce['sourcePTS'])
+        if cam is None:
+            continue
+        point = shift_of(cam, bounce['xMeters'], bounce['yMeters'])
         if point is None:
             continue
         t = bounce['sourcePTS']
@@ -102,27 +125,32 @@ def self_check(frames, run, shift_of, window=0.35):
     return hits, total
 
 
-def pick_shift(cam, frames, run):
+def pick_shift(cameras, frames, run):
     """The convention that reproduces the chain's own landings best, or None if none does."""
     best = None
     for shift in (0.0, CENTRE_X):
-        project = projector(cam, shift)
-        hits, total = self_check(frames, run, project)
+        def project(cam, x, y, shift=shift):
+            return projector(cam, shift)(x, y)
+        hits, total = self_check(frames, run, project, cameras)
         rate = hits / total if total else 0.0
         if best is None or rate > best[0]:
             best = (rate, shift, hits, total)
     return best
 
 
-def teacher_recall(cam, frames, run, teacher, shift, window=(0.2, 2.6)):
+def teacher_recall(cameras, frames, run, teacher, shift, window=(0.2, 2.6)):
     """Reference landings whose projected point has a candidate within 60 px."""
-    project = projector(cam, shift)
+    def project(cam, x, y):
+        return projector(cam, shift)(x, y)
     covered = []
     for row in teacher:
         bounce = row.get('bounce') or {}
         if bounce.get('y') is None or bounce.get('y') >= NET_Y:
             continue
-        point = project(bounce['x'] + CENTRE_X, bounce['y'])       # the export's x is from the centre line
+        cam = camera_at(cameras, row['anchor'])
+        if cam is None:
+            continue
+        point = project(cam, bounce['x'] + CENTRE_X, bounce['y'])   # the export's x is from the centre line
         if point is None:
             continue
         t0, t1 = row['anchor'] + window[0], row['anchor'] + window[1]
@@ -138,7 +166,10 @@ def self_test():
     assert abs(u - 960.0) < 1e-6 and abs(v - 540.0) < 1e-6, (u, v)
     u, v = project(CENTRE_X + 1.0, 0.0)
     assert abs(u - 960.0) > 1.0
-    assert pick_shift(cam, {0: [(960.0, 540.0)]}, [{'bounce': {'xMeters': CENTRE_X, 'yMeters': 0.0, 'sourcePTS': 0.0}}])[0] > 0.99
+    assert pick_shift([(0.0, cam)], {0: [(960.0, 540.0)]},
+                      [{'bounce': {'xMeters': CENTRE_X, 'yMeters': 0.0, 'sourcePTS': 0.0}}])[0] > 0.99
+    assert camera_at([(0.0, cam), (10.0, {'z': 1})], 5.0) is cam
+    assert camera_at([(0.0, cam), (10.0, {'z': 1})], 15.0) == {'z': 1}
     assert nearest_candidate({0: [(100.0, 100.0)]}, 100.0, 100.0, -1, 1) == 0.0
     assert nearest_candidate({0: [(100.0, 100.0)]}, 100.0, 100.0, 5, 6) == math.inf
     print('PASS: landing recall projects, self-selects the frame, and windows in time')
@@ -156,12 +187,12 @@ def main(argv):
     with open(argv[2]) as f:
         run = json.load(f)
     run = run['events'] if isinstance(run, dict) else run
-    cam = camera_from(trace)
-    if cam is None:
+    cameras = cameras_from(trace)
+    if not cameras:
         print('no camera record in the trace')
         return 1
     frames = candidates_from(trace)
-    rate, shift, hits, total = pick_shift(cam, frames, run)
+    rate, shift, hits, total = pick_shift(cameras, frames, run)
     print(f'self-check: {hits}/{total} of our own landings within 60 px at shift {shift}')
     if rate < 0.6:
         print(f'self-check failed ({rate:.0%}): no convention reproduces our own landings, not reporting')
@@ -169,7 +200,7 @@ def main(argv):
     if len(argv) > 3 and argv[3] == '--teacher':
         with open(argv[4]) as f:
             teacher = json.load(f)['teacher']
-        distances = teacher_recall(cam, frames, run, teacher, shift)
+        distances = teacher_recall(cameras, frames, run, teacher, shift)
         inside = [d for d in distances if d <= 60]
         print(f'reference landings {len(distances)}, with a candidate within 60 px {len(inside)} '
               f'({100 * len(inside) / max(len(distances), 1):.0f}%)')

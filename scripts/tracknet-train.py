@@ -72,22 +72,26 @@ def main(argv):
     import torch
     from model import TrackNet
 
-    with open(labels_path) as f:
-        labels = [json.loads(line) for line in f][:limit]
-    print(f'{len(labels)} labels, {epochs} epochs')
-
+    pairs = [(labels_path, video)]
+    if '--manifest' in argv:
+        with open(argv[argv.index('--manifest') + 1]) as f:
+            pairs = [(entry['labels'], entry['video']) for entry in json.load(f)]
     samples = []
-    for row in labels:
-        key = os.path.join(CACHE, f'{row["t"]:.4f}.npy')
-        if os.path.exists(key):
-            stacked = np.load(key)
-        else:
-            stacked = sample_at(video, row['t'])
-            if stacked is None:
-                continue
-            np.save(key, stacked)
-        samples.append((stacked, target_for(row['u'], row['v'])))
-    print(f'{len(samples)} samples with frames')
+    for labels_file, video_file in pairs:          # each label's time belongs to its own video
+        with open(labels_file) as f:
+            labels = [json.loads(line) for line in f][:limit]
+        print(f'{len(labels)} labels from {os.path.basename(video_file)}')
+        for row in labels:
+            key = os.path.join(CACHE, f'{os.path.basename(video_file)}-{row["t"]:.4f}.npy')
+            if os.path.exists(key):
+                stacked = np.load(key)
+            else:
+                stacked = sample_at(video_file, row['t'])
+                if stacked is None:
+                    continue
+                np.save(key, stacked)
+            samples.append((stacked, target_for(row['u'], row['v'])))
+    print(f'{len(samples)} samples with frames, {epochs} epochs')
 
     model = TrackNet(27, 8)
     checkpoint = torch.load(BASE, map_location='cpu', weights_only=True)
