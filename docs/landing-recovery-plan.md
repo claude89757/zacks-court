@@ -62,8 +62,11 @@
 （`.local/speed-training/tracknet-smoke-20261028/checkpoints/ckpts/TrackNet_best.pt`，136,190,877 字节，
 摘要与仓库 manifest 一致；同目录 `TrackNetV3/{train.py,model.py,dataset.py}`）。用仓库运行时的 Python 3.12
 建了 venv 并装好 torch，但**导入失败**：`libtorch_global_deps.dylib` 的 Team ID 与宿主 Python 不一致
-（macOS 代码签名冲突），对 dylib 做 ad-hoc 签名也无效。下一步换一个非签名的解释器（`brew install python@3.12`
-或 python.org 官方包）再试；这只是环境问题，不影响已有结论。
+（macOS 代码签名冲突），对 dylib 做 ad-hoc 签名也无效。下一步换一个非签名的解释器再试。
+
+**已解决（2026-11-06，本节后补）**：`brew install python@3.12` 装了解释器，用它重建 venv 后
+torch 2.15.0 可导入、MPS 可用；官方权重 `TrackNet(27, 8)` **strict 加载成功**（epoch 18，27 通道 = 背景 +
+8 帧），MPS 上前向出 8 张 288×512 热图。训练环境打通，方向 B 可以开工。
 
 **验收**：同一验证集上候选召回（对参照落点 60 px 内）比基础模型高，且三段视频的落点覆盖与判对不劣化。
 
