@@ -30,7 +30,7 @@ App 只有三项核心功能，研究、打磨和验收都围绕它们：
 | `Sources/CourtAnalyze` | `court-analyze`：用同一流式引擎离线分析本地视频 |
 | `Tests/CourtCoreTests` | `court-check` 可执行检查（协议 v2、配对、会话、人员检测、机位媒体管线的真实编解码） |
 | `Tests/CourtAppTests` | `swift test`：浏览器看板（`WebDisplayTests`，测试扮演浏览器）、模型/几何/轨迹门控、机位端分析、识别状态、值守屏、机位↔看板 TLS 集成（采用、镜像、断线补发、冲突、后台）、降载、回传、离线补算、单拍片段、连接方式与点对点设置、历史查询、预览响应、现场诊断（采集日志、诊断包）；可选的实机看板测试 |
-| `scripts/` | 构建、模型准备、iOS 工程生成、UI 验收、图标导出；球场实测的记录表生成与对照（`field-test-sheet.py`、`field-test-report.py`，只用 Python 标准库） |
+| `scripts/` | 构建、模型准备、iOS 工程生成、UI 验收、图标导出；球场实测的记录表生成与对照（`field-test-sheet.py`、`field-test-report.py`），以及一次运行对一份参照的打分（`score-run.py`，行匹配/拍型/发球/球速/落点误差/近端判罚，带 `--self-test`），只用 Python 标准库 |
 | `assets/` | 分析模型集合与品牌素材 |
 | `docs/` | 设计、验证记录、实机清单、研究记录、README 图片 |
 
