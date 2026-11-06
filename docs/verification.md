@@ -3628,3 +3628,31 @@ maozi 400→325、dsh 1069→939，有速 68→61、71→59。行掉得太多—
 「这条链没有可用的击球点，只回放落点」。判罚、行、速度、发球都不受影响。
 
 **没有验证**：这些 78 条里有多少本来是对的击球点被错误地归为「不可能」（用运动学上界做的门，没有真值）。
+
+## 2026-11-06 实时链与重放链逐行一致（2 分钟片段，首次端到端核对）
+
+前 15 轮所有比赛都在 `independent-replay` 上做，实时链（`independent-live`）只跑过模型基准，没核对过
+两条链是不是真的一样。这一轮用一个新片段直接核对。
+
+- 片段：`single-tt-vs-dizheng.MOV` 从 300 秒起 120 秒，`ffmpeg -c copy` 剪出，不重编码。
+- 命令：`.build/release/court-analyze independent-live /tmp/live-clip.mov .local/IndependentModels/tracknetv3-base-fp16-v1 auto /tmp/live-out.json`
+  （模型目录必须是 **fp16** 那个：传 FP32 目录会报 "manifest differs from reviewed bytes"，因为运行时按
+  `Variant.fp16` 的固定摘要校验）。
+- 实时链输出：`court=0.3 solves=133 frames=7189 wall=52.1s rows=103 speeds=9 strokes=97 batches=880
+  resets=4 overflows=0 scaleMs=0.39 inferMs=18.3 personMs=21.3`，即 120 秒视频用了 52 秒、约 2.3 倍速，
+  没有丢帧（overflows=0），画面在动重来了 4 次。
+- 同一 trace 重放：`rows=103 speeds=9 strokes=97`，逐行比较（时间、类别、球速、落点 x/y）**完全相同**。
+
+结论：规则层所有对照实验（都在重放链上做的）对实时链成立；这条核对以后每轮都可以用同一个片段跑一次。
+**没有验证**：iPhone 上的实时性能（这里只是这台 Mac），以及这段 120 秒里 103 行只有 9 行有速度是否
+与整段一致（整段是 68/416）。
+
+## 2026-11-06 同半场守卫不是漏判的原因；用击球点合理性门禁判罚：否决
+
+上一轮发现击球点拟合经常不可信（double 481 行里 298 行 |x|>6.5 米）。顺着查了「同半场守卫」
+（`HawkEye` 用 hitY 与落点是否同侧决定要不要判）：把两段开发视频的漏判逐条归因，**9 条（test）和
+20 条（double）漏判全部是「没有落点」，没有一条是被同半场守卫挡掉的**。
+
+再看无参照的多余近端判罚（test 8 条、double 12 条），其中 test 3 条、double 5 条的击球点在物理上不可能
+（z<0 或 x/y 出界）。但在判罚链上加「击球点不合理就不判」会连对的一起挡：28 条判对的行里，test 有 1 条、
+double 有 9 条的击球点不可信。为去掉 8 条多余判罚而丢 10 条对的，不合算，不做。
