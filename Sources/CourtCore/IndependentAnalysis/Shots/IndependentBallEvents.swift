@@ -300,7 +300,7 @@ public enum IndependentBallEvents {
         for (k, l) in links.enumerated() { linkOfA[l.a] = k; predOf[l.b] = k }
         for (miss, i, j, t, uv) in cand {
             // the fits only run for a candidate that could replace a blip, which is a handful per segment
-            guard let k = linkOfA[i] else { continue }
+            guard var k = linkOfA[i] else { continue }
             let c = links[k].b
             guard c != j, pcs[c].count <= deadEndPoints, !hasSucc.contains(c) else { continue }
             guard landing(i, j) else { continue }
@@ -309,6 +309,10 @@ public enum IndependentBallEvents {
                 links.remove(at: pk)
                 linkOfA = [:]; predOf = [:]
                 for (n, l) in links.enumerated() { linkOfA[l.a] = n; predOf[l.b] = n }
+                // removing the predecessor shifts every later index, so the link's own index has to be
+                // looked up again; using the old one wrote past the end of the array (2026-11-07)
+                guard let again = linkOfA[i] else { continue }
+                k = again
             }
             links[k] = IndependentJunction(a: i, b: j, t: t, u: uv.x, v: uv.y, miss: miss)
             predOf[j] = k
