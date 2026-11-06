@@ -258,7 +258,7 @@ public enum IndependentShotPipeline {
             guard let values, values.count >= count, values.prefix(count).allSatisfy(\.isFinite) else { return nil }
             return values
         }
-        return shots.map { s in
+        return shots.filter(keeps).map { s in
             let speed = s.reportedSpeedKmh.flatMap { $0.isFinite ? $0 : nil }
             var row = TennisShotEvent(streamID: streamID, sourcePTS: (s.contactT ?? s.tHit) + ptsOffset, stroke: IndependentStrokeRules.kind(s.stroke),
                                       confidence: 0, speedKPH: speed, speedReason: speed == nil ? reasonText(s) : nil, sampleCount: s.nObs)
@@ -273,6 +273,17 @@ public enum IndependentShotPipeline {
             row.origin = "independent"
             return row
         }
+    }
+
+    /// Whether a shot becomes a row (2026-11-06). A shot with no bounce, no speed and a contact that is not
+    /// even on the court has nothing to show: the night video writes 1264 of those for 325 real shots, 87 of
+    /// them with a contact hundreds of metres away. Callers that pair rows with shots must filter by this.
+    public static func keeps(_ s: IndependentShotResult) -> Bool {
+        if s.bounceGround != nil { return true }
+        if let v = s.reportedSpeedKmh, v.isFinite { return true }
+        guard let h = s.fitHit, h.count >= 2, h[0].isFinite, h[1].isFinite else { return false }
+        return HawkEye.contactUsable(TennisCourtPoint(x: IndependentCourt.courtX(fromCentred: h[0]), y: h[1],
+                                                      z: h.count > 2 && h[2].isFinite ? h[2] : 0))
     }
 
     static func reasonCode(_ s: IndependentShotResult) -> TennisReason {

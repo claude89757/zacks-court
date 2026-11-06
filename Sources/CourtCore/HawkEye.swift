@@ -106,6 +106,13 @@ public enum HawkEye {
     public static let defaultMargin = 0.15
     /// A server this close to the centre mark gives no service box (both boxes count).
     static let centreBand = 0.3
+    /// A fitted contact this far from the court is a failed fit, not a shot (2026-11-06): the in-house chain
+    /// fits such points on 87 of the night video's 1264 rows, the worst hundreds of metres away.
+    public static let contactLimit = 100.0
+    public static func contactUsable(_ hit: TennisCourtPoint?) -> Bool {
+        guard let hit, hit.x.isFinite, hit.y.isFinite, hit.z.isFinite else { return false }
+        return abs(hit.x - centreX) <= contactLimit && (-contactLimit...(length + contactLimit)).contains(hit.y)
+    }
 
     /// The call for a bounce at court `x`, `y` (x from the near-left doubles sideline, y from the near
     /// baseline), with standard deviations `sigmaX`, `sigmaY` in metres. `serverX`: the serve's contact
