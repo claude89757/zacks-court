@@ -284,26 +284,31 @@ public enum IndependentBallEvents {
         guard let cam else { return links }
         // a blip that ends a flight must not hide the landing the ball really made: a link the bounce test
         // verifies may take over from a dead-end fragment (2026-11-06, docs/verification.md)
-        var strong = Set<Int>()
-        for (miss, i, j, t, uv) in cand where verifiedLanding(pcs, i, j, t: t, uv: uv, camera: cam) {
-            strong.insert(i * 100000 + j)
-            _ = miss
+        var landingOf = [Int: (t: Double, uv: SIMD2<Double>)]()   // candidate (a, b) -> its kink
+        for (_, i, j, t, uv) in cand { landingOf[i * 100000 + j] = (t, uv) }
+        var verified = [Int: Bool]()
+        func landing(_ a: Int, _ b: Int) -> Bool {
+            let key = a * 100000 + b
+            if let v = verified[key] { return v }
+            guard let q = landingOf[key] else { return false }
+            let v = verifiedLanding(pcs, a, b, t: q.t, uv: q.uv, camera: cam)
+            verified[key] = v
+            return v
         }
-        guard !strong.isEmpty else { return links }
         let hasSucc = Set(links.map(\.a))
-        var predOf = [Int: Int]()
-        for (k, l) in links.enumerated() { predOf[l.b] = k }
+        var linkOfA = [Int: Int](), predOf = [Int: Int]()
+        for (k, l) in links.enumerated() { linkOfA[l.a] = k; predOf[l.b] = k }
         for (miss, i, j, t, uv) in cand {
-            guard strong.contains(i * 100000 + j) else { continue }
-            guard let k = links.firstIndex(where: { $0.a == i }) else { continue }
+            // the fits only run for a candidate that could replace a blip, which is a handful per segment
+            guard let k = linkOfA[i] else { continue }
             let c = links[k].b
             guard c != j, pcs[c].count <= deadEndPoints, !hasSucc.contains(c) else { continue }
+            guard landing(i, j) else { continue }
             if let pk = predOf[j] {
-                let pa = links[pk].a
-                if strong.contains(pa * 100000 + j) { continue }
+                if landing(links[pk].a, j) { continue }   // that end already shows a landing
                 links.remove(at: pk)
-                predOf = [:]
-                for (n, l) in links.enumerated() { predOf[l.b] = n }
+                linkOfA = [:]; predOf = [:]
+                for (n, l) in links.enumerated() { linkOfA[l.a] = n; predOf[l.b] = n }
             }
             links[k] = IndependentJunction(a: i, b: j, t: t, u: uv.x, v: uv.y, miss: miss)
             predOf[j] = k
