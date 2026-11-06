@@ -57,8 +57,8 @@ public enum IndependentShotPipeline {
     public static func events(candidates: [IndependentShotCandidate], segment: Segment) -> SegmentEvents {
         let inside = candidates.filter { $0.time / 60 >= segment.start && $0.time / 60 < segment.end }
         let (pcs, tossEnds) = IndependentBallEvents.piecesAndTossEnds(of: IndependentBallEvents.tracks(from: inside))
-        var links = IndependentBallEvents.junctions(pcs)
         let cam = IndependentProjector(segment.camera)
+        var links = IndependentBallEvents.junctions(pcs, camera: cam)
         links.withUnsafeMutableBufferPointer { buffer in
             let base = buffer.baseAddress!
             DispatchQueue.concurrentPerform(iterations: buffer.count) { i in
