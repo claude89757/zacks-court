@@ -91,6 +91,13 @@ public enum HawkEye {
     public static let serviceFromNet = 6.40
     public static let centreLineHalfWidth = 0.025
     public static let ballRadius = 0.033
+
+    /// Whether a fitted contact is where a player could stand (2026-11-06): the in-house chain's hit fit is
+    /// often far outside the court (on double-test-003 more than half of the rows fit |x| past the doubles
+    /// sideline, the worst hundreds of metres away). Such a point cannot drive the replay arc.
+    public static func plausibleHit(xCentred: Double, y: Double, z: Double) -> Bool {
+        abs(xCentred) <= 6.5 && (-3.0...27.0).contains(y) && (0...6).contains(z)
+    }
     /// Smallest margin: the line's own painting and the ball's compression are a few centimetres.
     public static let minimumMargin = 0.03
     /// Margin in standard deviations of the bounce estimate along the line's normal.

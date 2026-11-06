@@ -230,7 +230,8 @@ struct HawkEyeChallengeView: View {
             if shot.lineCall != nil { previousButton(shot) }
             Spacer(minLength: 0)
             if shot.lineCall != nil {
-                Text(shot.hit == nil ? "这条链没有击球点，只回放落点" : "轨迹按击球点和落点估算").font(.caption).foregroundStyle(CourtStyle.muted)
+                Text(HawkEyeReplayScene(event: shot, judgement: shot.challenge?.judgement)?.flight == nil
+                     ? "这条链没有可用的击球点，只回放落点" : "轨迹按击球点和落点估算").font(.caption).foregroundStyle(CourtStyle.muted)
             }
         }
         .padding(.horizontal, CourtStyle.Space.l).padding(.bottom, CourtStyle.Space.m)
