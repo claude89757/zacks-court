@@ -58,6 +58,13 @@
 5. 先在同一验证集上量基础模型，再量微调模型；候选数崩塌（45,135 → 4,208）要先解释再谈；
 6. 环境：这台 Mac 目前没有 PyTorch，需要新建；单机 MPS 训练按天算。
 
+**环境准备的实际进展（2026-11-06）**：官方权重和训练代码都在本机
+（`.local/speed-training/tracknet-smoke-20261028/checkpoints/ckpts/TrackNet_best.pt`，136,190,877 字节，
+摘要与仓库 manifest 一致；同目录 `TrackNetV3/{train.py,model.py,dataset.py}`）。用仓库运行时的 Python 3.12
+建了 venv 并装好 torch，但**导入失败**：`libtorch_global_deps.dylib` 的 Team ID 与宿主 Python 不一致
+（macOS 代码签名冲突），对 dylib 做 ad-hoc 签名也无效。下一步换一个非签名的解释器（`brew install python@3.12`
+或 python.org 官方包）再试；这只是环境问题，不影响已有结论。
+
 **验收**：同一验证集上候选召回（对参照落点 60 px 内）比基础模型高，且三段视频的落点覆盖与判对不劣化。
 
 **证否条件**：如果基础模型在留出视频上的候选召回已经很高（说明不是模型的问题），方向 B 放弃。
