@@ -37,7 +37,7 @@ public struct HawkEyeReplayScene: Equatable, Sendable {
         (lineAnchor, outward, lineFrom, lineTo) = Self.anchor(x: x, y: y, judgement: j, serverX: event.hit?.x)
         fromNear = event.hit.map { $0.y < HawkEye.netY } ?? (y > HawkEye.netY)
         flight = nil; bounceIndex = 0
-        if let h = event.hit {
+        if let h = event.hit, HawkEye.plausibleHit(xCentred: h.x - HawkEye.centreX, y: h.y, z: h.z) {
             let T = b.sourcePTS - event.sourcePTS
             if T > 0.15, T < 3 {
                 let H = SIMD3(h.x, h.y, max(h.z, HawkEye.ballRadius))

@@ -35,6 +35,20 @@ final class HawkEyeReplayTests: XCTestCase {
         XCTAssertNil(HawkEyeReplayScene(event: unjudged))
     }
 
+    /// 2026-11-06: a fitted contact far outside the court cannot drive the replay arc (the in-house chain
+    /// fits such points on more than half of its rows), so the replay falls back to the bounce alone.
+    func testAnImpossibleHitPointDoesNotDrawAFlight() throws {
+        let good = TennisCourtPoint(x: 5, y: 22.5, z: 1.0)
+        XCTAssertNotNil(HawkEyeReplayScene(event: shot(bounce: (4, -0.2), hit: good))?.flight)
+        for bad in [TennisCourtPoint(x: 5 + 8, y: 22.5, z: 1.0),      // far past the doubles sideline
+                    TennisCourtPoint(x: 5, y: 60, z: 1.0),            // behind the back fence
+                    TennisCourtPoint(x: 5, y: 22.5, z: 9)] {          // nine metres up
+            let scene = try XCTUnwrap(HawkEyeReplayScene(event: shot(bounce: (4, -0.2), hit: bad)))
+            XCTAssertNil(scene.flight, "no arc from \(bad)")
+            XCTAssertEqual(scene.bounce.y, -0.2, accuracy: 1e-9, "the bounce is still replayed")
+        }
+    }
+
     private func judged(_ x: Double, _ y: Double, hit: TennisCourtPoint, sx: Double = 0.045, sy: Double = 0.2, serve: Bool = false) -> TennisShotEvent {
         var e = TennisShotEvent(streamID: UUID(), sourcePTS: 10, stroke: serve ? .serve : .forehand, confidence: 0)
         e.hit = hit
