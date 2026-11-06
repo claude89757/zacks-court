@@ -25,7 +25,8 @@ enum IndependentReplayCommand {
         var paired = [(TennisShotEvent, IndependentShotResult)]()
         for shots in streams {
             let stream = UUID()
-            paired += zip(IndependentShotPipeline.rows(from: shots, streamID: stream), shots)
+            let kept = shots.filter(IndependentShotPipeline.keeps)
+            paired += zip(IndependentShotPipeline.rows(from: kept, streamID: stream), kept)
         }
         // rows in time order, and `shots[i]` is the full result behind `events[i]`
         let order: [Int] = paired.indices.sorted { (i: Int, j: Int) -> Bool in

@@ -482,8 +482,9 @@ public final class IndependentLiveEngine {
                                      : shots.update(now: now, camera: camera, people: personsStage.people)
         catchUpPending = false
         var rows = [TennisShotEvent]()
-        for i in changed {
-            var row = IndependentShotPipeline.rows(from: [shots.published[i].shot], streamID: streamID)[0]
+        for i in changed where i < shots.published.count {
+            // a shot with nothing to show has no row (IndependentShotPipeline.keeps): skip it, do not index
+            guard var row = IndependentShotPipeline.rows(from: [shots.published[i].shot], streamID: streamID).first else { continue }
             if let id = ids[i] { row.id = id } else { ids[i] = row.id }
             rows.append(row)
         }

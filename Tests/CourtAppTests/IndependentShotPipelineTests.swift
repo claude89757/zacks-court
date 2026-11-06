@@ -65,6 +65,26 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertNotNil(rows.first { $0.speedKPH != nil }?.bounce?.yMeters)
     }
 
+    /// 2026-11-06: a shot with no bounce, no speed and a contact off the court has nothing to show and makes no
+    /// row; anything with one of the three keeps one. Callers that pair rows with shots filter by `keeps`.
+    func testAShotWithNothingToShowMakesNoRow() {
+        var empty = IndependentShotResult(hitKind: "hit junction", hitterFound: true, bounceFound: false, contactUV: [960, 540],
+                                          hitterBox: nil, incoming: nil, hitterSide: nil, tHit: 10, nObs: 3, firstFrame: 0, lastFrame: 0)
+        XCTAssertFalse(IndependentShotPipeline.keeps(empty))
+        XCTAssertTrue(IndependentShotPipeline.rows(from: [empty], streamID: UUID()).isEmpty)
+        empty.fitHit = [1e73, 5e73, 1]
+        XCTAssertFalse(IndependentShotPipeline.keeps(empty), "a contact hundreds of metres away is not a shot")
+        empty.fitHit = [1, 20, 1]
+        XCTAssertTrue(IndependentShotPipeline.keeps(empty))
+        XCTAssertEqual(IndependentShotPipeline.rows(from: [empty], streamID: UUID()).count, 1)
+        empty.fitHit = nil
+        empty.bounceGround = [1, 5, 0]
+        XCTAssertTrue(IndependentShotPipeline.keeps(empty), "a bounce is always worth a row")
+        empty.bounceGround = nil
+        empty.accepted = true; empty.speedKmh = 120; empty.speedAnchor = .serveBaseline
+        XCTAssertTrue(IndependentShotPipeline.keeps(empty), "so is a speed")
+    }
+
     /// The same synthetic shot fed in time order: the live chain publishes it once settled, with the
     /// batch speed, within a second of the bounce; a reset freezes it.
     func testLiveChainPublishesTheBatchShotAfterTheBounce() throws {
