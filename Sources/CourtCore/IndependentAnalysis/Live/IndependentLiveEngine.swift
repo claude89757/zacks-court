@@ -146,7 +146,9 @@ final class IndependentLiveBallStage {
     private(set) var resets = 0, batches = 0, inferenceSeconds = 0.0
     var backgroundReady: Bool { background != nil }
 
-    init(model: IndependentBallModel, nominalFPS: Double = 60) { self.model = model; maximumInterval = 1.5 / nominalFPS }
+    /// Up to two frames may be missing without a reset (2026-11-06): the night video drops one frame every
+    /// 16.9 s, and treating that as a break cleared the in-flight state 96 times in 27 minutes.
+    init(model: IndependentBallModel, nominalFPS: Double = 60) { self.model = model; maximumInterval = 3.5 / nominalFPS }
 
     func reset() { warmupFrames.removeAll(); background = nil; pending.removeAll(); pendingTimes.removeAll(); pendingIndices.removeAll(); lastPTS = nil; resets += 1 }
 

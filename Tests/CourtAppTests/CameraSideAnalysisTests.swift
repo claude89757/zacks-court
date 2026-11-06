@@ -22,10 +22,17 @@ final class CameraSideAnalysisTests: XCTestCase {
             if cadence.needsPixels { needed.append(cadence.ordinal) }
         }
         XCTAssertEqual(needed, [6, 7, 8, 12, 13, 14, 18, 19, 20])
-        // One missing 60 fps frame is a temporal break; so is a new stream.
-        XCTAssertTrue(cadence.advance(pts: 22.0 / 60, streamID: stream)); XCTAssertEqual(cadence.ordinal, 1)
-        XCTAssertFalse(cadence.advance(pts: 23.0 / 60, streamID: stream))
-        XCTAssertTrue(cadence.advance(pts: 24.0 / 60, streamID: UUID()))
+        // Up to two missing 60 fps frames are not a break (2026-11-06): the night video drops one every
+        // 16.9 s and resetting there threw away the flight in the air. Four frames of gap still break,
+        // and so does a new stream.
+        XCTAssertFalse(cadence.advance(pts: 22.0 / 60, streamID: stream), "one missing frame continues")
+        XCTAssertEqual(cadence.ordinal, 22)
+        XCTAssertFalse(cadence.advance(pts: 24.0 / 60, streamID: stream), "two missing frames continue")
+        XCTAssertEqual(cadence.ordinal, 23)
+        XCTAssertFalse(cadence.advance(pts: 25.0 / 60, streamID: stream))
+        XCTAssertTrue(cadence.advance(pts: 29.0 / 60, streamID: stream), "four missing frames are a break")
+        XCTAssertEqual(cadence.ordinal, 1)
+        XCTAssertTrue(cadence.advance(pts: 30.0 / 60, streamID: UUID()))
         cadence.restart(); XCTAssertTrue(cadence.advance(pts: 25.0 / 60, streamID: stream)); XCTAssertEqual(cadence.ordinal, 1)
     }
 

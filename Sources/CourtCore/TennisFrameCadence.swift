@@ -18,10 +18,12 @@ public struct TennisFrameCadence: Sendable {
         let rounded = fps.rounded(.toNearestOrAwayFromZero)
         return (max(1,Int(rounded / 10)), max(1,Int(rounded / 30)))
     }
-    /// Advances one source frame. True when this frame starts a new temporal run:
-    /// a different stream, non-increasing PTS, or a gap above 1.8 source frames.
+    /// Advances one source frame. True when this frame starts a new temporal run: a different stream,
+    /// non-increasing PTS, or a gap above 3.5 source frames. Up to two frames may be missing (2026-11-06):
+    /// a recorder or camera that drops a frame is not a break, and resetting there threw away the flight in
+    /// the air over one dropped frame every 17 seconds.
     @discardableResult public mutating func advance(pts: Double, streamID: UUID) -> Bool {
-        let restarted = self.streamID != streamID || lastPTS.map { pts <= $0 || pts - $0 > 1.8 / fps } == true
+        let restarted = self.streamID != streamID || lastPTS.map { pts <= $0 || pts - $0 > 3.5 / fps } == true
         if restarted { ordinal = 0; self.streamID = streamID }
         lastPTS = pts; ordinal += 1
         return restarted
