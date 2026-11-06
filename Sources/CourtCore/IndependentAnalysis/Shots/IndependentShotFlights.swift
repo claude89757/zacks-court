@@ -115,6 +115,7 @@ public struct IndependentShotResult: Sendable, Codable {
     public var fitHit: [Double]?
     public var vInstKmh: Double?
     public var fitNetZ: Double?
+    public var fitNetX: Double?
     public var endKind: String?
     public var intervalS: Double?
     public var speedKmh: Double?
@@ -564,7 +565,7 @@ enum IndependentShotFlights {
                 let a = S[i - 1], b = S[i], fr = (netY - a.p.y) / (b.p.y - a.p.y)
                 tNet = fs[i - 1] + fr; PNet = a.p + fr * (b.p - a.p)
             } else { tNet = fs[0]; PNet = S[0].p }
-            if bnc == nil || tNet <= bnc!.t + 0.5 { end = ("net", tNet, PNet); res.fitNetZ = PNet.z; res.pastNetCount = frames.filter { $0 > tNet }.count }
+            if bnc == nil || tNet <= bnc!.t + 0.5 { end = ("net", tNet, PNet); res.fitNetZ = PNet.z; res.fitNetX = PNet.x; res.pastNetCount = frames.filter { $0 > tNet }.count }
         }
         if end == nil, let bnc { end = ("bounce", bnc.t, SIMD3(bnc.P.x, bnc.P.y, bnc.P.z)) }
         guard let end else { res.reason = "fitted flight does not reach the net"; return res }

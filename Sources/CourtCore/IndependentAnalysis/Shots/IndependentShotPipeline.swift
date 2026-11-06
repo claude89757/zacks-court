@@ -179,7 +179,7 @@ public enum IndependentShotPipeline {
             let job = pairs[i].0, near = side == "near", cam = cameras[shots[i].segment]
             if let r = cached(i, near: near, hypothesis: 3, { IndependentShotFlights.serveBounceRefit(job, near: near, camera: cam) }) {
                 shots[i].speedKmh = r.speedKmh; shots[i].vInstKmh = r.vInstKmh; shots[i].intervalS = r.intervalS
-                shots[i].endKind = r.endKind; shots[i].fitNetZ = r.fitNetZ; shots[i].serveSpeedFrom = "bounce refit"
+                shots[i].endKind = r.endKind; shots[i].fitNetZ = r.fitNetZ; shots[i].fitNetX = r.fitNetX; shots[i].serveSpeedFrom = "bounce refit"
                 shots[i].landSpeedKmh = r.landSpeedKmh; shots[i].landY = r.landY
             }
         }
@@ -243,7 +243,7 @@ public enum IndependentShotPipeline {
     /// flight: the serve and rally rules (and the live window's history) read them.
     static func applyServeSpeed(_ r: IndependentShotResult, to s: inout IndependentShotResult) {
         s.speedKmh = r.speedKmh; s.vInstKmh = r.vInstKmh; s.intervalS = r.intervalS; s.endKind = r.endKind
-        s.fitNetZ = r.fitNetZ; s.accepted = r.accepted; s.reason = r.reason; s.speedAnchor = r.speedAnchor
+        s.fitNetZ = r.fitNetZ; s.fitNetX = r.fitNetX; s.accepted = r.accepted; s.reason = r.reason; s.speedAnchor = r.speedAnchor
         s.landSpeedKmh = r.landSpeedKmh; s.landY = r.landY
         if r.speedAnchor == .serveBounce {
             s.bounceFound = true; s.bounceGround = r.bounceGround; s.tBounce = r.tBounce
