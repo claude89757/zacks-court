@@ -5446,3 +5446,27 @@ Trace/BPT trap: 5
 `IndependentFlightModel.swift:247`）前加「数组为空则打印标记并退出」，跑一次整段，用标记定位。
 
 **没有验证**：崩溃的具体行。
+
+## 2026-11-07 崩溃定位（第二轮）：在 `IndependentBallEvents.junctions` 里，两处防御性修复都不够
+
+用逐级 stderr 标记（每级只在该窗口打印）把崩溃缩小到具体函数：
+
+| 标记 | 结果 |
+| --- | --- |
+| `IndependentLiveShots.run` 各阶段 | 全部打印，崩在 `IndependentShotPipeline.run` 内 |
+| `IndependentShotPipeline.run` 各阶段 | 全部打印到「落点 sigma」之后 |
+| 分段循环 `events` / `people` / `fits` | 崩在 `events(...)` 内（1726.52 s 那个窗口，902 个候选、9 个 piece、无空 piece） |
+| `events` 内 | 崩在 `IndependentBallEvents.junctions(pcs, camera:)` 内 |
+
+`junctions` 里有两处会 trap 的地方都做了防御修复（都保留，是真实风险）：
+
+1. `IndependentFlightModel.bestAnchored` 末尾 `return best!`——所有候选都被拒时 `best` 为 nil。
+   改成返回 `rms = .infinity`，调用方按「拒绝」处理，语义不变；
+2. `IndependentBallEvents.localPoly` 的 `degree = min(2, Q.count - 2)`——单点 piece 会得到 `-1`。
+   改成 `max(0, min(2, Q.count - 2))`。
+
+**两处改完仍然崩在同一位置**，所以真正的 trap 还在 `junctions` 里别处。`swift build`、`court-check` 通过；
+阈值已恢复 0.5（main 保持不崩），两处防御性修复单独提交。
+
+**没有验证**：`junctions` 里真正 trap 的那一行。下一轮改成「把崩溃窗口的 `pieces` 落盘，再写一个单元测试
+直接调 `junctions`」，这样每次迭代只要几秒，不用再等 13 分钟整段运行。

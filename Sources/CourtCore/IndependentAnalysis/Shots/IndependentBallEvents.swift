@@ -227,7 +227,7 @@ public enum IndependentBallEvents {
     static func localPoly(_ P: [IndependentTrackPoint], atEnd: Bool, n: Int = 8) -> (IndependentPoly, IndependentPoly) {
         let Q = atEnd ? Array(P.suffix(n)) : Array(P.prefix(n))
         let t = Q.map { $0.t / fps }
-        let d = min(2, Q.count - 2)
+        let d = max(0, min(2, Q.count - 2))    // a one- or two-point piece asked for a negative degree, which the fit traps on
         return (IndependentPoly(t: t, y: Q.map(\.u), degree: d), IndependentPoly(t: t, y: Q.map(\.v), degree: d))
     }
 

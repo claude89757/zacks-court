@@ -236,7 +236,11 @@ public enum IndependentFlight {
             let fit = fitAnchored(cam, frames: frames, uv: uv, anchor: P, at: t, velocity: grid[k], iterations: 40)
             if best == nil || fit.2 < best!.2 { best = fit }
         }
-        return best!
+        // `fitAnchored` reports nothing when the anchor and the observations give no usable flight, which the
+        // caller reads as a rejection: returning an infinite residual keeps that meaning instead of trapping
+        // (2026-11-07, a piece with duplicated observations reached this on the tt video at a lower candidate
+        // threshold and took the whole analysis down).
+        return best ?? (SIMD3<Double>(0, 0, 0), [], .infinity)
     }
 
     // MARK: free-flight initial guesses
