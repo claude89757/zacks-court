@@ -35,6 +35,32 @@ public enum IndependentFlight {
                      v: s.v + dt / 6 * (k1.v + 2 * k2.v + 2 * k3.v + k4.v))
     }
 
+    /// The velocity that, under this model's drag, carries the ball from `p0` to `p1` in `T` seconds.
+    /// The closed form used for a reported speed, `(p1 - p0) / T + g T / 2`, is exact only without drag,
+    /// and drag makes it understate the initial speed the longer the flight (2026-11-07, docs/verification.md).
+    public static func initialVelocity(from p0: SIMD3<Double>, to p1: SIMD3<Double>, over T: Double,
+                                       iterations: Int = 8) -> SIMD3<Double>? {
+        guard T > 1e-3, p0.x.isFinite, p1.x.isFinite else { return nil }
+        var v = (p1 - p0) / T
+        v.z += 0.5 * g * T
+        for _ in 0..<iterations {
+            let f = simulate(State(p: p0, v: v), [T * fps])[0].p - p1
+            if simd_length(f) < 1e-4 { return v }
+            var cols = [SIMD3<Double>]()
+            for j in 0..<3 {
+                var vv = v
+                vv[j] += 0.4
+                cols.append((simulate(State(p: p0, v: vv), [T * fps])[0].p - p1 - f) / 0.4)
+            }
+            let J = simd_double3x3(columns: (cols[0], cols[1], cols[2]))
+            guard J.determinant.magnitude > 1e-12 else { return nil }
+            let d = J.inverse * (-f)
+            guard d.x.isFinite, d.y.isFinite, d.z.isFinite else { return nil }
+            v += simd_clamp(d, SIMD3(repeating: -25), SIMD3(repeating: 25))
+        }
+        return nil
+    }
+
     /// States at offsets (1/60 s units, any sign, may be fractional) from `s0` at time 0.
     public static func simulate(_ s0: State, _ offsets: [Double]) -> [State] {
         var out = [State](repeating: s0, count: offsets.count)

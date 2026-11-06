@@ -116,6 +116,8 @@ public struct IndependentShotResult: Sendable, Codable {
     public var vInstKmh: Double?
     public var fitNetZ: Double?
     public var fitNetX: Double?
+    /// The same endpoint with this model's drag inverted, for comparison only (2026-11-07).
+    public var speedDragKmh: Double?
     public var endKind: String?
     public var intervalS: Double?
     public var speedKmh: Double?
@@ -574,6 +576,7 @@ enum IndependentShotFlights {
         var v = (end.P - P.p) / T; v.z += 0.5 * IndependentFlight.g * T
         let speed = simd_length(v) * 3.6
         res.endKind = end.kind; res.intervalS = T; res.speedKmh = speed
+        if let vd = IndependentFlight.initialVelocity(from: P.p, to: end.P, over: T) { res.speedDragKmh = simd_length(vd) * 3.6 }
         // S家's serve speed (v23): the same endpoint formula from the contact to the first bounce past the net,
         // the tracked bounce when there is one, else where the fitted flight reaches the ground
         if end.kind == "net" {
