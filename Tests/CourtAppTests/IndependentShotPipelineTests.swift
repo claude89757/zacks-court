@@ -355,7 +355,17 @@ final class IndependentShotPipelineTests: XCTestCase {
         let returned = flight(12.0, side: "far", n: 40, speed: 60, bounce: [1, 4])
         XCTAssertEqual(IndependentStrokeRules.poseServeShot(events[0], shots: [garbled, returned], segment: 0), 0)
         garbled.poseServe = true
-        XCTAssertEqual(IndependentStrokeRules.serves([garbled, returned], priorRally: [8.0]), [0], "seen serving: no fit and no dead ball needed")
+        XCTAssertEqual(IndependentStrokeRules.serves([garbled, returned], priorRally: [5.0]), [0], "seen serving: no fit needed")
+        // v28: a rally flight in the three seconds before says the raised arm was a swing in the rally
+        XCTAssertEqual(IndependentStrokeRules.serves([garbled, returned], priorRally: [8.0]), [])
+        var rally = flight(8.6, side: "far", n: 40, speed: 70, bounce: [1, 4]); rally.fitHit = [0, 20, 1.0]; rally.serveBehindPx = nil
+        XCTAssertTrue(IndependentStrokeRules.isRallyFlight(rally))
+        XCTAssertEqual(IndependentStrokeRules.serves([rally, garbled], priorRally: []), [])
+        // v28: the pose serve is a row although its fit has no usable contact; the same flight unnamed is not
+        garbled.bounceGround = nil; garbled.fitHit = [-0.5, 577, -3.5]
+        XCTAssertFalse(IndependentShotPipeline.keeps(garbled))
+        garbled.stroke = "发球"
+        XCTAssertTrue(IndependentShotPipeline.keeps(garbled))
     }
 
     /// v22: a toss glued to the start of a flight (one tracked piece) marks the flight as leaving a toss.

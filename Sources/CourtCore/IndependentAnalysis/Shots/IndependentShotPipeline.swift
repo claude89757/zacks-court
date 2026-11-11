@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v27"
+    public static let rulesVersion = "independent-shots-v28"
 
     /// A stretch of video with one fixed camera (a camera that moved needs a new segment).
     public struct Segment: Sendable {
@@ -301,6 +301,9 @@ public enum IndependentShotPipeline {
     /// them with a contact hundreds of metres away. Callers that pair rows with shots must filter by this.
     public static func keeps(_ s: IndependentShotResult) -> Bool {
         if s.bounceGround != nil { return true }
+        // a serve seen in the server's pose is a row whatever its flight's fit says (v28): the pose named it
+        // because the ball's first metres were not tracked, and a fit of the few points left has no usable contact
+        if s.poseServe == true, s.stroke == "发球" { return true }
         if let v = s.reportedSpeedKmh, v.isFinite { return true }
         guard let h = s.fitHit, h.count >= 2, h[0].isFinite, h[1].isFinite else { return false }
         return HawkEye.contactUsable(TennisCourtPoint(x: IndependentCourt.courtX(fromCentred: h[0]), y: h[1],
@@ -387,6 +390,7 @@ public enum IndependentStrokeRules {
         static let contactLag = 0.1   // the contact after the last raised sample (pose is sampled at 5 Hz), seconds
         static let early = 0.25       // a flight starting this long before the contact is reported at the contact
         static let side = 3.0         // the server stands within this of the doubles sidelines, metres
+        static let rallyFrom = 3.0, rallyTo = 0.6   // a rally flight this long before a pose serve: a swing in a rally, seconds (v28)
     }
     struct PoseServeEvent { var start: Double, end: Double, peak: Double, samples = 1 }
 
@@ -483,7 +487,15 @@ public enum IndependentStrokeRules {
         // second serve a few seconds later.
         let open = like.filter { i in
             let t = shots[i].tHit
-            if shots[i].poseServe == true { return true }    // seen serving: no dead-ball test needed
+            if shots[i].poseServe == true {
+                // seen serving. A forehand's follow-through can hold the wrist as high for a sample or two, but
+                // only in a rally: a rally flight in the seconds before says so (v28; tt night video 182.47, 562.45)
+                let from = t - PoseServe.rallyFrom, to = t - PoseServe.rallyTo
+                if priorRally.contains(where: { from <= $0 && $0 < to }) { return false }
+                return !shots.indices.contains { j in
+                    j != i && isRallyFlight(shots[j]) && !returns.contains(j) && !like.contains(j) && from <= shots[j].tHit && shots[j].tHit < to
+                }
+            }
             let earlyFrom = t - Serve.compete - Serve.deadBall, earlyTo = t - Serve.compete
             if priorRally.contains(where: { earlyFrom <= $0 && $0 < earlyTo }) { return false }
             return !shots.indices.contains { j in
