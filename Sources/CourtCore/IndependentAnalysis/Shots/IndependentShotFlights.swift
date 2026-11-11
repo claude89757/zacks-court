@@ -239,6 +239,10 @@ public struct IndependentShotResult: Sendable, Codable {
     public var poseHand: [Double]?
     /// The far players were watched around this flight's start and none of them swung (v29): not a serve.
     public var poseDenied: Bool?
+    /// The contact the far serve hypothesis gave a far server's flight glued to its toss (v32).
+    public var tossGluedContact: Double?
+    /// Median image step of the flight's points, pixels per frame (v32): a rally flight moves.
+    public var imageStep: Double?
     /// The fit that gets back to the hitter with the longer reach (v29), kept beside the usual one: the serve
     /// rules read the usual fit (a serve first seen late is timed by its own refits), and a flight they did not
     /// name a serve takes this one afterwards (`applyLateHit`).
@@ -740,6 +744,7 @@ enum IndependentShotFlights {
         static let tossDrift = 2.5         // toss: sideways image drift at most this, px per frame
         static let tossFrames = 6.0        // toss: at least this long, frames
         static let contactSpeed = 6.0      // contact: image speed after it at least this, px per frame
+        static let farContactSpeed = 3.5   //   for a far serve (v32)
         static let contactRatio = 2.5      // contact: image speed after / before
         static let departPx = 6.0          // contact (v19): the ball this far off the toss parabola, px
         static let departRMS = 3.0         //   and this many times the toss residual
@@ -752,6 +757,8 @@ enum IndependentShotFlights {
         static let netLowZ = 0.15          // net anchor: above the bottom of the net
         static let netSearchPoints = 24    // net contact searched over the last points before the "bounce"
         static let netTopZ = 1.17          // net anchor height limit, metres (net 0.914 at the centre, 1.07 at the posts)
+        static let netJunctionAfter = 0.15...1.0   // a serve's net junction (v32): this long after the contact, seconds
+        static let netStopRatio = 0.6      //   where the image speed drops to at most this of the speed before
         static let groundZ = -0.3          // fitted height at the last observation below this: a missed bounce
         static let maxDepthMiss = 1.0      // fitted contact depth vs the baseline anchor, metres
         static let boxMargin = 1.0, sideMargin = 0.5
@@ -842,7 +849,7 @@ enum IndependentShotFlights {
     /// highest image point, the ball falling after it) with little sideways drift, and the image speed
     /// jumps at the contact: the 4 points after it at least `contactRatio` times as fast as the 4 before,
     /// and `contactSpeed` px per frame. Returns the points unchanged when no such contact is found.
-    static func tossTrimmed(_ P: [IndependentTrackPoint]) -> [IndependentTrackPoint] {
+    static func tossTrimmed(_ P: [IndependentTrackPoint], contactSpeed: Double = ServeSpeed.contactSpeed) -> [IndependentTrackPoint] {
         let W = 4, n = min(P.count - W, ServeSpeed.tossScan)
         guard n > W else { return P }
         func speed(_ a: Int, _ b: Int) -> Double {    // median px per frame over steps a+1...b
@@ -857,7 +864,7 @@ enum IndependentShotFlights {
                   P[k - 1].t - P[0].t >= ServeSpeed.tossFrames,
                   abs(P[k - 1].u - P[0].u) <= ServeSpeed.tossDrift * (P[k - 1].t - P[0].t) else { continue }
             let before = speed(k - W, k - 1), after = speed(k - 1, k + W - 1)
-            if after >= ServeSpeed.contactSpeed && after >= ServeSpeed.contactRatio * max(before, 1) { return Array(P[k...]) }
+            if after >= contactSpeed && after >= ServeSpeed.contactRatio * max(before, 1) { return Array(P[k...]) }
             if apex >= 1, leavesToss(P, k, W) { return Array(P[k...]) }
         }
         return P
@@ -902,12 +909,26 @@ enum IndependentShotFlights {
     }
 
     /// `job` with a glued toss trimmed (v18): points from the contact, the hit moved there. With `near` and
-    /// a camera, the contact is also measured from the toss (v19, `tossContact`).
+    /// a camera, the contact is also measured from the toss (v19, `tossContact`). A far serve's toss is cut at a
+    /// lower image speed, `ServeSpeed.farContactSpeed` (v32): the far ball is small and slow in the image, and at
+    /// 6 px per frame the toss stayed glued to the flight, the hit came early and the speed low (tt night video
+    /// 178.03, 1002.22, 1059.89: 71-92 km/h against 97-122). The cut then moves on past steps still at a toss's
+    /// speed (the median over 4 steps lets one in), and the hit is the first point after the toss.
     static func tossFree(_ job: IndependentShotFlight, near: Bool? = nil, camera cam: IndependentProjector? = nil) -> IndependentShotFlight {
-        let P = tossTrimmed(job.points)
+        let far = near == false
+        var P = tossTrimmed(job.points, contactSpeed: far ? ServeSpeed.farContactSpeed : ServeSpeed.contactSpeed)
+        if far, P.count < job.points.count {
+            var k = job.points.count - P.count
+            while k < job.points.count - 1, k > 0 {
+                let a = job.points[k - 1], b = job.points[k]
+                guard simd_length(b.uv - a.uv) / max(b.t - a.t, 1) < ServeSpeed.farContactSpeed / 2 else { break }
+                k += 1
+            }
+            P = Array(job.points[k...])
+        }
         guard P.count < job.points.count else { return job }
         var j = job
-        j.points = P; j.tHit = max(job.tHit, P[0].t - 0.5); j.tossEnd = job.points[job.points.count - P.count - 1].t
+        j.points = P; j.tHit = max(job.tHit, far ? P[0].t : P[0].t - 0.5); j.tossEnd = job.points[job.points.count - P.count - 1].t
         if let near, let cam {
             j.tossContact = tossContact(Array(job.points[..<(job.points.count - P.count)]), at: j.tHit, near: near, camera: cam)
         }

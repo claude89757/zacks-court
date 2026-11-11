@@ -955,6 +955,29 @@ final class IndependentShotPipelineTests: XCTestCase {
                        "a straight continuation is not a landing")
     }
 
+    /// v32 (night videos): a ball rolling at the net, or one hit from the next court, is no rally evidence; a pose
+    /// serve takes the flight first seen at the contact although a glued toss reached its hit back further.
+    func testServeRulesV32() {
+        func flight(_ t: Double, side: String = "far", n: Int = 40) -> IndependentShotResult {
+            var s = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: false, contactUV: [0, 0],
+                                          hitterBox: nil, incoming: nil, hitterSide: side, tHit: t, nObs: n, firstFrame: Int(t * 60),
+                                          lastFrame: Int(t * 60) + 2 * n)
+            s.crossesNet = true; s.accepted = true; s.fitHit = [0, 20, 1.0]; s.rmsPx = 1.5; s.imageStep = 9
+            return s
+        }
+        XCTAssertTrue(IndependentStrokeRules.isRallyFlight(flight(8.6)))
+        var rolling = flight(8.6); rolling.imageStep = 0.6
+        XCTAssertFalse(IndependentStrokeRules.isRallyFlight(rolling), "a ball rolling at the net")
+        var nextCourt = flight(8.6); nextCourt.fitHit = [-13.7, 20, 1.0]
+        XCTAssertFalse(IndependentStrokeRules.isRallyFlight(nextCourt), "hit 13.7 m off the centre line")
+        // the arm's contact at 10.7 s; the serve's hit was reached back to 9.9 s by a glued toss, its ball first seen at 10.75 s
+        let event = IndependentStrokeRules.PoseServeEvent(start: 10.2, end: 10.6, peak: 1.4, samples: 3)
+        var served = flight(9.9, side: "near", n: 33); served.firstFrame = Int(10.75 * 60)
+        XCTAssertEqual(IndependentStrokeRules.poseServeShot(event, contact: 10.7, shots: [served], segment: 0), 0)
+        served.firstFrame = Int(9.9 * 60)
+        XCTAssertNil(IndependentStrokeRules.poseServeShot(event, contact: 10.7, shots: [served], segment: 0), "first seen 0.8 s before the contact")
+    }
+
     /// v31: a far serve landing in the near service box, seen for only five points after it. A flight rising from
     /// the landing, on toward the near baseline, explains the tail, and the junction is a bounce; the falling ball
     /// carried straight on is none. (On clean points the usual fits find this bounce as well; the short-tail test
