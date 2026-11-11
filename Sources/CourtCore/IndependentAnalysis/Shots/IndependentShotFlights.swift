@@ -24,11 +24,63 @@ public struct IndependentPersonBox: Sendable, Equatable, Codable {
     var centre: SIMD2<Double> { SIMD2((x0 + x1) / 2, (y0 + y1) / 2) }
 }
 
+/// One body pose read in a region around a player standing where a serve is hit (v29): the near players at
+/// their baseline and the far players, who are too small for a pose on the whole frame. Read several times
+/// a second, so a server's raised arm is seen at the far end too and the top of the hitting wrist times
+/// the contact.
+public struct IndependentPoseSample: Sendable, Equatable, Codable {
+    /// The player's end of the court.
+    public var near: Bool
+    /// The region the pose was read in: x, y, width, height (image pixels).
+    public var region: [Double]
+    /// Ten joints as (u, v, confidence), image pixels: shoulders, elbows, wrists, hips, ankles, left then
+    /// right of each. Confidence 0: not found.
+    public var joints: [Double]
+    public init(near: Bool, region: [Double], joints: [Double]) { self.near = near; self.region = region; self.joints = joints }
+
+    public enum Joint: Int, CaseIterable, Sendable {
+        case leftShoulder, rightShoulder, leftElbow, rightElbow, leftWrist, rightWrist, leftHip, rightHip, leftAnkle, rightAnkle
+    }
+    static let minimumConfidence = 0.2
+    /// Image position of a joint found with more than `minimumConfidence`.
+    func point(_ j: Joint) -> SIMD2<Double>? {
+        let k = j.rawValue * 3
+        guard joints.count >= k + 3, joints[k + 2] > Self.minimumConfidence else { return nil }
+        return SIMD2(joints[k], joints[k + 1])
+    }
+    func row(_ a: Joint, _ b: Joint) -> Double? {
+        let v = [a, b].compactMap { point($0)?.y }
+        return v.isEmpty ? nil : v.reduce(0, +) / Double(v.count)
+    }
+    /// Shoulders to hips, image rows (nil under 3 px or without either).
+    var torso: Double? {
+        guard let s = row(.leftShoulder, .rightShoulder), let h = row(.leftHip, .rightHip), h - s > 3 else { return nil }
+        return h - s
+    }
+    /// The higher wrist above the shoulders, in torso lengths (as `IndependentPersonBox.armUp`).
+    var armUp: Double? {
+        guard let s = row(.leftShoulder, .rightShoulder), let t = torso,
+              let w = [Joint.leftWrist, .rightWrist].compactMap({ point($0)?.y }).min() else { return nil }
+        return (s - w) / t
+    }
+    /// Lowest point of the body found (an ankle, else a hip), and the mean column of the shoulders and hips.
+    var feet: SIMD2<Double>? {
+        let low = [Joint.leftAnkle, .rightAnkle].compactMap { point($0) }.map(\.y).max() ?? [Joint.leftHip, .rightHip].compactMap { point($0) }.map(\.y).max()
+        let xs = [Joint.leftShoulder, .rightShoulder, .leftHip, .rightHip].compactMap { point($0)?.x }
+        guard let low, !xs.isEmpty else { return nil }
+        return SIMD2(xs.reduce(0, +) / Double(xs.count), low)
+    }
+}
+
 /// Person boxes by frame (1/60 s units of presentation time, rounded).
 public struct IndependentPeople: Sendable {
     public let byFrame: [Int: [IndependentPersonBox]]
     let keys: [Int]
-    public init(_ byFrame: [Int: [IndependentPersonBox]]) { self.byFrame = byFrame; keys = byFrame.keys.sorted() }
+    /// Region poses by frame (v29); empty where the lane does not read them.
+    public let poses: [Int: [IndependentPoseSample]]
+    public init(_ byFrame: [Int: [IndependentPersonBox]], poses: [Int: [IndependentPoseSample]] = [:]) {
+        self.byFrame = byFrame; keys = byFrame.keys.sorted(); self.poses = poses
+    }
 
     /// Drop crop-cut boxes, then non-maximum suppression (IoU >= 0.4) by confidence.
     static func clean(_ boxes: [IndependentPersonBox]) -> [IndependentPersonBox] {
@@ -96,6 +148,11 @@ public struct IndependentShotFlight: Sendable {
     /// Serve recognition refits (v22): the contact is not put before the toss's end (a trimmed toss, or the
     /// toss a flight leaves). The ball on its way (`seenBefore`) is left to the speed refits.
     var tossBounded = false
+    /// First seen on its way to a bounce at the other end from its hitter (v29): it may have been hit more than
+    /// the usual `reachFrames` before.
+    var lateSeen = false
+    /// Frames searched backwards from the first observation for the hitter's depth.
+    var reach = IndependentShotFlights.reachFrames
 }
 
 /// Result per shot flight (field names follow `shots.py` for parity checks).
@@ -176,6 +233,35 @@ public struct IndependentShotResult: Sendable, Codable {
     public var serveOtherEnd: Bool?
     /// The near server's raised arm (body pose) marked this flight as a serve (v27).
     public var poseServe: Bool?
+    /// The contact seen in the server's region poses, seconds (v29): the top of the hitting wrist's path.
+    public var poseContact: Double?
+    /// The hitting wrist at that contact, image pixels.
+    public var poseHand: [Double]?
+    /// The far players were watched around this flight's start and none of them swung (v29): not a serve.
+    public var poseDenied: Bool?
+    /// The fit that gets back to the hitter with the longer reach (v29), kept beside the usual one: the serve
+    /// rules read the usual fit (a serve first seen late is timed by its own refits), and a flight they did not
+    /// name a serve takes this one afterwards (`applyLateHit`).
+    public var lateHit: LateHit?
+    public struct LateHit: Sendable, Codable {
+        public var tHit: Double, fitHit: [Double]?, rmsPx: Double?, maxPx: Double?, vInstKmh: Double?, fitNetZ: Double?, fitNetX: Double?
+        public var speedDragKmh: Double?, endKind: String?, intervalS: Double?, speedKmh: Double?, landSpeedKmh: Double?, landY: Double?
+        public var zLastFit: Double?, yLastFit: Double?, riseM: Double?, pastNetCount: Int?, crossesNet: Bool?, droppedOutliers: Int?, fallback: String?
+        init(_ r: IndependentShotResult) {
+            tHit = r.tHit; fitHit = r.fitHit; rmsPx = r.rmsPx; maxPx = r.maxPx; vInstKmh = r.vInstKmh; fitNetZ = r.fitNetZ; fitNetX = r.fitNetX
+            speedDragKmh = r.speedDragKmh; endKind = r.endKind; intervalS = r.intervalS; speedKmh = r.speedKmh; landSpeedKmh = r.landSpeedKmh
+            landY = r.landY; zLastFit = r.zLastFit; yLastFit = r.yLastFit; riseM = r.riseM; pastNetCount = r.pastNetCount; crossesNet = r.crossesNet
+            droppedOutliers = r.droppedOutliers; fallback = r.fallback
+        }
+    }
+    /// Takes the late fit (see `lateHit`): the hit is where the flight reaches the hitter, and the fit is accepted.
+    mutating func applyLateHit() {
+        guard let l = lateHit else { return }
+        tHit = l.tHit; hitKind = IndependentShotFlights.reachedKind; fitHit = l.fitHit; rmsPx = l.rmsPx; maxPx = l.maxPx; vInstKmh = l.vInstKmh
+        fitNetZ = l.fitNetZ; fitNetX = l.fitNetX; speedDragKmh = l.speedDragKmh; endKind = l.endKind; intervalS = l.intervalS; speedKmh = l.speedKmh
+        landSpeedKmh = l.landSpeedKmh; landY = l.landY; zLastFit = l.zLastFit; yLastFit = l.yLastFit; riseM = l.riseM; pastNetCount = l.pastNetCount
+        crossesNet = l.crossesNet; droppedOutliers = l.droppedOutliers; fallback = l.fallback; accepted = true; reason = nil; lateHit = nil
+    }
     /// Serve contact time (s) from a refit that trimmed a glued toss (v18); rows report it instead of `tHit`.
     public var contactT: Double?
     /// Speed shown to the user: accepted and anchored at a detected bounce (the frozen primary gate), or a
@@ -397,6 +483,7 @@ enum IndependentShotFlights {
             var flight = IndependentShotFlight(points: pts, tHit: tHit, hitter: hitter, bounce: bounce, kind: kind,
                                                contact: contact, incoming: incoming, hitterSide: side)
             flight.fromToss = fromToss; flight.seenBefore = seen
+            flight.lateSeen = kind == .firstObservation && bounce.map { ($0.ground.y < netY) != (side == "near") } ?? false
             out.append(flight)
         }
         return out
@@ -405,13 +492,20 @@ enum IndependentShotFlights {
     // MARK: shot fit and speed
 
     static let reachFrames = 48      // 0.8 s searched backwards for the hitter's depth (v17; was 0.4 s)
+    static let lateReachFrames = 84  // 1.4 s for a flight first seen late (v29, `analyse`)
     static let hitSigma = 0.8
 
     /// Frame time at which the flight, extrapolated back from tHit, is at the hitter's depth, and the height there.
-    static func reachTime(_ x: IndependentFlight.State, F0: Int, tHit: Double, depth y: Double) -> (Double?, Double) {
-        let grid = (0...reachFrames).map { tHit - Double($0) }
-        let S = IndependentFlight.simulate(x, grid.map { $0 - Double(F0) })
-        if !S.allSatisfy(\.isFinite) { return (nil, 1e3) }
+    static func reachTime(_ x: IndependentFlight.State, F0: Int, tHit: Double, depth y: Double, frames: Int = reachFrames) -> (Double?, Double) {
+        let grid = (0...frames).map { tHit - Double($0) }
+        var S = IndependentFlight.simulate(x, grid.map { $0 - Double(F0) })
+        if !S.allSatisfy(\.isFinite) {
+            // run backwards for more than the usual reach, the simulation can blow up before the grid ends:
+            // the crossing is looked for in what stayed finite
+            guard frames > reachFrames else { return (nil, 1e3) }
+            S = Array(S.prefix(while: \.isFinite))
+            guard S.count >= 2 else { return (nil, 1e3) }
+        }
         let d = S.map { $0.p.y - y }
         if d[0] == 0 { return (tHit, S[0].p.z) }
         guard let k = d.indices.first(where: { IndependentNumerics.sign(d[$0]) != IndependentNumerics.sign(d[0]) }) else { return (nil, S[S.count - 1].p.y) }
@@ -427,14 +521,14 @@ enum IndependentShotFlights {
     static func fitShot(_ cam: IndependentProjector, frames: [Double], uv: [SIMD2<Double>], F0: Int, x0: IndependentFlight.State,
                         hit: HitPrior?, bounce: (t: Double, P: SIMD3<Double>)?, iterations: Int, huber: Double = 4,
                         landing: ClosedRange<Double>? = nil, contact: (t: Double, P: SIMD3<Double>)? = nil,
-                        notBefore: Double? = nil) -> (IndependentFlight.State, [Double], Double) {
+                        notBefore: Double? = nil, reach: Int = reachFrames) -> (IndependentFlight.State, [Double], Double) {
         let rel = frames.map { $0 - Double(F0) }
         let ahead: [Double] = landing == nil ? [] : (0...landingSteps).map { (k: Int) -> Double in (hit?.t ?? Double(F0)) - Double(F0) + Double(3 * k) }
         let res: ([Double]) -> [Double] = { X in
             let x = IndependentFlight.State(X)
             var r = IndependentFlight.pixelResiduals(IndependentFlight.simulate(x, rel), uv, cam)
             if let hit {
-                let (t, v) = reachTime(x, F0: F0, tHit: hit.t, depth: hit.y)
+                let (t, v) = reachTime(x, F0: F0, tHit: hit.t, depth: hit.y, frames: reach)
                 r.append(t == nil ? 2.0 * (v - hit.y) / hit.sigma : 2.0 * max(0.0, 0.2 - v, v - 3.5) / 0.3)
                 // serve speed refits (v21): the server's depth is not reached before the ball was last seen in the toss
                 if let notBefore { r.append(t.map { 2.0 * max(0.0, notBefore - $0) / ServeSpeed.notBeforeSigma } ?? 0) }
@@ -466,7 +560,22 @@ enum IndependentShotFlights {
         return (IndependentFlight.State(x), e, rms)
     }
 
+    /// The shot fit. A flight first seen late on its way to a bounce at the other end (`lateSeen`), whose fit
+    /// does not get back to the hitter's depth within `reachFrames`, is fitted again with `lateReachFrames`;
+    /// that fit is taken when it does get there and is accepted (v29). Flights hit 0.8 to 1.2 s before they
+    /// were first seen (a slow ball tracked from the net on) otherwise keep their first observation as the
+    /// hit: a contact at the net, on the bounce's side of it, and no line call.
     static func analyse(_ job: IndependentShotFlight, camera cam: IndependentProjector) -> IndependentShotResult {
+        var r = analyseOnce(job, camera: cam)
+        guard job.lateSeen, job.serveDepth == nil, job.reach == reachFrames, r.hitKind != reachedKind else { return r }
+        var again = job; again.reach = lateReachFrames
+        let r2 = analyseOnce(again, camera: cam)
+        if r2.hitKind == reachedKind, r2.accepted { r.lateHit = IndependentShotResult.LateHit(r2) }
+        return r
+    }
+    static let reachedKind = "first observation (reach)"
+
+    static func analyseOnce(_ job: IndependentShotFlight, camera cam: IndependentProjector) -> IndependentShotResult {
         let frames = job.points.map(\.t), uv = job.points.map(\.uv)
         var res = IndependentShotResult(hitKind: job.kind.rawValue, hitterFound: job.hitter != nil, bounceFound: job.bounce != nil,
                                         contactUV: [job.contact.x, job.contact.y], hitterBox: job.hitter,
@@ -529,14 +638,14 @@ enum IndependentShotFlights {
             .compactMap { $0 }.max()
             .map { min($0, job.tHit) }    // the reach is searched back from the hit: a later bound cannot be met
         for x0 in inits.prefix(12) {
-            let f = fitShot(cam, frames: frames, uv: uv, F0: F0, x0: x0, hit: hit, bounce: bnc, iterations: 8, landing: landing, contact: contact, notBefore: notBefore)
+            let f = fitShot(cam, frames: frames, uv: uv, F0: F0, x0: x0, hit: hit, bounce: bnc, iterations: 8, landing: landing, contact: contact, notBefore: notBefore, reach: job.reach)
             if best == nil || f.2 < best!.2 { best = f }
         }
-        var (x, e, rms) = fitShot(cam, frames: frames, uv: uv, F0: F0, x0: best!.0, hit: hit, bounce: bnc, iterations: 60, landing: landing, contact: contact, notBefore: notBefore)
+        var (x, e, rms) = fitShot(cam, frames: frames, uv: uv, F0: F0, x0: best!.0, hit: hit, bounce: bnc, iterations: 60, landing: landing, contact: contact, notBefore: notBefore, reach: job.reach)
         if e.max()! > 15 && e.filter({ $0 <= 15 }).count >= 8 {
             let keep = e.indices.filter { e[$0] <= 15 }
             res.droppedOutliers = e.count - keep.count
-            (x, e, rms) = fitShot(cam, frames: keep.map { frames[$0] }, uv: keep.map { uv[$0] }, F0: F0, x0: x, hit: hit, bounce: bnc, iterations: 60, landing: landing, contact: contact, notBefore: notBefore)
+            (x, e, rms) = fitShot(cam, frames: keep.map { frames[$0] }, uv: keep.map { uv[$0] }, F0: F0, x0: x, hit: hit, bounce: bnc, iterations: 60, landing: landing, contact: contact, notBefore: notBefore, reach: job.reach)
         }
         if rms > 4, let b = bnc, hit != nil {
             let f2 = fitShot(cam, frames: frames, uv: uv, F0: F0, x0: x, hit: nil, bounce: b, iterations: 60)
@@ -544,8 +653,8 @@ enum IndependentShotFlights {
         }
         res.rmsPx = rms; res.maxPx = e.max()
         if let hit {
-            let (tr, _) = reachTime(x, F0: F0, tHit: hit.t, depth: hit.y)
-            if let tr, tr.isFinite { tHit = max(tr, notBefore ?? -.infinity); res.tHit = tHit / fps; res.hitKind = "first observation (reach)" }
+            let (tr, _) = reachTime(x, F0: F0, tHit: hit.t, depth: hit.y, frames: job.reach)
+            if let tr, tr.isFinite { tHit = max(tr, notBefore ?? -.infinity); res.tHit = tHit / fps; res.hitKind = reachedKind }
         }
         let P = IndependentFlight.state(at: tHit, from: x, F0: F0)
         res.fitHit = [P.p.x, P.p.y, P.p.z]; res.vInstKmh = simd_length(P.v) * 3.6

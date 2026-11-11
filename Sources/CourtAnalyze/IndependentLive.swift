@@ -42,6 +42,9 @@ enum IndependentLiveCommand {
 
         var live = IndependentLiveConfiguration(assets: assets, camera: camera, automaticCourt: automatic)
         live.poseFill = poseFill
+        // research runs record the region poses denser than the App reads them (COURT_POSE_INTERVAL=3: 20 Hz), so one
+        // trace can be replayed at several rates
+        if let n = ProcessInfo.processInfo.environment["COURT_POSE_INTERVAL"].flatMap(Int.init) { live.poseInterval = max(0, n) }
         let analyzer = CameraSideAnalyzer(configuration: nil, independent: live)
         let rows = RowBox(), court = CourtBox()
         analyzer.onSnapshot = { snapshot in rows.add(snapshot.events); court.note(snapshot) }
@@ -102,7 +105,7 @@ enum IndependentLiveCommand {
         let compact = JSONEncoder()
         compact.nonConformingFloatEncodingStrategy = encoder.nonConformingFloatEncodingStrategy
         try compact.encode(trace.all).write(to: out.deletingPathExtension().appendingPathExtension("trace.json"), options: .withoutOverwriting)
-        print("INDEPENDENT_LIVE court=\(court.firstAvailable.map { String(format: "%.1f", $0) } ?? "none") solves=\(metrics.courtSolves) frames=\(frames) wall=\(String(format: "%.1f", wall))s rows=\(events.count) speeds=\(events.filter { $0.speedKPH != nil }.count) strokes=\(events.filter { $0.stroke != .unknown }.count) batches=\(metrics.ballBatches) resets=\(metrics.ballResets) overflows=\(metrics.queueOverflows) scaleMs=\(String(format: "%.2f", report.scaleMillisecondsMedian)) inferMs=\(String(format: "%.1f", report.inferenceMillisecondsPerBatch)) personMs=\(String(format: "%.1f", report.personMillisecondsPerSample)) seen=\(rows.count)")
+        print("INDEPENDENT_LIVE court=\(court.firstAvailable.map { String(format: "%.1f", $0) } ?? "none") solves=\(metrics.courtSolves) frames=\(frames) wall=\(String(format: "%.1f", wall))s rows=\(events.count) speeds=\(events.filter { $0.speedKPH != nil }.count) strokes=\(events.filter { $0.stroke != .unknown }.count) batches=\(metrics.ballBatches) resets=\(metrics.ballResets) overflows=\(metrics.queueOverflows) scaleMs=\(String(format: "%.2f", report.scaleMillisecondsMedian)) inferMs=\(String(format: "%.1f", report.inferenceMillisecondsPerBatch)) personMs=\(String(format: "%.1f", report.personMillisecondsPerSample)) poseFrames=\(metrics.poseFramesLive) poseRequests=\(metrics.poseRequestsLive) poseMs=\(String(format: "%.1f", metrics.poseRequestsLive > 0 ? metrics.poseSecondsLive / Double(metrics.poseRequestsLive) * 1000 : 0)) seen=\(rows.count)")
     }
 
     struct Report: Encodable {

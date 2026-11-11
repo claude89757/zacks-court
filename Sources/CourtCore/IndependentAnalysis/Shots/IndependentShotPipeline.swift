@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v28"
+    public static let rulesVersion = "independent-shots-v29"
 
     /// A stretch of video with one fixed camera (a camera that moved needs a new segment).
     public struct Segment: Sendable {
@@ -156,11 +156,43 @@ public enum IndependentShotPipeline {
         }
         // the near server's raised arm names the serve where the ball's first metres were not tracked (v27)
         for (k, people) in crowd.enumerated() {
-            for e in IndependentStrokeRules.poseServes(people, camera: cameras[k]) {
+            let cam = cameras[k]
+            var events = IndependentStrokeRules.poseServes(people, camera: cam).map { (event: $0, contact: Double?.none, hand: SIMD2<Double>?.none) }
+            // ... and the region poses (v29) time its contact, and see the swings a 5 Hz sample missed
+            for w in IndependentStrokeRules.serveSwings(people, camera: cam, near: true) {
+                let slack = IndependentStrokeRules.Swing.sameSwing
+                if let j = events.firstIndex(where: { w.start <= $0.event.end + slack && $0.event.start - slack <= w.end }) {
+                    if events[j].contact == nil { events[j].contact = w.contact; events[j].hand = w.hand }
+                } else {
+                    events.append((IndependentStrokeRules.PoseServeEvent(start: w.start, end: w.end, peak: w.peak, samples: w.samples), w.contact, w.hand))
+                }
+            }
+            for (e, seen, hand) in events {
                 guard let i = IndependentStrokeRules.poseServeShot(e, shots: shots, segment: k) else { continue }
-                shots[i].poseServe = true; shots[i].hitterSide = "near"
+                shots[i].poseServe = true; shots[i].hitterSide = "near"; shots[i].poseContact = seen; shots[i].poseHand = hand.map { [$0.x, $0.y] }
+                if let seen { contact[i] = seen; continue }
                 let t = e.end + IndependentStrokeRules.PoseServe.contactLag
                 if contact[i] == nil, t > shots[i].tHit + IndependentStrokeRules.PoseServe.early { contact[i] = t }
+            }
+            // the far server's swing (v29): the far players are too small for the whole-frame pose, not for a
+            // region around them
+            let far = IndependentStrokeRules.serveSwings(people, camera: cam, near: false)
+            for w in far {
+                guard let i = IndependentStrokeRules.swingShot(w, shots: shots, segment: k) else { continue }
+                shots[i].poseServe = true; shots[i].hitterSide = "far"
+                // a far server's hitting wrist is not always found (about 20 px of arm); the top that is left is the
+                // toss arm's, half a second before the contact (13 of 24 far serves on one night video, none of 13 on
+                // the other). The path says so (`swung`), and the ball: a far serve is tracked from the racket on, so
+                // its flight does not start that long after the contact
+                guard w.swung, let t = w.contact, t >= (contact[i] ?? shots[i].tHit) - IndependentStrokeRules.Swing.tossLead else { continue }
+                shots[i].poseContact = t; shots[i].poseHand = w.hand.map { [$0.x, $0.y] }; contact[i] = t
+            }
+            // ... and where the far players were watched and kept their arms down, a flight from their end is
+            // not a serve, however serve-like its fit
+            for i in shots.indices where shots[i].segment == k && shots[i].hitterSide == "far" && shots[i].poseServe != true {
+                let t = shots[i].tHit, W = IndependentStrokeRules.Swing.self
+                guard IndependentStrokeRules.watched(people, near: false, from: t - W.watchBefore, to: t + W.watchAfter) == .lowered else { continue }
+                if !far.contains(where: { $0.start - W.near <= t && t <= $0.end + W.near }) { shots[i].poseDenied = true }
             }
         }
         IndependentStrokeRules.classify(&shots, bounces: bounces, cameras: cameras, priorRally: priorRally)
@@ -214,7 +246,9 @@ public enum IndependentShotPipeline {
         // a serve is reported at its refit's contact when a glued toss was trimmed (v18); `tHit` stays the
         // flight's own (the live window matches shots by it)
         for i in shots.indices where shots[i].stroke == "发球" {
-            if let t = contact[i], t > shots[i].tHit + 0.1 { shots[i].contactT = t }
+            // ... and at the contact seen in the server's pose, earlier or later (v29)
+            if let seen = shots[i].poseContact { if abs(seen - shots[i].tHit) > 0.02 { shots[i].contactT = seen } }
+            else if let t = contact[i], t > shots[i].tHit + 0.1 { shots[i].contactT = t }
         }
         // serve speeds as S家 defines them (v23): hit to the first bounce past the net, not hit to net.
         // Serves into the net keep the hit-to-net speed, to the measured net contact (v24): the net refit's
@@ -226,6 +260,22 @@ public enum IndependentShotPipeline {
                   (shots[i].fitNetZ ?? 0) >= IndependentStrokeRules.Serve.landNetZ else { continue }
             shots[i].speedKmh = v; shots[i].speedTo = "bounce"
         }
+        // a serve whose contact was seen in the server's pose (v29): the speed between the two measured ends, the
+        // contact and the first bounce past the net. No fit decides where the flight began, so a toss glued to the
+        // track, or a ball first tracked at the net, no longer moves the contact.
+        for i in shots.indices where shots[i].stroke == "发球" {
+            guard let tc = shots[i].poseContact, let side = shots[i].hitterSide, let g = shots[i].bounceGround, g.count >= 2,
+                  let tb = shots[i].tBounce else { continue }
+            let near = side == "near", netY = IndependentCourt.netY, T = tb - tc
+            guard (g[1] > netY) == near, abs(g[1] - netY) > IndependentShotFlights.ServeSpeed.netBounceY,
+                  IndependentStrokeRules.Swing.flight.contains(T) else { continue }
+            let P = IndependentStrokeRules.seenContact(hand: shots[i].poseHand, near: near, camera: cameras[shots[i].segment], fallbackX: shots[i].fitHit?[0])
+            var v = (SIMD3(g[0], g[1], IndependentCourt.ballRadius) - P) / T; v.z += 0.5 * IndependentFlight.g * T
+            let speed = simd_length(v) * 3.6
+            guard (20...250).contains(speed) else { continue }     // the gate every accepted speed passes (`analyse`)
+            shots[i].speedKmh = speed; shots[i].intervalS = T; shots[i].fitHit = [P.x, P.y, P.z]
+            shots[i].accepted = true; shots[i].reason = nil; shots[i].bounceFound = true; shots[i].speedTo = "bounce"; shots[i].serveSpeedFrom = "seen contact"
+        }
         // a "serve" under 45 km/h is a contact timed too early (a toss glued to the flight) or not a serve (v27):
         // on the two night videos all ten such speeds were wrong, four real serves read at half their speed
         // and six flights the reference does not call serves. The row stays; the speed is not shown.
@@ -234,6 +284,8 @@ public enum IndependentShotPipeline {
             shots[i].slowServe = true
             if shots[i].reason == nil { shots[i].reason = "serve speed under 45 km/h, contact time not believed" }
         }
+        // flights first seen late that the rules did not name serves: the hit is where the longer reach finds it (v29)
+        for i in shots.indices where shots[i].stroke != "发球" { shots[i].applyLateHit() }
         for i in shots.indices { shots[i].bounceSigma = bounceSigma(shots[i], camera: cameras[shots[i].segment]) }
         return shots
     }
@@ -274,12 +326,13 @@ public enum IndependentShotPipeline {
     /// App rows: every detected hit, with a speed only when it passed the bounce-anchored gate.
     /// Rows carry finite numbers only: a value a degenerate fit left NaN or infinite is unknown (nil), so
     /// it can never block saving the record (JSON has no NaN; 2026-11-05 a camera showed 「记录保存失败」).
-    public static func rows(from shots: [IndependentShotResult], streamID: UUID, ptsOffset: Double = 0) -> [TennisShotEvent] {
+    /// `all`: also the shots `keeps` leaves out (the live lane's update of a row it has already shown).
+    public static func rows(from shots: [IndependentShotResult], streamID: UUID, ptsOffset: Double = 0, all: Bool = false) -> [TennisShotEvent] {
         func finite(_ values: [Double]?, count: Int) -> [Double]? {
             guard let values, values.count >= count, values.prefix(count).allSatisfy(\.isFinite) else { return nil }
             return values
         }
-        return shots.filter(keeps).map { s in
+        return shots.filter { all || keeps($0) }.map { s in
             let speed = s.reportedSpeedKmh.flatMap { $0.isFinite ? $0 : nil }
             var row = TennisShotEvent(streamID: streamID, sourcePTS: (s.contactT ?? s.tHit) + ptsOffset, stroke: IndependentStrokeRules.kind(s.stroke),
                                       confidence: 0, speedKPH: speed, speedReason: speed == nil ? reasonText(s) : nil, sampleCount: s.nObs)
@@ -380,7 +433,8 @@ public enum IndependentStrokeRules {
     /// ball model does not find for the first 0.2-0.3 s, so the flight's own fit cannot say "serve"; the body
     /// pose can: only a toss and a serve swing hold a wrist a torso length above the shoulders. On the first
     /// two night videos 78 of 84 such events were the near player's serves (offline pose at 5 Hz); a forehand's
-    /// follow-through peaks at 0.6-0.8 and touches 0.9 for one sample at most. The far player is about 20 px of torso and gives no usable pose.
+    /// follow-through peaks at 0.6-0.8 and touches 0.9 for one sample at most. The far player is about 20 px of
+    /// torso and gives no pose on the whole frame; from v29 the region poses read the far players too (`serveSwings`).
     enum PoseServe {
         static let raised = 0.55      // a sample counts towards an event from here, torso lengths
         static let strong = 0.9       // an event of two or more samples needs one this high
@@ -424,6 +478,40 @@ public enum IndependentStrokeRules {
         }.min { abs(shots[$0].tHit - e.end) < abs(shots[$1].tHit - e.end) }
     }
 
+    /// The flight a far swing belongs to: not given to a near hitter, starting between a little before the
+    /// swing's first raised sample (a toss glued to the flight) and a little after its last, and crossing the
+    /// net (or landing as a short fault). A far serve is tracked from the racket on, so a piece that goes
+    /// nowhere is the toss, or a ball bounced before the serve; an arm raised with no flight is not a serve.
+    /// Of several, the first: nothing comes back over the net within the window. (A far serve into the net
+    /// crosses nothing and is left to the flight rules: naming it by a swing seen through the ball found four
+    /// more serves on one night video, and three false ones and a speed gone wrong on the other.)
+    static func swingShot(_ w: ServeSwing, shots: [IndependentShotResult], segment: Int) -> Int? {
+        let found = shots.indices.filter { i in
+            let s = shots[i]
+            return s.segment == segment && s.hitterSide != (w.near ? "far" : "near")
+                && w.start - PoseServe.before <= s.tHit && s.tHit <= w.end + PoseServe.after
+        }
+        let flying = found.filter { shots[$0].crossesNet == true || isShortFault(shots[$0]) }
+        return flying.min { shots[$0].tHit < shots[$1].tHit }
+    }
+
+    /// What the region poses saw of the players at one end over a stretch: not enough (shoulders, hips and a
+    /// wrist in fewer of the frames than a reading every `Swing.densePeriod` has), an arm raised in some
+    /// sample, or every arm down throughout.
+    enum Watch { case unseen, raised, lowered }
+    static func watched(_ people: IndependentPeople, near: Bool, from: Double, to: Double) -> Watch {
+        var seen = 0, raised = false
+        for f in people.poses.keys {
+            let t = Double(f) / 60
+            guard t >= from, t <= to else { continue }
+            let ups = (people.poses[f] ?? []).filter { $0.near == near }.compactMap(\.armUp)
+            if !ups.isEmpty { seen += 1 }
+            if ups.contains(where: { $0 >= PoseServe.raised }) { raised = true }
+        }
+        if raised { return .raised }
+        return Double(seen) >= (to - from) / Swing.densePeriod ? .lowered : .unseen
+    }
+
     /// A flight that is part of a rally: long, cleanly fitted and crossing the net.
     public static func isRallyFlight(_ s: IndependentShotResult) -> Bool {
         s.accepted && s.crossesNet == true && s.nObs >= Serve.rallyPoints && Double(s.lastFrame - s.firstFrame) / 60 >= Serve.rallySeconds
@@ -462,6 +550,7 @@ public enum IndependentStrokeRules {
 
     static func isServeLike(_ s: IndependentShotResult) -> Bool {
         if s.poseServe == true { return true }
+        if s.poseDenied == true { return false }
         // a flight climbing well above its contact is a lob or a ball fed between points, not a serve (v22)
         if let r = s.serveFit == true ? (s.serveRise ?? s.riseM) : s.riseM, r > Serve.maxRise { return false }
         if s.serveFit == true {
@@ -513,8 +602,12 @@ public enum IndependentStrokeRules {
             let t = shots[i].tHit
             return !open.contains { j in
                 guard j != i else { return false }
-                // a serve seen in the server's pose is the serve; other serve-like flights around it are not (v27)
-                if shots[i].poseServe == true { return false }
+                // a serve seen in the server's pose is the serve; other serve-like flights around it are not (v27).
+                // Seen at both ends within the return window (v29): the later swing is the return, hit overhead
+                if shots[i].poseServe == true {
+                    guard shots[j].poseServe == true, let a = shots[i].hitterSide, let b = shots[j].hitterSide, a != b else { return false }
+                    return shots[j].tHit < t && t - shots[j].tHit < Serve.returnWithin
+                }
                 if shots[j].poseServe == true { return abs(shots[j].tHit - t) < Serve.returnWithin }
                 if let a = shots[i].hitterSide, let b = shots[j].hitterSide, a != b {
                     guard abs(shots[j].tHit - t) < Serve.returnWithin else { return false }

@@ -59,7 +59,7 @@ S家链没有移植 S家 App 原版的全部处理，例如离线细化、身份
 
 ### S家 / 自研切换（2026-10-29）
 
-`COURT_MODEL_SET` 选择打包哪几套模型：默认 `independent` 只带自研；`both` 同时带 S家与自研（S家模型要开发者本地提供，见「模型与来源」），启动页可切换，这种构建里默认 S家，选择按设备保存；`sjia` 只带 S家（旧名 `swing` 仍可用）。选自研时 `AnalysisModelLocator` 返回空：实时分析和 S家离线补算都关闭，不加载 S家权重；机位改用自研实时链（`IndependentLiveEngine`：FP16 TrackNetV3、Vision 人框、v14 规则的滑动窗口版；v14 只改了发球识别；v27 起球点用热图质心，近端发球另看 Vision 姿态里举起的手臂，见 [验证记录](verification.md) 2026-11-11），并用 `IndependentLiveCourt` 从画面白线自动识别球场（找到后在单帧上持续跟踪慢慢偏移的机位；被碰或拿起时丢掉旧球场、不补算这段球点，边晃边逐帧重新识别）、记录中定时复查；没有手动四角。内测用 `both` 对比两条链，正式发布只用 `independent` 构建。每个 S家模型的去向、自研替代与阶段计划见 [模型替换设计](model-replacement-design.md)。
+`COURT_MODEL_SET` 选择打包哪几套模型：默认 `independent` 只带自研；`both` 同时带 S家与自研（S家模型要开发者本地提供，见「模型与来源」），启动页可切换，这种构建里默认 S家，选择按设备保存；`sjia` 只带 S家（旧名 `swing` 仍可用）。选自研时 `AnalysisModelLocator` 返回空：实时分析和 S家离线补算都关闭，不加载 S家权重；机位改用自研实时链（`IndependentLiveEngine`：FP16 TrackNetV3、Vision 人框、v14 规则的滑动窗口版；v14 只改了发球识别；v27 起球点用热图质心，近端发球另看 Vision 姿态里举起的手臂；v29 起每秒 10 次在两端球员周围读姿态，远端发球也看举臂，发球的击球时刻取手腕最高点，见 [验证记录](verification.md) 2026-11-11），并用 `IndependentLiveCourt` 从画面白线自动识别球场（找到后在单帧上持续跟踪慢慢偏移的机位；被碰或拿起时丢掉旧球场、不补算这段球点，边晃边逐帧重新识别）、记录中定时复查；没有手动四角。内测用 `both` 对比两条链，正式发布只用 `independent` 构建。每个 S家模型的去向、自研替代与阶段计划见 [模型替换设计](model-replacement-design.md)。
 
 ### 独立测速开发链（2026-10-29）
 

@@ -144,7 +144,9 @@ final class IndependentLiveEngineTests: XCTestCase {
     }
 
     /// The in-house rules need person boxes, so load shedding slows person frames instead of stopping
-    /// them: 5 Hz normally, 3 Hz at L1 (people off), 2 Hz at L2 (bounces off too).
+    /// them: 5 Hz normally, 3 Hz at L1 (people off), 2 Hz at L2 (bounces off too). The frames copied
+    /// between them for the region poses alone (v29: one more per person frame, 10 Hz together) are
+    /// the first thing shed.
     func testLoadSheddingSlowsPersonFramesInsteadOfStoppingThem() throws {
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let staged = repository.appendingPathComponent(".local/IndependentModels/tracknetv3-base-fp16-v1")
@@ -154,7 +156,7 @@ final class IndependentLiveEngineTests: XCTestCase {
         let assets = try IndependentBallModelAssets.load(directory: staged, variant: .fp16)
         let camera = IndependentPinholeCamera.lookingAt(SIMD3(0, 11, 0), from: SIMD3(0.3, -6.4, 3.1), f: 1300)
         let frame = try nv12(y: 90, cb: 128, cr: 128)
-        func personFrames(people: Bool, bounces: Bool) throws -> Int {
+        func personFrames(people: Bool, bounces: Bool) throws -> [Int] {
             let analyzer = CameraSideAnalyzer(configuration: nil, independent: .init(assets: assets, camera: camera, automaticCourt: false))
             let deadline = Date().addingTimeInterval(60)
             while !analyzer.currentMetrics.ready && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
@@ -166,10 +168,13 @@ final class IndependentLiveEngineTests: XCTestCase {
             analyzer.finish { _, _ in done.fulfill() }
             wait(for: [done], timeout: 120)
             let m = analyzer.currentMetrics
-            return m.copies + m.poolExhausted          // person frames attempted
+            return [m.copies + m.poolExhausted, m.poseCopies]          // person frames attempted, pose-only copies
         }
-        XCTAssertEqual(try personFrames(people: true, bounces: true), 10)
-        XCTAssertEqual(try personFrames(people: false, bounces: true), 6)
-        XCTAssertEqual(try personFrames(people: false, bounces: false), 4)
+        XCTAssertEqual(try personFrames(people: true, bounces: true)[0], 10)
+        XCTAssertEqual(try personFrames(people: false, bounces: true), [6, 0])
+        XCTAssertEqual(try personFrames(people: false, bounces: false), [4, 0])
+        // 120 frames: person frames at 1, 13, ..., 109 and pose-only frames at 7, 19, ..., 115 (a copy the
+        // pool could not give is not counted)
+        XCTAssertLessThanOrEqual(try personFrames(people: true, bounces: true)[1], 10)
     }
 }

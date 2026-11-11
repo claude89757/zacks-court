@@ -368,6 +368,110 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertTrue(IndependentShotPipeline.keeps(garbled))
     }
 
+    /// v29: the region poses follow the near players at their baseline and the far players behind their service
+    /// line; a sample reads the raised arm like the whole-frame pose does; a trace carries the samples.
+    func testRegionPosesFollowTheServersAndReplay() throws {
+        let cam = IndependentProjector(camera)
+        func person(_ feet: SIMD3<Double>, crop: Bool = false) -> IndependentPersonBox {
+            let f = cam.project(feet), head = cam.project(feet + SIMD3(0, 0, 1.8)), w = 0.25 * (f.v - head.v)
+            return IndependentPersonBox(x0: f.u - w, y0: head.v, x1: f.u + w, y1: f.v, confidence: 0.9, fromCrop: crop, cropBottom: crop ? 2000 : nil)
+        }
+        let server = person(SIMD3(1, -0.3, 0)), atNet = person(SIMD3(-2, 8, 0)), farServer = person(SIMD3(-1, 24, 0), crop: true)
+        let farNet = person(SIMD3(2, 14, 0), crop: true)
+        let found = IndependentLivePoses.players(boxes: [server, atNet, farServer, farNet], camera: camera)
+        XCTAssertEqual(found.near, [server]); XCTAssertEqual(found.far, [farServer])
+        let regions = IndependentLivePoses.regions(near: found.near, far: found.far, width: 1920, height: 1080)
+        XCTAssertEqual(regions.map(\.near), [true, false])
+        XCTAssertLessThan(Double(regions[0].rect.minY), server.y0 - 0.5 * server.height + 1, "room for the racket arm above the box")
+        XCTAssertGreaterThanOrEqual(Double(regions[1].rect.width), 299); XCTAssertGreaterThanOrEqual(Double(regions[1].rect.height), 149)
+        XCTAssertTrue(regions[1].rect.contains(CGPoint(x: (farServer.x0 + farServer.x1) / 2, y: farServer.y0)))
+        XCTAssertTrue(regions.allSatisfy { CGRect(x: 0, y: 0, width: 1920, height: 1080).contains($0.rect) })
+
+        // shoulders at row 400, hips at 440, the right wrist at 350: 1.25 torso lengths above the shoulders
+        var joints = [Double](repeating: 0, count: 30)
+        func set(_ j: IndependentPoseSample.Joint, _ u: Double, _ v: Double, _ c: Double = 0.8) { joints.replaceSubrange((j.rawValue * 3)..<(j.rawValue * 3 + 3), with: [u, v, c]) }
+        set(.leftShoulder, 990, 400); set(.rightShoulder, 1010, 400); set(.leftHip, 992, 440); set(.rightHip, 1008, 440)
+        set(.rightWrist, 1015, 350); set(.leftWrist, 985, 300, 0.1); set(.leftAnkle, 995, 480)
+        let sample = IndependentPoseSample(near: false, region: [850, 330, 300, 150], joints: joints)
+        XCTAssertEqual(sample.armUp ?? 0, 1.25, accuracy: 1e-9, "the wrist found with 0.1 confidence does not count")
+        XCTAssertEqual(sample.feet?.y, 480)
+        XCTAssertNil(IndependentPoseSample(near: false, region: [], joints: [Double](repeating: 0, count: 30)).armUp)
+
+        let events: [IndependentLiveTraceEvent] = [.newStream, .poses(frame: 600, samples: [sample]), .peopleReset]
+        XCTAssertEqual(try JSONDecoder().decode([IndependentLiveTraceEvent].self, from: JSONEncoder().encode(events)), events)
+        XCTAssertEqual(IndependentPeople([:], poses: [600: [sample]]).poses[600]?.first?.armUp ?? 0, 1.25, accuracy: 1e-9)
+    }
+
+    /// v29: a far server's swing in the region poses is an event with its contact at the top of the hitting
+    /// wrist; a far flight with nobody swinging where the players were watched is denied; the seen contact is
+    /// a point over the baseline above the wrist.
+    func testServeSwingsTimeTheContactAndDenyUnswungServes() {
+        let cam = IndependentProjector(camera)
+        // a far server at 10 Hz: the toss arm up first, then the hitting wrist to its top at frame 660 (11.0 s)
+        func pose(wrist z: Double, other: Double = 0.9) -> IndependentPoseSample {
+            func at(_ x: Double, _ z: Double) -> [Double] { let q = cam.project(SIMD3(x, 24.2, z)); return [q.u, q.v, 0.8] }
+            let joints = at(-0.2, 1.45) + at(0.2, 1.45) + at(-0.3, 1.2) + at(0.3, 1.2) + at(-0.25, other) + at(0.25, z)
+                + at(-0.15, 0.95) + at(0.15, 0.95) + at(-0.15, 0.05) + at(0.15, 0.05)
+            return IndependentPoseSample(near: false, region: [800, 300, 300, 150], joints: joints)
+        }
+        var poses = [Int: [IndependentPoseSample]]()
+        for (k, f) in stride(from: 600, through: 720, by: 6).enumerated() {
+            let t = Double(k - 10) / 10                                  // seconds from the contact
+            poses[f] = [pose(wrist: abs(t) <= 0.3 ? 2.45 - 15 * t * t : 0.9, other: t < -0.4 && t > -0.9 ? 2.1 : 0.9)]
+        }
+        // ... and one whose hitting wrist is never found: only the toss arm, up for half a second and slowly down
+        var tossOnly = [Int: [IndependentPoseSample]]()
+        for (k, f) in stride(from: 600, through: 720, by: 6).enumerated() {
+            let t = Double(k - 10) / 10
+            tossOnly[f] = [pose(wrist: 0.9, other: t > -0.9 && t < 0.1 ? 2.2 - 0.6 * (t + 0.5) * (t + 0.5) : 0.9)]
+        }
+        for f in stride(from: 1200, through: 1320, by: 6) { poses[f] = [pose(wrist: 0.9)] }
+        let people = IndependentPeople([:], poses: poses)
+        let swings = IndependentStrokeRules.serveSwings(people, camera: cam, near: false)
+        XCTAssertEqual(swings.count, 1)
+        XCTAssertEqual(swings.first?.contact ?? 0, 11.0, accuracy: 0.02, "the hitting wrist's top, not the toss arm's 0.6 s before")
+        XCTAssertEqual(swings.first?.swung, true)
+        let tossed = IndependentStrokeRules.serveSwings(IndependentPeople([:], poses: tossOnly), camera: cam, near: false)
+        XCTAssertEqual(tossed.count, 1); XCTAssertEqual(tossed.first?.swung, false, "a toss arm's top is not a contact")
+        XCTAssertTrue(IndependentStrokeRules.serveSwings(people, camera: cam, near: true).isEmpty)
+
+        func flight(_ t: Double, side: String?) -> IndependentShotResult {
+            IndependentShotResult(hitKind: "first observation", hitterFound: side != nil, bounceFound: false, contactUV: [0, 0], hitterBox: nil,
+                                  incoming: nil, hitterSide: side, tHit: t, nObs: 30, firstFrame: Int(t * 60), lastFrame: Int(t * 60) + 40)
+        }
+        var shots = [flight(10.2, side: "near"), flight(10.5, side: "far"), flight(10.9, side: "far"), flight(11.3, side: "far")]
+        XCTAssertNil(IndependentStrokeRules.swingShot(swings[0], shots: shots, segment: 0), "an arm raised with no flight over the net names nothing")
+        shots[2].crossesNet = true; shots[3].crossesNet = true
+        XCTAssertEqual(IndependentStrokeRules.swingShot(swings[0], shots: shots, segment: 0), 2, "the flight over the net, not the toss piece before it")
+        XCTAssertEqual(IndependentStrokeRules.watched(people, near: false, from: 9.5, to: 11.3), .raised)
+        XCTAssertEqual(IndependentStrokeRules.watched(people, near: false, from: 20.0, to: 21.8), .lowered)
+        XCTAssertEqual(IndependentStrokeRules.watched(people, near: false, from: 30.0, to: 31.8), .unseen)
+        XCTAssertEqual(IndependentStrokeRules.watched(people, near: true, from: 20.0, to: 21.8), .unseen)
+        var denied = flight(20.5, side: "far"); denied.poseDenied = true; denied.serveFit = true; denied.fromToss = true
+        XCTAssertFalse(IndependentStrokeRules.isServeLike(denied))
+
+        // the seen contact: over the far baseline, half a metre above the wrist, at serve height
+        let hand = swings[0].hand!
+        let P = IndependentStrokeRules.seenContact(hand: [hand.x, hand.y], near: false, camera: cam, fallbackX: nil)
+        XCTAssertEqual(P.y, IndependentCourt.length - 0.4, accuracy: 1e-9)
+        XCTAssertEqual(P.x, 0.25, accuracy: 0.3); XCTAssertTrue((2.6...3.3).contains(P.z))
+        XCTAssertEqual(IndependentStrokeRules.seenContact(hand: nil, near: true, camera: cam, fallbackX: 1.5), SIMD3(1.5, 0.4, 2.6))
+
+        // a trace recorded at 20 Hz replays at 10 Hz, or without poses
+        let events: [IndependentLiveTraceEvent] = [.newStream] + (0..<6).map { .poses(frame: 600 + 3 * $0, samples: []) } + [.update(now: 11)]
+        XCTAssertEqual(IndependentLiveTrace.thinningPoses(in: events, every: 2).count, 5)
+        XCTAssertEqual(IndependentLiveTrace.thinningPoses(in: events, every: 0), [.newStream, .update(now: 11)])
+
+        // a flight first seen late keeps its usual fit for the serve rules and takes the late one afterwards
+        var usual = flight(12.0, side: "far"); usual.reason = "hit and bounce on the same side of the net"
+        var late = usual; late.tHit = 11.2; late.fitHit = [1, 23.5, 1.1]; late.speedKmh = 72; late.accepted = true; late.reason = nil
+        usual.lateHit = IndependentShotResult.LateHit(late)
+        XCTAssertEqual(usual.tHit, 12.0)
+        usual.applyLateHit()
+        XCTAssertEqual(usual.tHit, 11.2); XCTAssertTrue(usual.accepted); XCTAssertNil(usual.reason); XCTAssertNil(usual.lateHit)
+        XCTAssertEqual(usual.hitKind, IndependentShotFlights.reachedKind)
+    }
+
     /// v22: a toss glued to the start of a flight (one tracked piece) marks the flight as leaving a toss.
     func testGluedTossMarksTheFlightAsFromToss() {
         let cam = IndependentProjector(camera)
