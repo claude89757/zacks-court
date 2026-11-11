@@ -354,6 +354,13 @@ final class IndependentShotPipelineTests: XCTestCase {
         var garbled = flight(10.5, n: 46, speed: nil, net: false); garbled.fitHit = [-0.5, 57.7, -3.5]
         let returned = flight(12.0, side: "far", n: 40, speed: 60, bounce: [1, 4])
         XCTAssertEqual(IndependentStrokeRules.poseServeShot(events[0], shots: [garbled, returned], segment: 0), 0)
+        // v30: the serve itself, first seen 0.1 s after the seen contact and its hit reached back half a second, not
+        // the eight points at the contact that go nowhere although their hit is nearer the raised arm
+        let piece = flight(10.6, n: 8, speed: nil, net: false)
+        var served = flight(10.15, n: 33, speed: 98); served.firstFrame = Int(10.8 * 60)
+        XCTAssertEqual(IndependentStrokeRules.poseServeShot(events[0], contact: 10.7, shots: [served, piece, returned], segment: 0), 0)
+        XCTAssertEqual(IndependentStrokeRules.poseServeShot(events[0], contact: 10.7, shots: [piece, returned], segment: 0), 0,
+                       "nothing goes anywhere: the nearest hit, as before")
         garbled.poseServe = true
         XCTAssertEqual(IndependentStrokeRules.serves([garbled, returned], priorRally: [5.0]), [0], "seen serving: no fit needed")
         // v28: a rally flight in the three seconds before says the raised arm was a swing in the rally
