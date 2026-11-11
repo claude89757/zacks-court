@@ -1049,7 +1049,9 @@ enum IndependentShotFlights {
         return (t: best.t / fps, ground: best.P)
     }
 
-    /// Flights starting within 0.25 s of the previous kept one are duplicates: keep the one with more points.
+    /// Flights starting within 0.25 s of the previous kept one are duplicates: keep the one with more points, and
+    /// with as many, the one that lands (v31): of two 25-point flights started on one frame 760 px apart, the
+    /// earlier-sorted one without a bounce was kept and a near landing went uncalled (night video 659.48).
     static func deduplicate(_ shots: [IndependentShotResult]) -> [IndependentShotResult] {
         deduplicate(shots) { (s: IndependentShotResult) -> IndependentShotResult in s }
     }
@@ -1059,7 +1061,9 @@ enum IndependentShotFlights {
         for item in IndependentBallEvents.stableSorted(items, by: { (a: T, b: T) -> Bool in result(a).tHit < result(b).tHit }) {
             let s = result(item)
             if let last = out.last, s.tHit - result(last).tHit < 0.25 {
-                if s.nObs > result(last).nObs { out[out.count - 1] = item }
+                let kept = result(last)
+                let landsInstead = s.bounceGround != nil && kept.bounceGround == nil
+                if s.nObs > kept.nObs || (s.nObs == kept.nObs && landsInstead) { out[out.count - 1] = item }
                 continue
             }
             out.append(item)

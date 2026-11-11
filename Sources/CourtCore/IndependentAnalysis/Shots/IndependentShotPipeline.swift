@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v30"
+    public static let rulesVersion = "independent-shots-v31"
 
     /// A stretch of video with one fixed camera (a camera that moved needs a new segment).
     public struct Segment: Sendable {

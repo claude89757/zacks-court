@@ -955,6 +955,57 @@ final class IndependentShotPipelineTests: XCTestCase {
                        "a straight continuation is not a landing")
     }
 
+    /// v31: a far serve landing in the near service box, seen for only five points after it. A flight rising from
+    /// the landing, on toward the near baseline, explains the tail, and the junction is a bounce; the falling ball
+    /// carried straight on is none. (On clean points the usual fits find this bounce as well; the short-tail test
+    /// is for real tails, whose fit often settles on falling.)
+    func testShortTailAfterANearLanding() throws {
+        let cam = IndependentProjector(camera)
+        var s = IndependentFlight.State(p: SIMD3(-1.0, 22.0, 2.7), v: SIMD3(0.5, -30.0, -3.0))
+        var falling = [(Double, SIMD3<Double>)]()
+        var t = 600.0
+        while IndependentFlight.rk4(s, 1 / 60).p.z > IndependentCourt.ballRadius {
+            falling.append((t, s.p)); s = IndependentFlight.rk4(s, 1 / 60); t += 1
+        }
+        // `s` is the frame the ball lands on (8.1 m from the near baseline); that frame is not seen
+        let ground = SIMD3(s.p.x, s.p.y, IndependentCourt.ballRadius)
+        func flight(from start: IndependentFlight.State) -> [IndependentTrackPoint] {
+            var q = start
+            return (1...5).map { (k: Int) -> IndependentTrackPoint in
+                q = IndependentFlight.rk4(q, 1 / 60)
+                let uv = cam.project(q.p)
+                return IndependentTrackPoint(t: t + Double(k), u: uv.u, v: uv.v)
+            }
+        }
+        let A = falling.map { (p: (Double, SIMD3<Double>)) -> IndependentTrackPoint in
+            let uv = cam.project(p.1)
+            return IndependentTrackPoint(t: p.0, u: uv.u, v: uv.v)
+        }
+        let B = flight(from: .init(p: ground, v: SIMD3(s.v.x * 0.8, s.v.y * 0.75, -s.v.z * 0.6)))
+        XCTAssertLessThan(IndependentFlight.risingAnchoredRMS(cam, frames: B.map(\.t), uv: B.map(\.uv), anchor: ground, at: t, along: -1), 2)
+        var link = try XCTUnwrap(IndependentBallEvents.junctions([A, B]).first)
+        IndependentBallEvents.testBounce(&link, pieces: [A, B], camera: cam)
+        XCTAssertTrue(link.bounce)
+        let straight = flight(from: s)
+        var none = try XCTUnwrap(IndependentBallEvents.junctions([A, straight]).first)
+        IndependentBallEvents.testBounce(&none, pieces: [A, straight], camera: cam)
+        XCTAssertFalse(none.bounce)
+    }
+
+    /// v31: two flights starting together with as many points: the one that lands is kept.
+    func testDuplicateFlightsKeepTheOneThatLands() {
+        func flight(_ t: Double, bounce: Bool) -> IndependentShotResult {
+            var r = IndependentShotResult(hitKind: "first observation", hitterFound: false, bounceFound: bounce, contactUV: [0, 0], hitterBox: nil,
+                                          incoming: nil, hitterSide: "far", tHit: t, nObs: 25, firstFrame: Int(t * 60), lastFrame: Int(t * 60) + 24)
+            if bounce { r.bounceGround = [1, 4, 0] }
+            return r
+        }
+        let kept = IndependentShotFlights.deduplicate([flight(10.0, bounce: false), flight(10.0, bounce: true)])
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertNotNil(kept[0].bounceGround)
+        XCTAssertNil(IndependentShotFlights.deduplicate([flight(10.0, bounce: false), flight(10.1, bounce: false)])[0].bounceGround)
+    }
+
     /// v16: a serve whose bounce stayed inside one tracked piece: the bounce is found in the service box and
     /// anchors the speed. A short serve flight without a bounce gets no speed.
     func testServeRefitFindsABounceInsideTheTrackAndSkipsShortFlights() throws {
