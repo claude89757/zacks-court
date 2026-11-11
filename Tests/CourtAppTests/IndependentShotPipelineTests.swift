@@ -1029,6 +1029,65 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertNil(IndependentShotFlights.deduplicate([flight(10.0, bounce: false), flight(10.1, bounce: false)])[0].bounceGround)
     }
 
+    /// v33: a far ball landing on the near half whose bounce stayed in its last two points (no junction): the step
+    /// across the bounce nearly stops in the image, and the near line call takes that landing with at least the
+    /// 1 m sigma floor. Without such a knee the fit brought down a frame or two past the end is taken, when low and
+    /// accepted. Not for a near hit right then (a volley), a fit still high, a flight ending at a hit, or at the net.
+    func testIncomingLandingV33() throws {
+        let cam = IndependentProjector(camera)
+        var s = IndependentFlight.State(p: SIMD3(1.0, 23.0, 1.0), v: SIMD3(-0.5, -24.0, 3.5))
+        var t = 600.0, falling = [IndependentTrackPoint]()
+        while true {   // every frame down to the last one above the ground
+            let uv = cam.project(s.p); falling.append(IndependentTrackPoint(t: t, u: uv.u, v: uv.v))
+            let next = IndependentFlight.rk4(s, 1 / 60)
+            if next.p.z <= IndependentCourt.ballRadius { break }
+            s = next; t += 1
+        }
+        XCTAssertNil(IndependentShotFlights.tailKnee(frames: falling.map(\.t), uv: falling.map(\.uv)), "still coming down")
+        var up = IndependentFlight.State(p: SIMD3(s.p.x, s.p.y, IndependentCourt.ballRadius), v: SIMD3(s.v.x * 0.8, s.v.y * 0.75, -s.v.z * 0.6))
+        var tail = falling
+        for k in 1...2 {
+            up = IndependentFlight.rk4(up, 1 / 60)
+            let uv = cam.project(up.p); tail.append(IndependentTrackPoint(t: t + Double(k), u: uv.u, v: uv.v))
+        }
+        let j = try XCTUnwrap(IndependentShotFlights.tailKnee(frames: tail.map(\.t), uv: tail.map(\.uv)), "two points after the bounce")
+        let m = (tail[j].uv + tail[j + 1].uv) / 2, g = cam.onPlaneZ(m.x, m.y, z: IndependentCourt.ballRadius)
+        XCTAssertLessThan(simd_length(SIMD2(g.x - s.p.x, g.y - s.p.y)), 0.5, "the slow step's middle is at the landing")
+
+        func incoming(knee: [Double]?, zLast: Double = 0.2, y: Double = 4, endsAtHit: Bool = false) -> IndependentShotResult {
+            var r = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: false, contactUV: [0, 0], hitterBox: nil,
+                                          incoming: nil, hitterSide: "far", tHit: 10, nObs: 40, firstFrame: 600, lastFrame: 690)
+            r.fitHit = [0, 23, 1]
+            r.descent = .init(t: 11.52, x: 1, y: y, vx: 0, vy: -15, ahead: 1, zLast: zLast, u: 900, v: 800, px: 20, tLast: 11.5,
+                              accepted: true, rms: 2, hitY: 23, endsAtHit: endsAtHit, knee: knee)
+            return r
+        }
+        func landing(_ shots: [IndependentShotResult]) -> IndependentShotResult.LandEstimate? {
+            IndependentShotPipeline.incomingLanding(0, shots: shots, camera: cam)
+        }
+        let knee = try XCTUnwrap(landing([incoming(knee: [11.51, 1.2, 3.5])]))
+        XCTAssertTrue(knee.knee)
+        XCTAssertEqual(knee.y, 3.5)
+        XCTAssertGreaterThanOrEqual(knee.sigma.min() ?? 0, IndependentIncomingLanding.sigmaFloor)
+        var volley = incoming(knee: nil); volley.hitterSide = "near"; volley.tHit = 11.55
+        XCTAssertNil(landing([incoming(knee: [11.51, 1.2, 3.5]), volley]), "the near player hit it then")
+        XCTAssertNil(landing([incoming(knee: [11.51, 1.2, 3.5], zLast: 1.2)]), "the fit still high at the end")
+        let fit = try XCTUnwrap(landing([incoming(knee: nil)]))
+        XCTAssertFalse(fit.knee)
+        XCTAssertGreaterThan(fit.sigma[1], knee.sigma[1], "a landing brought down is less certain")
+        XCTAssertNil(landing([incoming(knee: nil, zLast: 0.5)]))
+        XCTAssertNil(landing([incoming(knee: nil, endsAtHit: true)]))
+        XCTAssertNil(landing([incoming(knee: nil, y: 11)]), "at the net")
+
+        var shot = incoming(knee: nil); shot.landEstimate = fit
+        let row = try XCTUnwrap(IndependentShotPipeline.rows(from: [shot], streamID: UUID(), all: true).first)
+        XCTAssertEqual(row.bounce?.reasonCode, .estimate)
+        XCTAssertEqual(row.bounce?.sigmaYMeters, fit.sigma[1])
+        XCTAssertEqual(row.speedReasonCode, .speedUnreliable, "the row shows a landing")
+        var shorter = incoming(knee: nil); shorter.nObs = 20
+        XCTAssertFalse(IndependentLiveShots.replaces(shot, with: shorter), "a shorter recomputation without it keeps the landing")
+    }
+
     /// v16: a serve whose bounce stayed inside one tracked piece: the bounce is found in the service box and
     /// anchors the speed. A short serve flight without a bounce gets no speed.
     func testServeRefitFindsABounceInsideTheTrackAndSkipsShortFlights() throws {

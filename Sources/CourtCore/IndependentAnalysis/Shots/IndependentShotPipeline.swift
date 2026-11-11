@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v32"
+    public static let rulesVersion = "independent-shots-v33"
 
     /// Median image step of a run of track points, pixels per frame (0 for fewer than two points).
     static func imageSpeed(_ P: [IndependentTrackPoint]) -> Double {
@@ -392,7 +392,54 @@ public enum IndependentShotPipeline {
         // flights first seen late that the rules did not name serves: the hit is where the longer reach finds it (v29)
         for i in shots.indices where shots[i].stroke != "发球" { shots[i].applyLateHit() }
         for i in shots.indices { shots[i].bounceSigma = bounceSigma(shots[i], camera: cameras[shots[i].segment]) }
+        // an incoming flight from the far half without a bounce: where it came down on the near half (v33). Night
+        // videos: near calls agreeing with the reference +6 in the halves the rule was built on, +2 in the others,
+        // none wrong; the 1 m sigma floor makes calls within about 2 m of a line 「压线附近」.
+        for i in shots.indices where shots[i].bounceGround == nil {
+            shots[i].landEstimate = incomingLanding(i, shots: shots, camera: cameras[shots[i].segment])
+        }
         return shots
+    }
+
+    /// The near landing of shot `i`, hit on the far half, that has no bounce (v33): the bounce inside its last steps
+    /// (`IndependentShotFlights.tailKnee`), else, when there is no such knee, where its own accepted fit comes down a
+    /// few frames past the last observation, low and close to it in the image, unless the flight ends at a hit.
+    /// Neither at the net, nor when a near player hits the ball right then (a volley).
+    static func incomingLanding(_ i: Int, shots: [IndependentShotResult], camera: IndependentProjector) -> IndependentShotResult.LandEstimate? {
+        typealias L = IndependentIncomingLanding
+        let s = shots[i], netY = IndependentCourt.netY
+        guard let d = s.descent else { return nil }
+        func onNearHalf(_ x: Double, _ y: Double) -> Bool { netY - y >= L.netMargin && y > -8 && abs(x) < 9 }
+        func receiverHits(from t0: Double, to t1: Double) -> Bool {
+            shots.indices.contains { j in
+                j != i && shots[j].segment == s.segment && shots[j].hitterSide == "near" && shots[j].tHit >= t0 && shots[j].tHit <= t1
+            }
+        }
+        if let k = d.knee {
+            guard onNearHalf(k[1], k[2]), let h = s.fitHit, h.count >= 2, h[1] > netY,
+                  d.zLast <= L.kneeHighZ, d.ahead <= L.kneeAheadFrames,
+                  !receiverHits(from: k[0] - L.receiverBefore, to: k[0] + L.receiverAfter) else { return nil }
+            return landEstimate(t: k[0], x: k[1], y: k[2], vx: d.vx, vy: d.vy, frames: L.kneeSigmaFrames, knee: true, camera: camera)
+        }
+        guard d.accepted, let rms = d.rms, rms <= L.maxRms, !d.endsAtHit, onNearHalf(d.x, d.y),
+              let hitY = d.hitY, hitY > netY, d.zLast <= L.fitHighZ,
+              (0...L.frameWidth).contains(d.u), (0...L.frameHeight).contains(d.v),
+              L.aheadFrames.contains(d.ahead), d.px <= L.maxImagePx,
+              !receiverHits(from: d.tLast - L.receiverBefore, to: d.t + L.receiverAfter) else { return nil }
+        // a tracked bounce's half frame of travel, plus the landing time's uncertainty
+        let frames = (0.5 * 0.5 + pow(L.timingFrames + L.perAheadFrame * abs(d.ahead), 2)).squareRoot()
+        return landEstimate(t: d.t, x: d.x, y: d.y, vx: d.vx, vy: d.vy, frames: frames, knee: false, camera: camera)
+    }
+
+    /// A landing with its standard deviations (m): `bouncePixelSigma` through the ground mapping, `frames` of the
+    /// ball's ground travel, and `IndependentIncomingLanding.sigmaFloor`; nil when they are not finite.
+    static func landEstimate(t: Double, x: Double, y: Double, vx: Double, vy: Double, frames: Double, knee: Bool,
+                             camera: IndependentProjector) -> IndependentShotResult.LandEstimate? {
+        guard let pixel = pixelVariance(x: x, y: y, camera: camera) else { return nil }
+        let dt = frames / IndependentShotFlights.fps, floor2 = IndependentIncomingLanding.sigmaFloor * IndependentIncomingLanding.sigmaFloor
+        let sxx = pixel.xx + (vx * dt) * (vx * dt) + floor2, syy = pixel.yy + (vy * dt) * (vy * dt) + floor2
+        guard t.isFinite, x.isFinite, y.isFinite, sxx.isFinite, syy.isFinite else { return nil }
+        return IndependentShotResult.LandEstimate(t: t, x: x, y: y, sigma: [sxx.squareRoot(), syy.squareRoot()], knee: knee)
     }
 
     /// Where a serve into the net met it (v32): the first junction inside the serve's own flight, `netJunctionAfter`
@@ -457,13 +504,8 @@ public enum IndependentShotPipeline {
     /// Standard deviations (m) of a bounce's ground x and y: `bouncePixelSigma` through the ground
     /// mapping's Jacobian at the bounce, plus half a frame of ground travel (the bounce falls between frames).
     static func bounceSigma(_ s: IndependentShotResult, camera: IndependentProjector) -> [Double]? {
-        guard let b = s.bounceGround, b.count >= 2 else { return nil }
-        let p = camera.project(SIMD3(b[0], b[1], 0))
-        guard p.depth > 0 else { return nil }
-        let g0 = camera.onPlaneZ(p.u, p.v, z: 0), gu = camera.onPlaneZ(p.u + 1, p.v, z: 0), gv = camera.onPlaneZ(p.u, p.v + 1, z: 0)
-        let ju = gu - g0, jv = gv - g0
-        let px2 = bouncePixelSigma * bouncePixelSigma
-        var sxx = px2 * (ju.x * ju.x + jv.x * jv.x), syy = px2 * (ju.y * ju.y + jv.y * jv.y)
+        guard let b = s.bounceGround, b.count >= 2, let pixel = pixelVariance(x: b[0], y: b[1], camera: camera) else { return nil }
+        var sxx = pixel.xx, syy = pixel.yy
         if let h = s.fitHit, h.count >= 2, let tb = s.tBounce, tb - s.tHit > 0.1 {
             let T = tb - s.tHit, step = 0.5 / IndependentShotFlights.fps
             let vx = (b[0] - h[0]) / T, vy = (b[1] - h[1]) / T
@@ -471,6 +513,16 @@ public enum IndependentShotPipeline {
         }
         guard sxx.isFinite, syy.isFinite else { return nil }
         return [sxx.squareRoot(), syy.squareRoot()]
+    }
+
+    /// Variances (m²) of a ground point's x and y from `bouncePixelSigma` of image noise, through the ground
+    /// mapping's Jacobian there; nil when the point is behind the camera.
+    static func pixelVariance(x: Double, y: Double, camera: IndependentProjector) -> (xx: Double, yy: Double)? {
+        let p = camera.project(SIMD3(x, y, 0))
+        guard p.depth > 0 else { return nil }
+        let g0 = camera.onPlaneZ(p.u, p.v, z: 0), gu = camera.onPlaneZ(p.u + 1, p.v, z: 0), gv = camera.onPlaneZ(p.u, p.v + 1, z: 0)
+        let ju = gu - g0, jv = gv - g0, px2 = bouncePixelSigma * bouncePixelSigma
+        return (px2 * (ju.x * ju.x + jv.x * jv.x), px2 * (ju.y * ju.y + jv.y * jv.y))
     }
 
     /// Speed fields of a serve refit. Fit quality, hit time and stroke fields stay those of the original
@@ -503,6 +555,11 @@ public enum IndependentShotPipeline {
                                                   confidence: 0, reason: "模型估计，不是判罚")
                 row.bounce?.reasonCode = .estimate
                 if let sg = finite(s.bounceSigma, count: 2) { row.bounce?.sigmaXMeters = sg[0]; row.bounce?.sigmaYMeters = sg[1] }
+            } else if let l = s.landEstimate {
+                row.bounce = TennisBounceEstimate(sourcePTS: l.t + ptsOffset, xMeters: IndependentCourt.courtX(fromCentred: l.x), yMeters: l.y,
+                                                  confidence: 0, reason: l.knee ? "模型估计（来球最后几帧里的触地），不是判罚" : "模型估计（来球拟合落地），不是判罚")
+                row.bounce?.reasonCode = .estimate
+                row.bounce?.sigmaXMeters = l.sigma[0]; row.bounce?.sigmaYMeters = l.sigma[1]
             }
             if let h = finite(s.fitHit, count: 3) { row.hit = TennisCourtPoint(x: IndependentCourt.courtX(fromCentred: h[0]), y: h[1], z: h[2]) }
             row.origin = "independent"
@@ -526,7 +583,8 @@ public enum IndependentShotPipeline {
 
     static func reasonCode(_ s: IndependentShotResult) -> TennisReason {
         if s.reason == "fewer than 8 ball observations between hit and bounce" || s.reason == "no initial flight hypothesis" { return .ballNotSeen }
-        return s.bounceFound ? .speedUnreliable : .noBounceSeen
+        // a row showing an estimated landing (v33) does not say the ball was not seen landing
+        return s.bounceFound || s.landEstimate != nil ? .speedUnreliable : .noBounceSeen
     }
     static func reasonText(_ s: IndependentShotResult) -> String {
         if let r = s.reason { return "自研：\(r)" }

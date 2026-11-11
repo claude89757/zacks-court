@@ -133,13 +133,16 @@ public struct IndependentLiveShots: Sendable {
     /// A recomputation may replace an existing row, except as a shorter, bounce-less version of a row that
     /// already found a bounce: with the same flight start a fragment (8 points) was published over the row
     /// that had the bounce (test.MOV 264.02, 2026-11-06) and the near-side call was lost.
+    /// A landing estimated without a tracked bounce counts as a landing here (v33).
     static func replaces(_ existing: IndependentShotResult, with shot: IndependentShotResult) -> Bool {
-        !(existing.bounceFound && !shot.bounceFound && shot.nObs < existing.nObs)
+        let had = existing.bounceFound || existing.landEstimate != nil, has = shot.bounceFound || shot.landEstimate != nil
+        return !(had && !has && shot.nObs < existing.nObs)
     }
 
     static func same(_ a: IndependentShotResult, _ b: IndependentShotResult) -> Bool {
         a.tHit == b.tHit && a.stroke == b.stroke && a.reportedSpeedKmh == b.reportedSpeedKmh
             && a.bounceFound == b.bounceFound && a.reason == b.reason && a.nObs == b.nObs
             && a.bounceGround == b.bounceGround   // a moved bounce can change its line call
+            && a.landEstimate == b.landEstimate
     }
 }

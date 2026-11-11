@@ -153,6 +153,8 @@ public struct IndependentShotFlight: Sendable {
     var lateSeen = false
     /// Frames searched backwards from the first observation for the hitter's depth.
     var reach = IndependentShotFlights.reachFrames
+    /// The chain ends at a hit junction (v33): the ball was struck at the flight's last point, it did not land there.
+    var endsAtHit = false
 }
 
 /// Result per shot flight (field names follow `shots.py` for parity checks).
@@ -243,6 +245,34 @@ public struct IndependentShotResult: Sendable, Codable {
     public var tossGluedContact: Double?
     /// Median image step of the flight's points, pixels per frame (v32): a rally flight moves.
     public var imageStep: Double?
+    /// How the flight's own fit comes down after its last observation (v33, `IndependentShotFlights.descent`).
+    public var descent: Descent?
+    public struct Descent: Sendable, Codable, Equatable {
+        /// Where the fitted flight first comes down to ball height after its hit: time (s), court point (x centred)
+        /// and ground velocity (m/s).
+        public var t: Double, x: Double, y: Double, vx: Double, vy: Double
+        /// Frames from the last observation to that landing (negative: before it), and the fitted height (m) at the
+        /// last observation.
+        public var ahead: Double, zLast: Double
+        /// The landing in the image (pixels), its distance from the last observation (pixels), and that
+        /// observation's time (s).
+        public var u: Double, v: Double, px: Double, tLast: Double
+        /// The flight's own fit, kept before a serve refit takes over the shot's fit fields.
+        public var accepted = false, rms: Double?, hitY: Double?
+        /// The chain ended at a hit junction.
+        public var endsAtHit = false
+        /// The bounce inside the flight's last steps (`IndependentShotFlights.tailKnee`): time (s), court point
+        /// (x centred).
+        public var knee: [Double]?
+    }
+    /// The landing a near line call takes when no bounce was tracked (v33, `IndependentShotPipeline.incomingLanding`).
+    public var landEstimate: LandEstimate?
+    public struct LandEstimate: Sendable, Codable, Equatable {
+        /// Time (s), court point (x centred) and standard deviations (m) of x and y.
+        public var t: Double, x: Double, y: Double, sigma: [Double]
+        /// From the bounce inside the flight's tail, not from the fit brought down.
+        public var knee: Bool
+    }
     /// The fit that gets back to the hitter with the longer reach (v29), kept beside the usual one: the serve
     /// rules read the usual fit (a serve first seen late is timed by its own refits), and a flight they did not
     /// name a serve takes this one afterwards (`applyLateHit`).
@@ -251,11 +281,12 @@ public struct IndependentShotResult: Sendable, Codable {
         public var tHit: Double, fitHit: [Double]?, rmsPx: Double?, maxPx: Double?, vInstKmh: Double?, fitNetZ: Double?, fitNetX: Double?
         public var speedDragKmh: Double?, endKind: String?, intervalS: Double?, speedKmh: Double?, landSpeedKmh: Double?, landY: Double?
         public var zLastFit: Double?, yLastFit: Double?, riseM: Double?, pastNetCount: Int?, crossesNet: Bool?, droppedOutliers: Int?, fallback: String?
+        public var descent: Descent?
         init(_ r: IndependentShotResult) {
             tHit = r.tHit; fitHit = r.fitHit; rmsPx = r.rmsPx; maxPx = r.maxPx; vInstKmh = r.vInstKmh; fitNetZ = r.fitNetZ; fitNetX = r.fitNetX
             speedDragKmh = r.speedDragKmh; endKind = r.endKind; intervalS = r.intervalS; speedKmh = r.speedKmh; landSpeedKmh = r.landSpeedKmh
             landY = r.landY; zLastFit = r.zLastFit; yLastFit = r.yLastFit; riseM = r.riseM; pastNetCount = r.pastNetCount; crossesNet = r.crossesNet
-            droppedOutliers = r.droppedOutliers; fallback = r.fallback
+            droppedOutliers = r.droppedOutliers; fallback = r.fallback; descent = r.descent
         }
     }
     /// Takes the late fit (see `lateHit`): the hit is where the flight reaches the hitter, and the fit is accepted.
@@ -265,6 +296,7 @@ public struct IndependentShotResult: Sendable, Codable {
         fitNetZ = l.fitNetZ; fitNetX = l.fitNetX; speedDragKmh = l.speedDragKmh; endKind = l.endKind; intervalS = l.intervalS; speedKmh = l.speedKmh
         landSpeedKmh = l.landSpeedKmh; landY = l.landY; zLastFit = l.zLastFit; yLastFit = l.yLastFit; riseM = l.riseM; pastNetCount = l.pastNetCount
         crossesNet = l.crossesNet; droppedOutliers = l.droppedOutliers; fallback = l.fallback; accepted = true; reason = nil; lateHit = nil
+        descent = l.descent
     }
     /// Serve contact time (s) from a refit that trimmed a glued toss (v18); rows report it instead of `tHit`.
     public var contactT: Double?
@@ -488,6 +520,7 @@ enum IndependentShotFlights {
                                                contact: contact, incoming: incoming, hitterSide: side)
             flight.fromToss = fromToss; flight.seenBefore = seen
             flight.lateSeen = kind == .firstObservation && bounce.map { ($0.ground.y < netY) != (side == "near") } ?? false
+            flight.endsAtHit = end.map { kinds[$0] == .hit } ?? false
             out.append(flight)
         }
         return out
@@ -580,6 +613,16 @@ enum IndependentShotFlights {
     static let reachedKind = "first observation (reach)"
 
     static func analyseOnce(_ job: IndependentShotFlight, camera cam: IndependentProjector) -> IndependentShotResult {
+        var r = fitOnce(job, camera: cam)
+        // the flight's own fit (v33): a serve refit later takes over the shot's fit fields
+        if var d = r.descent {
+            d.accepted = r.accepted; d.rms = r.rmsPx; d.hitY = r.fitHit?[1]; d.endsAtHit = job.endsAtHit
+            r.descent = d
+        }
+        return r
+    }
+
+    private static func fitOnce(_ job: IndependentShotFlight, camera cam: IndependentProjector) -> IndependentShotResult {
         let frames = job.points.map(\.t), uv = job.points.map(\.uv)
         var res = IndependentShotResult(hitKind: job.kind.rawValue, hitterFound: job.hitter != nil, bounceFound: job.bounce != nil,
                                         contactUV: [job.contact.x, job.contact.y], hitterBox: job.hitter,
@@ -664,6 +707,7 @@ enum IndependentShotFlights {
         res.fitHit = [P.p.x, P.p.y, P.p.z]; res.vInstKmh = simd_length(P.v) * 3.6
         let last = IndependentFlight.state(at: frames[frames.count - 1], from: x, F0: F0).p
         res.zLastFit = last.z; res.yLastFit = last.y
+        res.descent = descent(x, F0: F0, tHit: tHit, frames: frames, uv: uv, camera: cam)
         if frames[frames.count - 1] > tHit {
             let grid = stride(from: tHit, through: frames[frames.count - 1], by: 2).map { $0 - Double(F0) }
             res.riseM = max(0, (IndependentFlight.simulate(x, grid).map(\.p.z).max() ?? P.p.z) - P.p.z)
@@ -725,6 +769,48 @@ enum IndependentShotFlights {
         else if !(20...250).contains(speed) { res.reason = "speed outside 20-250 km/h" }
         else { res.accepted = true }
         return res
+    }
+
+    /// Where the fitted flight first comes down to ball height after its hit (v33), searched in quarter frames up
+    /// to 40 frames past the last observation, with the bounce inside its last steps (`tailKnee`); nil when the
+    /// flight does not come down within that.
+    static func descent(_ x: IndependentFlight.State, F0: Int, tHit: Double, frames: [Double], uv: [SIMD2<Double>],
+                        camera cam: IndependentProjector) -> IndependentShotResult.Descent? {
+        let tLast = frames[frames.count - 1], r = IndependentCourt.ballRadius
+        let start = min(tHit, frames[0]), end = tLast + 40, step = 0.25
+        guard end > start else { return nil }
+        let grid: [Double] = (0...Int(((end - start) / step).rounded(.up))).map { (k: Int) -> Double in start + Double(k) * step }
+        let S = IndependentFlight.simulate(x, grid.map { $0 - Double(F0) })
+        guard let k = S.indices.first(where: { (k: Int) -> Bool in k > 0 && S[k - 1].p.z > r && S[k].p.z <= r }) else { return nil }
+        let a = S[k - 1], b = S[k], f = (a.p.z - r) / max(a.p.z - b.p.z, 1e-9)
+        let P = a.p + f * (b.p - a.p), V = a.v + f * (b.v - a.v), t = grid[k - 1] + f * step
+        let q = cam.project(P), last = uv[uv.count - 1]
+        guard P.x.isFinite, P.y.isFinite, q.depth > 0 else { return nil }
+        var d = IndependentShotResult.Descent(t: t / fps, x: P.x, y: P.y, vx: V.x, vy: V.y, ahead: t - tLast,
+                                              zLast: IndependentFlight.state(at: tLast, from: x, F0: F0).p.z,
+                                              u: q.u, v: q.v, px: simd_length(SIMD2(q.u, q.v) - last), tLast: tLast / fps)
+        if let j = tailKnee(frames: frames, uv: uv) {
+            let m = (uv[j] + uv[j + 1]) / 2, g = cam.onPlaneZ(m.x, m.y, z: r)
+            if g.x.isFinite, g.y.isFinite { d.knee = [(frames[j] + frames[j + 1]) / 2 / fps, g.x, g.y] }
+        }
+        return d
+    }
+
+    /// A bounce inside the last steps of a flight coming down the picture towards the camera (v33): falling and
+    /// approaching, the ball moves down the image fast; after the bounce it rises while it still approaches and
+    /// nearly stops in the image. The earliest of the last `kneeSteps` steps whose downward image speed falls under
+    /// `kneeRatio` of the median of the 4 steps before it; the index of the point before that step. The tracker
+    /// splits a piece only after three points that do not follow it, so up to two points after the bounce stay in
+    /// the incoming piece, and the bounce is not a junction.
+    static func tailKnee(frames: [Double], uv: [SIMD2<Double>]) -> Int? {
+        let n = frames.count
+        guard n >= 6 else { return nil }
+        let down = (1..<n).map { (i: Int) -> Double in (uv[i].y - uv[i - 1].y) / max(frames[i] - frames[i - 1], 1e-6) }
+        for j in max(4, down.count - IndependentIncomingLanding.kneeSteps)..<down.count {
+            let w = down[(j - 4)..<j].sorted(), ref = (w[1] + w[2]) / 2
+            if ref > IndependentIncomingLanding.kneeFromSpeed, down[j] / ref < IndependentIncomingLanding.kneeRatio { return j }
+        }
+        return nil
     }
 
     // MARK: serve speed (v16)
@@ -1091,4 +1177,30 @@ enum IndependentShotFlights {
         }
         return out
     }
+}
+
+/// Near landings of incoming flights whose bounce the tracker did not split off (v33, `IndependentShotPipeline.incomingLanding`).
+/// The gates were chosen on refits of tracked near bounces with the bounce taken away (no reference read).
+enum IndependentIncomingLanding {
+    /// Added to both sub-rules' standard deviations (m): on the rows the knee fired on, its landings were up to
+    /// 2.3 m from the reference's while its own sigma said 0.15 m.
+    static let sigmaFloor = 1.0
+    // the bounce inside the tail (`IndependentShotFlights.tailKnee`)
+    static let kneeSteps = 3            // searched over the last this many steps
+    static let kneeRatio = 0.5          // a step under this share of the 4 before it
+    static let kneeFromSpeed = 1.0      // the 4 steps before move down the picture at least this, px/frame
+    static let kneeHighZ = 0.9          // the fit not high at the end: at most this height at the last point, m
+    static let kneeAheadFrames = 9.0    //   and coming down at most this many frames past it
+    static let kneeSigmaFrames = 0.75   // frames of ground travel in a knee landing's sigma
+    // the fit brought down
+    static let fitHighZ = 0.30          // fitted height at the last observation, m
+    static let aheadFrames = -2.0...4.0 // fitted landing this many frames after the last observation
+    static let maxImagePx = 60.0        // image distance from the last observation to the landing
+    static let maxRms = 4.0             // the flight's own fit, px
+    static let timingFrames = 3.0       // frames of landing-time uncertainty in its sigma ...
+    static let perAheadFrame = 1.0      //   plus this per frame brought down
+    static let frameWidth = 1920.0, frameHeight = 1080.0   // capture is fixed at 1080p
+    // both
+    static let netMargin = 1.5          // landing at least this far from the net, m
+    static let receiverBefore = 0.1, receiverAfter = 0.15  // a near hit this close to the landing (s): a volley
 }
