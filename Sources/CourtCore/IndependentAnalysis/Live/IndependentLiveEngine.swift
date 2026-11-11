@@ -478,6 +478,8 @@ public final class IndependentLiveEngine {
     private let ball: IndependentLiveBallStage
     private let personsStage: IndependentLivePeople
     private let posesStage = IndependentLivePoses()
+    /// Off while the camera sheds load or the analysis is behind: no region pose is read, on person frames either.
+    public var readsPoses = true
     private var shots = IndependentLiveShots()
     private var ids: [Int: UUID] = [:]           // published index -> stable row id
     private var streamID: UUID?
@@ -589,7 +591,7 @@ public final class IndependentLiveEngine {
             let found = personsStage.detect(full, pts: pts, camera: configuration.camera)
             traceObserver?(.people(frame: found.frame, boxes: found.boxes))
         }
-        if configuration.poseInterval > 0, let frame = full ?? pose, let camera = configuration.camera, let latest = personsStage.latest {
+        if configuration.poseInterval > 0, readsPoses, let frame = full ?? pose, let camera = configuration.camera, let latest = personsStage.latest {
             let found = posesStage.detect(frame, pts: pts, camera: camera, latest: latest)
             traceObserver?(.poses(frame: found.frame, samples: found.samples))
         }

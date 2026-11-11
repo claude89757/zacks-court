@@ -64,7 +64,14 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         var updateInterval: Double? = nil
         /// A full-resolution copy only the region poses read (in-house lane, between two person frames).
         var poseOnly = false
+        /// Region poses are read on this frame (in-house lane): on unless shed or the analysis is behind.
+        var readPoses = true
     }
+
+    /// Frames waiting for the analysis above which the in-house lane reads no region poses (0.2 s). A lane that
+    /// keeps up has a handful waiting; `court-analyze independent-live` without `--realtime` holds the queue
+    /// below this (`IndependentLiveCommand.heldFrames`), so a comparison run reads every pose frame.
+    public static let poseBacklogFrames = 12
 
     private let worker = DispatchQueue(label: "court.camera-analysis", qos: .utility)
     private let bounceLane = DispatchQueue(label: "court.camera-bounce", qos: .utility)
@@ -251,16 +258,19 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         }
         let scaleMilliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
         liveFrames += 1
+        // the region poses wait while the analysis is behind (v29): on a Mac fed at the source clock they pushed a
+        // lane that kept up 68 % busy to 76 %, and its bursts over the queue limit seven times as often
+        let readPoses = poseInterval > 0 && pending <= Self.poseBacklogFrames
         var copy: CVPixelBuffer?, poseOnly = false
         if liveFrames % personInterval == 1 || personInterval == 1 {
             copy = makeCopy(pixelBuffer)
             if copy == nil { lock.lock(); metrics.poolExhausted += 1; lock.unlock() }   // a missed person sample is not a break
-        } else if poseInterval > 0, liveFrames % poseInterval == 1 || poseInterval == 1 {
+        } else if readPoses, liveFrames % poseInterval == 1 || poseInterval == 1 {
             copy = makeCopy(pixelBuffer); poseOnly = copy != nil       // a missed pose sample is not counted: nothing waits for it
         }
         var work = Work(pts: pts, streamID: streamID, pixels: copy, slot: copy == nil || poseOnly ? nil : 0, restart: restart, submitted: now,
                         small: small, sourceWidth: CVPixelBufferGetWidth(pixelBuffer), sourceHeight: CVPixelBufferGetHeight(pixelBuffer))
-        work.updateInterval = updateInterval; work.poseOnly = poseOnly
+        work.updateInterval = updateInterval; work.poseOnly = poseOnly; work.readPoses = readPoses
         lock.lock()
         metrics.pendingFrames += 1; metrics.maximumPendingFrames = max(metrics.maximumPendingFrames, metrics.pendingFrames)
         metrics.scaledFrames += 1; timings.scale.append(scaleMilliseconds)
@@ -368,6 +378,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         var failure: String?
         if let live, let small = work.small {
             if let interval = work.updateInterval { live.updateInterval = interval }
+            live.readsPoses = work.readPoses
             do { snapshot = try autoreleasepool { try live.process(small: small, full: work.poseOnly ? nil : work.pixels,
                                                                     pose: work.poseOnly ? work.pixels : nil, pts: work.pts, streamID: work.streamID,
                                                                     sourceWidth: work.sourceWidth, sourceHeight: work.sourceHeight) } }

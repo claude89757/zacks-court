@@ -15,6 +15,9 @@ import CourtCore
 /// Next to OUT.json: `OUT.candidates.json` (ball candidates) and `OUT.trace.json` (every input of the
 /// shot rules, for `independent-replay`).
 enum IndependentLiveCommand {
+    /// Frames allowed to wait for the worker when frames are not paced by the source clock: under the lane's
+    /// pose backlog, so no pose frame is skipped for being behind.
+    static let heldFrames = CameraSideAnalyzer.poseBacklogFrames - 4
     static func run(_ allArgs: [String]) async throws {
         let realtime = allArgs.contains("--realtime"), poseFill = !allArgs.contains("--no-pose-fill")
         let args = allArgs.filter { $0 != "--realtime" && $0 != "--no-pose-fill" }
@@ -68,7 +71,7 @@ enum IndependentLiveCommand {
                 let wait = due - ProcessInfo.processInfo.systemUptime
                 if wait > 0 { try await Task.sleep(nanoseconds: UInt64(wait * 1e9)) }
             } else {
-                while analyzer.currentMetrics.pendingFrames > 24 { try await Task.sleep(nanoseconds: 2_000_000) }
+                while analyzer.currentMetrics.pendingFrames > heldFrames { try await Task.sleep(nanoseconds: 2_000_000) }
             }
             analyzer.submit(pixels, pts: pts, streamID: stream)
             frames += 1
