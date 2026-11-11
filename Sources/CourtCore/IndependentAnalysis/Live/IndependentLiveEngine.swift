@@ -136,6 +136,16 @@ public final class IndependentLiveFrameScaler {
 
 // MARK: - Analysis queue: background, batches, candidates
 
+/// One batch of the ball model's input as the live lane built it: the 512×288 RGB8 background and frames
+/// (before the /255 of `IndependentLiveBallStage.tensor`), the frames' decode indices and source times.
+/// Research runs save it to train and check a model on exactly what the lane feeds it.
+public struct IndependentBallInputBatch {
+    public let background: [UInt8]
+    public let frames: [[UInt8]]
+    public let indices: [Int]
+    public let times: [Double]
+}
+
 /// 48-frame median background, then non-overlapping 8-frame batches through the ball model. A gap of
 /// more than 1.5 frame periods, a stream change or a size change starts a new warm-up.
 final class IndependentLiveBallStage {
@@ -149,6 +159,8 @@ final class IndependentLiveBallStage {
     private var frameIndex = 0
     private(set) var resets = 0, batches = 0, inferenceSeconds = 0.0
     var backgroundReady: Bool { background != nil }
+    /// Research runs only: each batch's model input, before inference.
+    var inputObserver: ((IndependentBallInputBatch) -> Void)?
 
     /// Up to two frames may be missing without a reset (2026-11-06): the night video drops one frame every
     /// 16.9 s, and treating that as a break cleared the in-flight state 96 times in 27 minutes.
@@ -173,6 +185,7 @@ final class IndependentLiveBallStage {
         }
         pending.append(rgb); pendingTimes.append(pts); pendingIndices.append(frameIndex)
         guard pending.count == Self.batch else { return broke }
+        inputObserver?(IndependentBallInputBatch(background: background, frames: pending, indices: pendingIndices, times: pendingTimes))
         let start = ProcessInfo.processInfo.systemUptime
         let tensor = try Self.tensor(background: background, frames: pending)
         let prediction = try autoreleasepool { try model.predict(tensor) }
@@ -518,6 +531,11 @@ public final class IndependentLiveEngine {
     public var candidateObserver: (([IndependentShotCandidate]) -> Void)?
     /// Diagnostics: every input of the shot rules, in order (analysis queue), for `IndependentLiveTrace.replay`.
     public var traceObserver: ((IndependentLiveTraceEvent) -> Void)?
+    /// Research runs only: every batch of the ball model's input (analysis queue).
+    public var ballInputObserver: ((IndependentBallInputBatch) -> Void)? {
+        get { ball.inputObserver }
+        set { ball.inputObserver = newValue }
+    }
 
     public init(configuration: IndependentLiveConfiguration) throws {
         self.configuration = configuration

@@ -291,6 +291,12 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         worker.async { [self] in live?.traceObserver = observer }
     }
 
+    /// Research runs (`court-analyze independent-live`): every batch of the ball model's input as the lane
+    /// built it (analysis queue). Nothing in the App observes it.
+    public func observeIndependentBallInputs(_ observer: @escaping (IndependentBallInputBatch) -> Void) {
+        worker.async { [self] in live?.ballInputObserver = observer }
+    }
+
     /// Fixes the in-house lane's camera from outside (tests, tools); the lane normally finds the court
     /// itself. Ball tracking continues; the shot rules use the new camera from the next update.
     public func setIndependentCamera(_ camera: IndependentPinholeCamera?) {

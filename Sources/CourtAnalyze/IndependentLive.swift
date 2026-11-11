@@ -1,7 +1,7 @@
 import AVFoundation
 import CoreML
 import Foundation
-import CourtCore
+@_spi(Research) import CourtCore
 
 /// court-analyze independent-live VIDEO FP16_MODEL_DIR CAMERA.json|auto OUT.json [START_SECONDS [DURATION_SECONDS]] [--realtime] [--no-pose-fill]
 ///
@@ -14,6 +14,12 @@ import CourtCore
 /// clock and lets the lane drop frames like a live camera would. A Mac run, not an iPhone measurement.
 /// Next to OUT.json: `OUT.candidates.json` (ball candidates) and `OUT.trace.json` (every input of the
 /// shot rules, for `independent-replay`).
+///
+/// Research switches (environment; the App has neither): `COURT_BALL_INPUTS=DIR` saves every batch of the ball
+/// model's input as the lane built it (`frames.u8`, `backgrounds.u8`: 512×288 RGB8 each; `index.jsonl`: per batch
+/// its background, first frame, decode indices and source times), to train and check a ball model on exactly
+/// those bytes. `COURT_RESEARCH_BALL_MODEL=X.mlpackage` runs an unreviewed ball model (a fine-tuned conversion)
+/// instead of the pinned FP16 package; the model directory argument is still checked.
 enum IndependentLiveCommand {
     /// Frames allowed to wait for the worker when frames are not paced by the source clock: under the lane's
     /// pose backlog, so no pose frame is skipped for being behind.
@@ -26,7 +32,13 @@ enum IndependentLiveCommand {
         }
         let video = URL(fileURLWithPath: args[1]), out = URL(fileURLWithPath: args[4])
         guard !FileManager.default.fileExists(atPath: out.path) else { throw CourtError.message("Output already exists; choose a new output path.") }
-        let assets = try IndependentBallModelAssets.load(directory: URL(fileURLWithPath: args[2], isDirectory: true), variant: .fp16)
+        let environment = ProcessInfo.processInfo.environment
+        var assets = try IndependentBallModelAssets.load(directory: URL(fileURLWithPath: args[2], isDirectory: true), variant: .fp16)
+        if let research = environment["COURT_RESEARCH_BALL_MODEL"] {
+            assets = try IndependentBallModelAssets.unreviewed(package: URL(fileURLWithPath: research, isDirectory: true))
+            fputs("LIVE research ball model \(research)\n", stderr)
+        }
+        let inputs = try environment["COURT_BALL_INPUTS"].map { try BallInputWriter(directory: URL(fileURLWithPath: $0, isDirectory: true)) }
         let automatic = args[3] == "auto"
         let camera = automatic ? nil : try JSONDecoder().decode(IndependentPinholeCamera.self, from: Data(contentsOf: URL(fileURLWithPath: args[3])))
         let startSeconds = args.count > 5 ? Double(args[5]) ?? 0 : 0
@@ -55,6 +67,7 @@ enum IndependentLiveCommand {
         let candidateLog = CandidateBox(), trace = TraceBox()
         analyzer.observeIndependentCandidates { batch in candidateLog.add(batch) }
         analyzer.observeIndependentTrace { event in trace.add(event) }
+        if let inputs { analyzer.observeIndependentBallInputs { batch in inputs.add(batch) } }
         while !analyzer.currentMetrics.ready { try await Task.sleep(nanoseconds: 20_000_000) }
         if let error = analyzer.currentMetrics.loadError { throw CourtError.message("Live lane failed to load: \(error)") }
 
@@ -85,6 +98,7 @@ enum IndependentLiveCommand {
             analyzer.finish { events, metrics in final.set(events, metrics); done.resume() }
         }
         let wall = ProcessInfo.processInfo.systemUptime - began
+        if let inputs { try inputs.close() }
         let timings = analyzer.drainTimings()
         let (lastEvents, metrics) = final.get()
         rows.add(lastEvents)
@@ -146,6 +160,42 @@ enum IndependentLiveCommand {
         private let lock = NSLock(); private var list: [IndependentLiveTraceEvent] = []
         func add(_ e: IndependentLiveTraceEvent) { lock.lock(); list.append(e); lock.unlock() }
         var all: [IndependentLiveTraceEvent] { lock.lock(); defer { lock.unlock() }; return list }
+    }
+    /// `COURT_BALL_INPUTS`: the ball model's input bytes, a background written again only when it changes.
+    final class BallInputWriter: @unchecked Sendable {
+        private let lock = NSLock()
+        private let frames: FileHandle, backgrounds: FileHandle, index: FileHandle
+        private var lastBackground: [UInt8]?, backgroundCount = 0, frameCount = 0, batchCount = 0
+        private var failure: Error?
+        init(directory: URL) throws {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            func open(_ name: String) throws -> FileHandle {
+                let url = directory.appendingPathComponent(name)
+                guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw CourtError.message("Cannot create \(url.path)") }
+                return try FileHandle(forWritingTo: url)
+            }
+            frames = try open("frames.u8"); backgrounds = try open("backgrounds.u8"); index = try open("index.jsonl")
+        }
+        func add(_ batch: IndependentBallInputBatch) {
+            lock.lock(); defer { lock.unlock() }
+            guard failure == nil else { return }
+            do {
+                if lastBackground != batch.background {
+                    try backgrounds.write(contentsOf: Data(batch.background)); lastBackground = batch.background; backgroundCount += 1
+                }
+                for frame in batch.frames { try frames.write(contentsOf: Data(frame)) }
+                let line: [String: Any] = ["batch": batchCount, "background": backgroundCount - 1, "first": frameCount,
+                                           "indices": batch.indices, "times": batch.times]
+                try index.write(contentsOf: try JSONSerialization.data(withJSONObject: line) + Data("\n".utf8))
+                frameCount += batch.frames.count; batchCount += 1
+            } catch { failure = error }
+        }
+        func close() throws {
+            lock.lock(); defer { lock.unlock() }
+            try frames.close(); try backgrounds.close(); try index.close()
+            if let failure { throw failure }
+            fputs("LIVE ball inputs batches=\(batchCount) frames=\(frameCount) backgrounds=\(backgroundCount)\n", stderr)
+        }
     }
     final class FinalBox: @unchecked Sendable {
         private let lock = NSLock(); private var events: [TennisShotEvent] = []; private var metrics = CameraSideAnalyzer.Metrics()
