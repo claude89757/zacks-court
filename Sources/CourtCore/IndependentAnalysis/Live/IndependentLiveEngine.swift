@@ -179,8 +179,11 @@ final class IndependentLiveBallStage {
         for k in 0..<Self.batch {
             let bank = try IndependentBallCandidateBank.extract(Array(prediction.heatmaps[(k * plane)..<((k + 1) * plane)]), transform: transform)
             for c in bank.candidates where c.originalXY.count == 2 {
+                // the heat-weighted centre, not the box centre on the model's 3.75 px grid (2026-11-11): the grid
+                // put one-cell blobs 1.9 px off and left the fits' 4-6 px gates at the size of the rounding
+                let xy = c.centroidXY ?? c.originalXY.map(Double.init)
                 out.append(IndependentShotCandidate(decodeIndex: pendingIndices[k], time: pendingTimes[k] * 60,
-                                                    u: Double(c.originalXY[0]), v: Double(c.originalXY[1]), peak: Double(c.peak)))
+                                                    u: xy[0], v: xy[1], peak: Double(c.peak)))
             }
         }
         pending.removeAll(); pendingTimes.removeAll(); pendingIndices.removeAll()
@@ -258,8 +261,17 @@ final class IndependentLivePeople {
             }
         }
         if poseFill {
-            let extra = (pose.results ?? []).compactMap { Self.poseBox($0, width: W, height: H) }
-                .filter { p in !boxes.contains { Self.overlaps($0, p) } }
+            // every pose also says how high its arm is raised (the near server's toss and swing, v27): on the
+            // rectangle box it overlaps, or on its own box when it fills a gap
+            let found = boxes.count
+            var extra = [IndependentPersonBox]()
+            for o in pose.results ?? [] {
+                guard var p = Self.poseBox(o, width: W, height: H) else { continue }
+                let up = Self.armUp(o, height: H)
+                if let k = boxes[..<found].firstIndex(where: { Self.overlaps($0, p) }) {
+                    if let up { boxes[k].armUp = max(boxes[k].armUp ?? up, up) }
+                } else { p.armUp = up; extra.append(p) }
+            }
             boxes += extra; poseAdded += extra.count
         }
         let frame = Int((pts * 60).rounded())
@@ -287,6 +299,19 @@ final class IndependentLivePeople {
         guard h > 20 else { return nil }
         return IndependentPersonBox(x0: xs.min()! - 0.1 * h, y0: y0 - 0.12 * h, x1: xs.max()! + 0.1 * h, y1: y1 + 0.03 * h,
                                     confidence: Double(o.confidence), fromCrop: false, cropBottom: H)
+    }
+
+    /// The higher wrist above the shoulders, in torso lengths (image rows; joints above 0.2 confidence).
+    static func armUp(_ o: VNHumanBodyPoseObservation, height H: Double) -> Double? {
+        guard let points = try? o.recognizedPoints(.all) else { return nil }
+        func rows(_ names: [VNHumanBodyPoseObservation.JointName]) -> [Double] {
+            names.compactMap { points[$0] }.filter { $0.confidence > 0.2 }.map { (1 - Double($0.location.y)) * H }
+        }
+        let shoulders = rows([.leftShoulder, .rightShoulder]), hips = rows([.leftHip, .rightHip]), wrists = rows([.leftWrist, .rightWrist])
+        guard !shoulders.isEmpty, !hips.isEmpty, let wrist = wrists.min() else { return nil }
+        let shoulder = shoulders.reduce(0, +) / Double(shoulders.count), hip = hips.reduce(0, +) / Double(hips.count)
+        guard hip - shoulder > 3 else { return nil }
+        return (shoulder - wrist) / (hip - shoulder)
     }
 
     /// The pose box is already covered: IoU above 0.1, or either centre inside the other box.

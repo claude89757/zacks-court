@@ -314,6 +314,50 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertEqual(IndependentStrokeRules.serves(crossed, priorRally: []), [0])
     }
 
+    /// v27 (2026-11-11, night videos): a second serve is not blocked by the first, a return's bounce does not take
+    /// the serve from the serve, a serve that lands short of the net is a serve, and the near server's raised
+    /// arm names the serve.
+    func testServeRulesV27() {
+        func flight(_ t: Double, side: String = "near", n: Int = 30, speed: Double? = 100, bounce: [Double]? = nil,
+                    net: Bool = true) -> IndependentShotResult {
+            var s = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: bounce != nil, contactUV: [0, 0],
+                                          hitterBox: nil, incoming: nil, hitterSide: side, tHit: t, nObs: n, firstFrame: Int(t * 60),
+                                          lastFrame: Int(t * 60) + 2 * n)
+            s.crossesNet = net; s.accepted = net; s.fitHit = [0, side == "near" ? 0.2 : 23.6, 2.6]; s.rmsPx = 1.5
+            s.serveBehindPx = 0.1; s.riseM = 0; s.speedKmh = speed; s.bounceGround = bounce
+            return s
+        }
+        // a first serve (a long, clean flight over the net) and the second serve 4.5 s later
+        XCTAssertEqual(IndependentStrokeRules.serves([flight(1357.7, n: 36, bounce: [1, 17]), flight(1362.3, n: 49, bounce: [1, 17])],
+                                                     priorRally: []), [0, 1])
+        // a 131 km/h serve without a tracked landing, and its return 1.8 s later with one
+        XCTAssertEqual(IndependentStrokeRules.serves([flight(847.7, speed: 131), flight(849.5, side: "far", n: 44, speed: 37, bounce: [1, 3])],
+                                                     priorRally: []), [0])
+        // a far serve that lands on its own side, 9 m from the baseline, and a ball bounced at the server's feet
+        let short = flight(1301.7, side: "far", n: 23, speed: 91, bounce: [-2.4, 15.0], net: false)
+        XCTAssertTrue(IndependentStrokeRules.isShortFault(short)); XCTAssertTrue(IndependentStrokeRules.isServeLike(short))
+        XCTAssertFalse(IndependentStrokeRules.isServeLike(flight(10, side: "far", speed: 30, bounce: [0, 22.5], net: false)))
+
+        // the pose: raised samples at the near baseline make one event; a follow-through (0.7) does not
+        let cam = IndependentProjector(camera)
+        func person(_ up: Double?, feet: SIMD3<Double> = SIMD3(1.0, -0.3, 0)) -> IndependentPersonBox {
+            let f = cam.project(feet), head = cam.project(feet + SIMD3(0, 0, 1.8))
+            var b = IndependentPersonBox(x0: f.u - 40, y0: head.v, x1: f.u + 40, y1: f.v, confidence: 0.9, fromCrop: false, cropBottom: nil)
+            b.armUp = up
+            return b
+        }
+        let people = IndependentPeople([600: [person(0.2)], 612: [person(0.7)], 624: [person(1.4)], 636: [person(1.1)], 648: [person(-0.5)],
+                                        1200: [person(0.7)], 1800: [person(1.5, feet: SIMD3(1, 6, 0))]])
+        let events = IndependentStrokeRules.poseServes(people, camera: cam)
+        XCTAssertEqual(events.count, 1, "the follow-through and the raised arm at mid-court are not serves")
+        XCTAssertEqual(events[0].end, 10.6, accuracy: 0.001)
+        var garbled = flight(10.5, n: 46, speed: nil, net: false); garbled.fitHit = [-0.5, 57.7, -3.5]
+        let returned = flight(12.0, side: "far", n: 40, speed: 60, bounce: [1, 4])
+        XCTAssertEqual(IndependentStrokeRules.poseServeShot(events[0], shots: [garbled, returned], segment: 0), 0)
+        garbled.poseServe = true
+        XCTAssertEqual(IndependentStrokeRules.serves([garbled, returned], priorRally: [8.0]), [0], "seen serving: no fit and no dead ball needed")
+    }
+
     /// v22: a toss glued to the start of a flight (one tracked piece) marks the flight as leaving a toss.
     func testGluedTossMarksTheFlightAsFromToss() {
         let cam = IndependentProjector(camera)

@@ -36,6 +36,11 @@ public enum IndependentBallEvents {
 
     // MARK: candidates -> tracks (decode-order frame counter, as make_tracks.py)
 
+    /// A track of fewer than `stubPoints` points is dropped after `stubGap` missing frames, not `maxGap`
+    /// (2026-11-11). Two stray candidates have no velocity worth extrapolating: left to wait ten frames, their
+    /// gate grows to 90 px and they take the first points of the next flight (tt night video 1330.5: a far
+    /// serve's track began 12 frames early, its contact 0.15 s early, its speed 93 for 116 km/h).
+    static let stubPoints = 4, stubGap = 3
     public static func tracks(from candidates: [IndependentShotCandidate], minPeak: Double = 0.3, maxGap: Int = 10) -> [[IndependentTrackPoint]] {
         guard let first = candidates.map(\.decodeIndex).min(), let last = candidates.map(\.decodeIndex).max() else { return [] }
         var byFrame = [Int: [IndependentShotCandidate]]()
@@ -84,7 +89,7 @@ public enum IndependentBallEvents {
             }
             for (j, c) in cands.enumerated() where !cj.contains(j) { active.append([(f, c.u, c.v)]) }
             var keep = [[(f: Int, u: Double, v: Double)]]()
-            for tr in active { if f - tr[tr.count - 1].f > maxGap { done.append(tr) } else { keep.append(tr) } }
+            for tr in active { if f - tr[tr.count - 1].f > (tr.count < stubPoints ? stubGap : maxGap) { done.append(tr) } else { keep.append(tr) } }
             active = keep
         }
         done += active

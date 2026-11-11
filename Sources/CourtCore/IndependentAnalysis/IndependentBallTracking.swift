@@ -34,6 +34,8 @@ public struct IndependentBallGridCandidate: Codable, Equatable, Sendable {
     public let peak: Float
     public let mean: Double
     public let pixelArea: Int
+    /// Heat-weighted centre of the component in source pixels (cell centres), not rounded to the model grid.
+    public var centroidXY: [Double]? = nil
     /// Decoded invalid boxes are rejected by the tracker, never indexed or
     /// multiplied unsafely by this public convenience property.
     public var boxArea: Int {
@@ -65,10 +67,11 @@ public struct IndependentBallCandidateBank: Codable, Sendable {
         for seed in 0..<count where !visited[seed] && heatmap[seed] > threshold {
             visited[seed] = true
             var stack = [seed], minX = seed%width, maxX = minX, minY = seed/width, maxY = minY
-            var area = 0, peak: Float = 0, sum = 0.0
+            var area = 0, peak: Float = 0, sum = 0.0, sumX = 0.0, sumY = 0.0
             while let index = stack.popLast() {
                 let x = index%width, y = index/width, value = heatmap[index]
                 area += 1; sum += Double(value); peak = max(peak, value)
+                sumX += Double(value) * (Double(x) + 0.5); sumY += Double(value) * (Double(y) + 0.5)
                 minX = min(minX, x); maxX = max(maxX, x); minY = min(minY, y); maxY = max(maxY, y)
                 for yy in max(0, y-1)...min(height-1, y+1) {
                     for xx in max(0, x-1)...min(width-1, x+1) {
@@ -81,7 +84,9 @@ public struct IndependentBallCandidateBank: Codable, Sendable {
             let point = transform.original(minX+w/2, minY+h/2, width: width, height: height)
             components.append(.init(identifier: seed+1, box: [minX,minY,w,h], originalXY: point,
                 equivalentXY: [Double(point[0])*1280/Double(transform.originalWidth), Double(point[1])*720/Double(transform.originalHeight)],
-                peak: peak, mean: sum/Double(area), pixelArea: area))
+                peak: peak, mean: sum/Double(area), pixelArea: area,
+                centroidXY: sum > 0 ? [Double(transform.cropX) + sumX/sum*Double(transform.cropWidth)/Double(width),
+                                       Double(transform.cropY) + sumY/sum*Double(transform.cropHeight)/Double(height)] : nil))
         }
         components.sort {
             if $0.peak != $1.peak { return $0.peak > $1.peak }

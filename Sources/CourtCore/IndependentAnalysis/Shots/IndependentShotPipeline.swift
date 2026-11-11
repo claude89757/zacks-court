@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v26"
+    public static let rulesVersion = "independent-shots-v27"
 
     /// A stretch of video with one fixed camera (a camera that moved needs a new segment).
     public struct Segment: Sendable {
@@ -118,10 +118,11 @@ public enum IndependentShotPipeline {
 
     static func run(candidates: [IndependentShotCandidate], segments: [Segment], priorRally: [Double],
                     serveCache: inout ServeRefitCache?, people: (Int, SegmentEvents) throws -> IndependentPeople) rethrows -> [IndependentShotResult] {
-        var pairs = [(IndependentShotFlight, IndependentShotResult)](), bounces = [(Double, Double)]()
+        var pairs = [(IndependentShotFlight, IndependentShotResult)](), bounces = [(Double, Double)](), crowd = [IndependentPeople]()
         for (k, segment) in segments.enumerated() {
             let ev = events(candidates: candidates, segment: segment)
             let p = try people(k, ev)
+            crowd.append(p)
             pairs += fits(events: ev, people: p, segment: segment, index: k)
             bounces += ev.junctions.filter { $0.bounce || $0.secondChanceBounce }.compactMap { l in l.ground.map { (l.t, $0.y) } }
         }
@@ -151,6 +152,15 @@ public enum IndependentShotPipeline {
             } else if let nj = IndependentShotFlights.netJob(job, near: near, camera: cam),
                       let h = cached(i, near: near, hypothesis: 5, job: nj, { IndependentShotFlights.serveNetHypothesis(nj, near: near, camera: cam) }) {
                 shots[i].serveFit = true; shots[i].serveRise = h.riseM; contact[i] = h.tHit    // a serve into the net (v24)
+            }
+        }
+        // the near server's raised arm names the serve where the ball's first metres were not tracked (v27)
+        for (k, people) in crowd.enumerated() {
+            for e in IndependentStrokeRules.poseServes(people, camera: cameras[k]) {
+                guard let i = IndependentStrokeRules.poseServeShot(e, shots: shots, segment: k) else { continue }
+                shots[i].poseServe = true; shots[i].hitterSide = "near"
+                let t = e.end + IndependentStrokeRules.PoseServe.contactLag
+                if contact[i] == nil, t > shots[i].tHit + IndependentStrokeRules.PoseServe.early { contact[i] = t }
             }
         }
         IndependentStrokeRules.classify(&shots, bounces: bounces, cameras: cameras, priorRally: priorRally)
@@ -185,6 +195,9 @@ public enum IndependentShotPipeline {
         }
         // serves without a bounce-anchored speed: refit from the server's baseline (v16)
         for i in shots.indices where shots[i].stroke == "发球" && shots[i].reportedSpeedKmh == nil {
+            // a serve known only by landing short of the net (v27) has no flight to the other side to time:
+            // the refits read 61 and 49 km/h where the reference has 115 and 95, so it stays without a speed
+            if shots[i].crossesNet != true, shots[i].serveFit != true, IndependentStrokeRules.isShortFault(shots[i]) { continue }
             guard let side = shots[i].hitterSide else { continue }
             let job = pairs[i].0, near = side == "near", cam = cameras[shots[i].segment]
             if let r = cached(i, near: near, hypothesis: 0, { IndependentShotFlights.serveSpeed(job, near: near, camera: cam) }) {
@@ -212,6 +225,14 @@ public enum IndependentShotPipeline {
                   abs(y - IndependentCourt.netY) > IndependentShotFlights.ServeSpeed.netBounceY,
                   (shots[i].fitNetZ ?? 0) >= IndependentStrokeRules.Serve.landNetZ else { continue }
             shots[i].speedKmh = v; shots[i].speedTo = "bounce"
+        }
+        // a "serve" under 45 km/h is a contact timed too early (a toss glued to the flight) or not a serve (v27):
+        // on the two night videos all ten such speeds were wrong, four real serves read at half their speed
+        // and six flights the reference does not call serves. The row stays; the speed is not shown.
+        for i in shots.indices where shots[i].stroke == "发球" {
+            guard let v = shots[i].reportedSpeedKmh, v < IndependentStrokeRules.Serve.shownFromKmh else { continue }
+            shots[i].slowServe = true
+            if shots[i].reason == nil { shots[i].reason = "serve speed under 45 km/h, contact time not believed" }
         }
         for i in shots.indices { shots[i].bounceSigma = bounceSigma(shots[i], camera: cameras[shots[i].segment]) }
         return shots
@@ -336,6 +357,67 @@ public enum IndependentStrokeRules {
         static let restartGap = 0.3              // same end: a flight starting this long after the other ended is a new hit (v22)
         static let deadBall = 3.0                // no rally flight in the deadBall seconds before the competition window
         static let rallyPoints = 25, rallySeconds = 0.4, rallyRMS = 4.0
+        static let duplicateWithin = 0.6         // opposite-end serve-like flights this close: one flight read from both ends (v27)
+        static let shortTravel = 5.5             // a serve that lands on its own side: at least this far from the baseline, metres (v27)
+        static let shownFromKmh = 45.0           // a serve speed under this is not shown (v27)
+        static let shortSpeedKmh = 40.0          //   and at least this fast (a ball bounced before the serve is neither)
+    }
+
+    /// A serve that did not reach the net (v27): the fitted contact is a serve's, the ball lands on the server's
+    /// own side past the service line. The reference calls these 下网; before v27 they needed a net crossing
+    /// and were named forehands (night video 215.60, 1301.67, 1398.86).
+    static func isShortFault(_ s: IndependentShotResult) -> Bool {
+        guard s.bounceFound, let g = s.bounceGround, g.count >= 2, let side = s.hitterSide,
+              let v = s.speedKmh, v >= Serve.shortSpeedKmh else { return false }
+        let base = side == "near" ? 0 : IndependentCourt.length
+        return abs(g[1] - base) >= Serve.shortTravel && (g[1] < netY) == (side == "near")
+    }
+
+    /// The near server seen serving (v27). At night the ball leaves a near server's racket as a streak the
+    /// ball model does not find for the first 0.2-0.3 s, so the flight's own fit cannot say "serve"; the body
+    /// pose can: only a toss and a serve swing hold a wrist a torso length above the shoulders. On the first
+    /// two night videos 78 of 84 such events were the near player's serves (offline pose at 5 Hz); a forehand's
+    /// follow-through peaks at 0.6-0.8 and touches 0.9 for one sample at most. The far player is about 20 px of torso and gives no usable pose.
+    enum PoseServe {
+        static let raised = 0.55      // a sample counts towards an event from here, torso lengths
+        static let strong = 0.9       // an event of two or more samples needs one this high
+        static let single = 1.2       // an event of one sample needs it this high (a follow-through can touch 0.9 once)
+        static let gap = 1.5          // samples further apart than this are two events, seconds
+        static let before = 0.6, after = 0.4   // the flight starts this close to the event's last raised sample, seconds
+        static let contactLag = 0.1   // the contact after the last raised sample (pose is sampled at 5 Hz), seconds
+        static let early = 0.25       // a flight starting this long before the contact is reported at the contact
+        static let side = 3.0         // the server stands within this of the doubles sidelines, metres
+    }
+    struct PoseServeEvent { var start: Double, end: Double, peak: Double, samples = 1 }
+
+    static func poseServes(_ people: IndependentPeople, camera cam: IndependentProjector) -> [PoseServeEvent] {
+        var events = [PoseServeEvent]()
+        for frame in people.byFrame.keys.sorted() {
+            var up = -Double.infinity
+            for box in people.byFrame[frame] ?? [] where !box.fromCrop {
+                guard let a = box.armUp, a >= PoseServe.raised else { continue }
+                let feet = IndependentShotFlights.feet(box, cam)
+                guard feet.y < netY, abs(feet.x) <= IndependentCourt.doublesHalfWidth + PoseServe.side,
+                      let b = behindInBoxHeights(box, near: true, cam), Serve.behindPx.contains(b) else { continue }
+                up = max(up, a)
+            }
+            guard up >= PoseServe.raised else { continue }
+            let t = Double(frame) / 60
+            if let last = events.last, t - last.end <= PoseServe.gap {
+                events[events.count - 1].end = t; events[events.count - 1].peak = max(last.peak, up); events[events.count - 1].samples += 1
+            } else { events.append(PoseServeEvent(start: t, end: t, peak: up)) }
+        }
+        return events.filter { $0.peak >= ($0.samples >= 2 ? PoseServe.strong : PoseServe.single) }
+    }
+
+    /// The flight a pose serve belongs to: from the near end (or with no hitter found), starting nearest
+    /// the event's last raised sample. Flights given to a far hitter are left alone: taking those that start
+    /// just after the sample found two more serves on one night video and one false serve on the other.
+    static func poseServeShot(_ e: PoseServeEvent, shots: [IndependentShotResult], segment: Int) -> Int? {
+        shots.indices.filter { i in
+            let s = shots[i], dt = s.tHit - e.end
+            return s.segment == segment && s.hitterSide != "far" && -PoseServe.before <= dt && dt <= PoseServe.after
+        }.min { abs(shots[$0].tHit - e.end) < abs(shots[$1].tHit - e.end) }
     }
 
     /// A flight that is part of a rally: long, cleanly fitted and crossing the net.
@@ -375,13 +457,14 @@ public enum IndependentStrokeRules {
     static func lowCamera(_ cam: IndependentProjector) -> Bool { cam.C.z <= Serve.lowCameraZ }
 
     static func isServeLike(_ s: IndependentShotResult) -> Bool {
+        if s.poseServe == true { return true }
         // a flight climbing well above its contact is a lob or a ball fed between points, not a serve (v22)
         if let r = s.serveFit == true ? (s.serveRise ?? s.riseM) : s.riseM, r > Serve.maxRise { return false }
         if s.serveFit == true {
             if let b = s.serveBehindPx, Serve.behindPx.contains(b) { return true }
             if s.fromToss == true || s.serveOtherEnd == true { return true }
         }
-        guard let b = s.serveBehindPx, Serve.behindPx.contains(b), s.nObs >= Serve.minPoints, s.crossesNet == true,
+        guard let b = s.serveBehindPx, Serve.behindPx.contains(b), s.nObs >= Serve.minPoints, s.crossesNet == true || isShortFault(s),
               let z = s.fitHit?[2], Serve.contactZ.contains(z), (s.speedKmh.map { Serve.speedKmh.contains($0) } ?? true) else { return false }
         // the fitted contact on the server's side of the net (v18); otherwise the serve hypothesis decides
         if let side = s.hitterSide, let y = s.fitHit?[1], (side == "near") != (y < netY) { return false }
@@ -400,12 +483,15 @@ public enum IndependentStrokeRules {
         // second serve a few seconds later.
         let open = like.filter { i in
             let t = shots[i].tHit
+            if shots[i].poseServe == true { return true }    // seen serving: no dead-ball test needed
             let earlyFrom = t - Serve.compete - Serve.deadBall, earlyTo = t - Serve.compete
             if priorRally.contains(where: { earlyFrom <= $0 && $0 < earlyTo }) { return false }
             return !shots.indices.contains { j in
                 guard j != i, isRallyFlight(shots[j]), !returns.contains(j) else { return false }
                 let tj = shots[j].tHit
-                return (earlyFrom <= tj && tj < earlyTo) || (!like.contains(j) && earlyTo <= tj && tj < t)
+                // an earlier serve-like flight is not rally evidence either (v27): a second serve, or the next
+                // ball of a serving drill, follows the first within the window (night video 1362.29, 1426.99)
+                return !like.contains(j) && earlyFrom <= tj && tj < t
             }
         }
         // one serve per point start. Serve-like flights from opposite ends (a serve and its return, or the ball
@@ -415,12 +501,18 @@ public enum IndependentStrokeRules {
             let t = shots[i].tHit
             return !open.contains { j in
                 guard j != i else { return false }
+                // a serve seen in the server's pose is the serve; other serve-like flights around it are not (v27)
+                if shots[i].poseServe == true { return false }
+                if shots[j].poseServe == true { return abs(shots[j].tHit - t) < Serve.returnWithin }
                 if let a = shots[i].hitterSide, let b = shots[j].hitterSide, a != b {
                     guard abs(shots[j].tHit - t) < Serve.returnWithin else { return false }
                     // a fitted landing in the service box is stronger evidence than a faster fit: at
                     // double-test-003 462.27 the receiver's false "serve" (no bounce, 80.2 km/h) won over the
                     // real serve's landing (54.8 km/h, bounce, 2026-11-06)
-                    if shots[i].bounceFound != shots[j].bounceFound { return shots[j].bounceFound }
+                    // ... but only between two readings of one flight (v27). Further apart they are a serve and
+                    // its return, and the return's bounce took the serve from a 131 km/h flight that had none
+                    // (night video 847.68, 881.51, 1116.12)
+                    if abs(shots[j].tHit - t) < Serve.duplicateWithin, shots[i].bounceFound != shots[j].bounceFound { return shots[j].bounceFound }
                     let vi: Double = shots[i].speedKmh ?? 0, vj: Double = shots[j].speedKmh ?? 0
                     return vj > vi || (vj == vi && shots[j].tHit < t)
                 }

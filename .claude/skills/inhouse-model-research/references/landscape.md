@@ -60,7 +60,9 @@ Python 用 `.local/speed-training/tracknet-smoke-20261028/venv/bin/python`（num
 | 0913-dsh | `0913-dsh.mov` | 夜场，37 分钟，机位慢慢偏 | 留出 | S家 406 行 |
 | 过滤对拉 ×3 | `*过滤后的对拉*`（其中一段是 `10-26-2025-过滤后的对拉.MOV`） | S家 App 导出，画面上有 S家 的球速 | 额外参照（有剪辑） | 画面叠加的球速 |
 
-维护者本机还有 `double-test-001/002`、`single-test.MOV` 和几段 mp4，还没评估过。它们可能是新的留出视频，先查规格（要求 1080p60），再用 S家链或 S家 App 生成参照。
+2026-11-11 起另有两段夜场（同一球场同一机位，高机位广角，开发组）：`tt-side-1080p60.mp4`（42 分钟，S家 App 导出 450 拍）和 `maozi-side-1080p60.mp4`（27 分钟，326 拍）。S家 App 的导出是 xlsx（Shots 表有击球点 xyz、落点 xy、结果），转成老师行时 `anchor = Video Time + 2.0`，坐标可以直接用（x 以球场中线为零、y 从近端底线起）。打分用 `scripts/score-run.py REF RUN --format doubles`。
+
+维护者本机还有 `double-test-001/002`（001 是 1080p30，002 是 720p30，都不满足 1080p60）、`single-test.MOV` 和几段 mp4，还没评估过。它们可能是新的留出视频，先查规格（要求 1080p60），再用 S家链或 S家 App 生成参照。
 
 ## 4. 常用命令
 

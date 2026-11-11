@@ -8,6 +8,9 @@ public struct IndependentPersonBox: Sendable, Equatable, Codable {
     public var confidence: Double
     public var fromCrop: Bool
     public var cropBottom: Double?
+    /// From the body pose of this person, when one was read: how far the higher wrist is above the shoulders,
+    /// in torso lengths (shoulders to hips). Above about 0.9 the arm is straight up: a toss or a serve swing.
+    public var armUp: Double? = nil
     public init(x0: Double, y0: Double, x1: Double, y1: Double, confidence: Double, fromCrop: Bool, cropBottom: Double?) {
         self.x0 = x0; self.y0 = y0; self.x1 = x1; self.y1 = y1; self.confidence = confidence; self.fromCrop = fromCrop; self.cropBottom = cropBottom
     }
@@ -171,11 +174,17 @@ public struct IndependentShotResult: Sendable, Codable {
     /// The serve hypothesis held from the other end than the hitter box's (v18): on a low camera the near
     /// players' boxes cover the far court, and a far serve was given a near hitter.
     public var serveOtherEnd: Bool?
+    /// The near server's raised arm (body pose) marked this flight as a serve (v27).
+    public var poseServe: Bool?
     /// Serve contact time (s) from a refit that trimmed a glued toss (v18); rows report it instead of `tHit`.
     public var contactT: Double?
     /// Speed shown to the user: accepted and anchored at a detected bounce (the frozen primary gate), or a
     /// serve speed anchored at the server's baseline that passed the serve checks (v16).
-    public var reportedSpeedKmh: Double? { accepted && (bounceFound || speedAnchor == .serveBaseline || speedAnchor == .serveNet) ? speedKmh : nil }
+    public var reportedSpeedKmh: Double? {
+        slowServe != true && accepted && (bounceFound || speedAnchor == .serveBaseline || speedAnchor == .serveNet) ? speedKmh : nil
+    }
+    /// A serve whose speed came out under `Serve.shownFromKmh` (v27): not shown.
+    public var slowServe: Bool?
 
     public enum SpeedAnchor: String, Sendable, Codable {
         /// A bounce found inside the serve's own track (the tracker did not split it), service box only.
