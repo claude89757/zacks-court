@@ -81,7 +81,7 @@ final class IndependentCourtKeypointsTests: XCTestCase {
         p[1 * H * W + 10 * W + 10] = 0.1                                   // channel 1: too weak
         let k = IndependentCourtKeypointModel.decode(m, fullWidth: 1920)
         let u = try XCTUnwrap(k.pixels[0])
-        let fx = 100 + (0.45 - 0.15) / (0.9 + 0.45 + 0.15)
+        let fx: Double = 100 + (0.45 - 0.15) / (0.9 + 0.45 + 0.15)
         XCTAssertEqual(u.x, (fx * 2 + 0.5) * 3.75, accuracy: 1e-3)
         XCTAssertEqual(u.y, (50 * 2 + 0.5) * 3.75, accuracy: 1e-3)
         XCTAssertNil(k.pixels[1])
