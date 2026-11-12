@@ -6214,4 +6214,6 @@ CI 工具链比本机严，本机扫不出这类类型检查超时，以后的�
 - 新测试 `CameraDiagnosticsTests.testSummaryReportsHowOftenTheServerWasRead` 原样搬进本地的 XCTest 替身（`@testable import CourtCore`），与两份规则测试一起跑：50 项、0 失败。故意改错期望值时它会失败。
 - 端到端：`court-analyze independent-live` 按真实节奏跑 maozi 400–490 s：球场 400.3 s 认出；读到区域姿态 737 帧（约每秒 8.2 次），因分析落后跳过 161 帧（应读的 18%），每次 Vision 请求约 4.9 ms，没有溢出。737 + 161 正好是 90 秒每秒 10 次的应读数。**在这台 Mac 上按真实节奏，平均也只刚到 8 次这道门**。
 
-**没有验证**：完整的 `swift build` 与 `swift test`（CourtApp 需要 Xcode 的 SwiftUI 宏，XCTest 不可用）；iOS 编译；iPhone 上的实际读数。这一项本身不提升精度，只是让下一次实机记录能回答姿态在手机上读得多密。
+**手动 CI**（PR #63，run 43172546200，提交 `90bfb05`，GitHub `macos-15`，不带模型）：`swift build`、`court-check` 3 项 PASS、`swift test` 348 项、跳过 23 项（需要显式启用的）、0 失败，用时约 15 分钟；新测试 `testSummaryReportsHowOftenTheServerWasRead` 通过。
+
+**没有验证**：iOS 编译；iPhone 上的实际读数。这一项本身不提升精度，只是让下一次实机记录能回答姿态在手机上读得多密。
