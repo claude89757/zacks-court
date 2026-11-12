@@ -36,6 +36,11 @@ public enum IndependentBallEvents {
 
     // MARK: candidates -> tracks (decode-order frame counter, as make_tracks.py)
 
+    /// A track of fewer than `stubPoints` points is dropped after `stubGap` missing frames, not `maxGap`
+    /// (2026-11-11). Two stray candidates have no velocity worth extrapolating: left to wait ten frames, their
+    /// gate grows to 90 px and they take the first points of the next flight (tt night video 1330.5: a far
+    /// serve's track began 12 frames early, its contact 0.15 s early, its speed 93 for 116 km/h).
+    static let stubPoints = 4, stubGap = 3
     public static func tracks(from candidates: [IndependentShotCandidate], minPeak: Double = 0.3, maxGap: Int = 10) -> [[IndependentTrackPoint]] {
         guard let first = candidates.map(\.decodeIndex).min(), let last = candidates.map(\.decodeIndex).max() else { return [] }
         var byFrame = [Int: [IndependentShotCandidate]]()
@@ -84,7 +89,7 @@ public enum IndependentBallEvents {
             }
             for (j, c) in cands.enumerated() where !cj.contains(j) { active.append([(f, c.u, c.v)]) }
             var keep = [[(f: Int, u: Double, v: Double)]]()
-            for tr in active { if f - tr[tr.count - 1].f > maxGap { done.append(tr) } else { keep.append(tr) } }
+            for tr in active { if f - tr[tr.count - 1].f > (tr.count < stubPoints ? stubGap : maxGap) { done.append(tr) } else { keep.append(tr) } }
             active = keep
         }
         done += active
@@ -322,6 +327,9 @@ public enum IndependentBallEvents {
 
     /// A piece short enough to be a detection blip rather than a flight.
     static let deadEndPoints = 8
+    /// The short-tail bounce test (v31) leaves junctions this close to the net alone (metres): there the ball met
+    /// the net, as `IndependentShotFlights.ServeSpeed.netBounceY` reads it.
+    static let shortTailNetMargin = 1.5
 
     /// True when the two pieces fit one flight either side of the kink, falling into it and rising out of it:
     /// the bounce test of `IndependentShotFlights.testBounce` (6 px, falling before, rising after), asked here
@@ -355,6 +363,17 @@ public enum IndependentBallEvents {
         let fa = IndependentFlight.bestAnchored(cam, frames: A.map(\.t), uv: A.map(\.uv), anchor: Pg, at: t, before: true)
         let fb = IndependentFlight.bestAnchored(cam, frames: B.map(\.t), uv: B.map(\.uv), anchor: Pg, at: t, before: false)
         junction.bounce = fa.rms <= 6 && fb.rms <= 6 && fa.velocity.z < 0 && 0 < fb.velocity.z
+        // a tail of 4 to 7 points (v31): a fit of so few points falls about as well as it rises, and LM often settles
+        // on falling, so a deep landing whose ball soon leaves the frame or reaches the player was refused. Such a
+        // junction is a bounce when the ball fell into it, the image path turns there (a straight continuation is
+        // none, a turn of 120 degrees or more is the hitter's, as in `IndependentShotFlights.flights`), it is not at
+        // the net, and a flight leaving the ground point upwards, on in the incoming direction along the court,
+        // explains the tail within the same 6 px. Night videos: three near landings recovered, none lost.
+        if !junction.bounce, B.count <= 7, fa.rms <= 6, fa.velocity.z < 0, abs(Pg.y - IndependentCourt.netY) > shortTailNetMargin,
+           (15..<120).contains(turnDegrees(pcs[junction.a], pcs[junction.b])) {
+            junction.bounce = IndependentFlight.risingAnchoredRMS(cam, frames: B.map(\.t), uv: B.map(\.uv), anchor: Pg, at: t,
+                                                                  along: fa.velocity.y) <= 6
+        }
         if !junction.bounce && B.count >= 6 {
             let A2 = Array(A.suffix(15)), B2 = Array(B.prefix(8))
             let fa2 = IndependentFlight.bestAnchored(cam, frames: A2.map(\.t), uv: A2.map(\.uv), anchor: Pg, at: t, before: true)

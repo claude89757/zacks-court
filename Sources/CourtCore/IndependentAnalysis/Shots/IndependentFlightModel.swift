@@ -243,6 +243,39 @@ public enum IndependentFlight {
         return best ?? (SIMD3<Double>(0, 0, 0), [], .infinity)
     }
 
+    /// The best flight leaving the anchor upwards: the rising part of `bestAnchored`'s velocity grid, and its LM
+    /// refinements that stay rising. A tail of a few points after a bounce fits a falling flight about as well as
+    /// a rising one and LM may settle on the falling one; this asks whether rising explains it. RMS in pixels.
+    /// `along`: only flights whose court-length velocity has this sign (the incoming flight's, for a bounce).
+    static func risingAnchoredRMS(_ cam: IndependentProjector, frames: [Double], uv: [SIMD2<Double>], anchor P: SIMD3<Double>,
+                                  at t: Double, along: Double? = nil) -> Double {
+        let F0 = Double(IndependentNumerics.pyRound(t))
+        let rel = frames.map { $0 - F0 }
+        var tried = [(rms: Double, velocity: SIMD3<Double>)]()
+        let keeps = { (V: SIMD3<Double>) -> Bool in V.z > 0 && (along.map { V.y * $0 > 0 } ?? true) }
+        let directions: [Double] = along.map { [$0 > 0 ? 1 : -1] } ?? [1, -1]     // signs of the court-length velocity
+        for sgn in directions {
+            for k in 0..<9 {
+                let a = (-40.0 + Double(k) * 10.0) * Double.pi / 180
+                for h in [5.0, 9, 14, 20, 27, 35, 45] {
+                    for vz in [0.5, 2, 4, 6, 9] {
+                        let V = SIMD3<Double>(h * sin(a), sgn * h * cos(a), vz)
+                        let (_, s0) = anchoredState(P, at: t, velocity: V)
+                        let rms = errors(pixelResiduals(simulate(s0, rel), uv, cam), pointCount: uv.count, huber: 4).1
+                        if rms.isFinite { tried.append((rms, V)) }
+                    }
+                }
+            }
+        }
+        tried.sort { $0.rms < $1.rms }
+        var best = tried.first?.rms ?? .infinity
+        for (_, V) in tried.prefix(3) {
+            let fit = fitAnchored(cam, frames: frames, uv: uv, anchor: P, at: t, velocity: V, iterations: 40)
+            if keeps(fit.0) { best = min(best, fit.2) }
+        }
+        return best
+    }
+
     // MARK: free-flight initial guesses
 
     /// Depth hypotheses for the first and last observation (planes y = const). `frames` start at 0.

@@ -11,6 +11,8 @@ public enum IndependentLiveTraceEvent: Sendable, Codable, Equatable {
     /// Person boxes stored for a frame (1/60 s units).
     case people(frame: Int, boxes: [IndependentPersonBox])
     case peopleReset
+    /// Region poses stored for a frame (v29).
+    case poses(frame: Int, samples: [IndependentPoseSample])
     /// The camera the rules use from now on (nil: the court was lost).
     case camera(IndependentPinholeCamera?)
     case freeze
@@ -42,12 +44,24 @@ public enum IndependentLiveTrace {
         return merged
     }
 
+    /// A trace with one frame of region poses kept in `every` (0: none). A research run records the poses
+    /// denser than the App reads them (20 Hz for 10), so the same run can be replayed at several rates and
+    /// without poses, as under load shedding.
+    public static func thinningPoses(in events: [IndependentLiveTraceEvent], every: Int) -> [IndependentLiveTraceEvent] {
+        var n = 0
+        return events.filter { event in
+            guard case .poses = event else { return true }
+            n += 1
+            return every > 0 && n % every == 0
+        }
+    }
+
     /// Replays a trace through `IndependentLiveShots` with the current rules. Returns the last version of
     /// every published shot, per stream, in publication order: what the lane's rows end as.
     public static func replay(_ events: [IndependentLiveTraceEvent]) -> [[IndependentShotResult]] {
         var streams = [[IndependentShotResult]]()
         var shots = IndependentLiveShots(), started = false
-        var people = [Int: [IndependentPersonBox]](), camera: IndependentPinholeCamera?
+        var people = [Int: [IndependentPersonBox]](), poses = [Int: [IndependentPoseSample]](), camera: IndependentPinholeCamera?
         let pendingSeconds = IndependentLiveEngine.pendingSeconds
         func close() { if started { streams.append(shots.published.map(\.shot)) } }
         for event in events {
@@ -56,16 +70,17 @@ public enum IndependentLiveTrace {
                 close(); shots = IndependentLiveShots(); started = true
             case .candidates(let batch): shots.append(batch)
             case .people(let frame, let boxes): IndependentLivePeople.store(boxes, frame: frame, in: &people)
-            case .peopleReset: people.removeAll()
+            case .peopleReset: people.removeAll(); poses.removeAll()
+            case .poses(let frame, let samples): IndependentLivePoses.store(samples, frame: frame, in: &poses)
             case .camera(let c): camera = c
             case .freeze: shots.freeze()
             case .reset: shots.reset()
             case .trim(let now): shots.trim(keeping: pendingSeconds, now: now)
             case .discard(let before): shots.trim(keeping: 0, now: before)
             case .update(let now):
-                if let camera { shots.update(now: now, camera: camera, people: IndependentPeople(people)) }
+                if let camera { shots.update(now: now, camera: camera, people: IndependentPeople(people, poses: poses)) }
             case .catchUp(let now):
-                if let camera { shots.catchUp(now: now, camera: camera, people: IndependentPeople(people)) }
+                if let camera { shots.catchUp(now: now, camera: camera, people: IndependentPeople(people, poses: poses)) }
             }
         }
         close()

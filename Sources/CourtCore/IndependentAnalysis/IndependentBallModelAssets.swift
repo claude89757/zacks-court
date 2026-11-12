@@ -108,6 +108,16 @@ public struct IndependentBallModelAssets: Sendable {
         try checkCancellation()
         return Self(directory: root, modelURL: package, modelID: catalog.model_id, manifestSHA256: digest, packageBytes: total)
     }
+    /// A package no manifest pins: a fine-tuned conversion under evaluation, for research runs of
+    /// `court-analyze independent-live` (`COURT_RESEARCH_BALL_MODEL`). The App never calls this; it loads
+    /// `bundled(variant:)` only.
+    @_spi(Research) public static func unreviewed(package: URL) throws -> Self {
+        guard package.isFileURL, package.pathExtension.lowercased() == "mlpackage" else {
+            throw IndependentBallModelAssetsError.invalid("A research ball model is a local .mlpackage")
+        }
+        return Self(directory: package.deletingLastPathComponent(), modelURL: package,
+                    modelID: "research:" + package.lastPathComponent, manifestSHA256: "", packageBytes: 0)
+    }
     static func validSHA(_ value: String) -> Bool {
         value.count == 64 && value.allSatisfy { $0.isHexDigit && !$0.isUppercase }
     }

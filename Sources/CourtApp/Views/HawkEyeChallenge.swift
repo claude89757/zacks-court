@@ -188,17 +188,27 @@ struct HawkEyeChallengeView: View {
 
     /// The verdict across the top, compact, so the overhead shot below keeps the gap in view.
     private func verdict(_ j: HawkEyeJudgement, challenged: Bool) -> some View {
-        VStack {
+        // the two lines are built step by step: as one concatenated expression the CI toolchain
+        // (macos-15) gave up type-checking this view
+        var headline = j.detailText
+        if j.call == .close { headline = j.call.text + " · " + headline }
+        if j.serve { headline += " · 发球" }
+        if challenged { headline += " · " + j.format.text + "边线" }
+        let marginCm = Int((j.marginM * 100).rounded())
+        var caption = "模型估计，不是判罚 · 误差范围 ±\(marginCm) 厘米"
+        if j.farHalf { caption = "远端半场，误差较大 · " + caption }
+        let shoutColor: Color = j.call == .out ? .white : CourtStyle.background
+        return VStack {
             HStack(spacing: 14) {
                 Text(j.call.shout)
                     .font(.system(size: 40, weight: .heavy, design: .rounded))
-                    .foregroundStyle(j.call == .out ? Color.white : CourtStyle.background)
+                    .foregroundStyle(shoutColor)
                     .padding(.horizontal, 16).padding(.vertical, 2)
                     .background(CourtStyle.callColor(j.call), in: RoundedRectangle(cornerRadius: CourtStyle.Radius.control))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text((j.call == .close ? j.call.text + " · " : "") + j.detailText + (j.serve ? " · 发球" : "") + (challenged ? " · " + j.format.text + "边线" : ""))
+                    Text(headline)
                         .font(.headline)
-                    Text((j.farHalf ? "远端半场，误差较大 · " : "") + "模型估计，不是判罚 · 误差范围 ±\(Int((j.marginM * 100).rounded())) 厘米")
+                    Text(caption)
                         .font(.caption).foregroundStyle(CourtStyle.muted)
                 }
             }

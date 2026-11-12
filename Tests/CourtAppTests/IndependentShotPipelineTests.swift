@@ -314,6 +314,171 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertEqual(IndependentStrokeRules.serves(crossed, priorRally: []), [0])
     }
 
+    /// v27 (2026-11-11, night videos): a second serve is not blocked by the first, a return's bounce does not take
+    /// the serve from the serve, a serve that lands short of the net is a serve, and the near server's raised
+    /// arm names the serve.
+    func testServeRulesV27() {
+        func flight(_ t: Double, side: String = "near", n: Int = 30, speed: Double? = 100, bounce: [Double]? = nil,
+                    net: Bool = true) -> IndependentShotResult {
+            var s = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: bounce != nil, contactUV: [0, 0],
+                                          hitterBox: nil, incoming: nil, hitterSide: side, tHit: t, nObs: n, firstFrame: Int(t * 60),
+                                          lastFrame: Int(t * 60) + 2 * n)
+            s.crossesNet = net; s.accepted = net; s.fitHit = [0, side == "near" ? 0.2 : 23.6, 2.6]; s.rmsPx = 1.5
+            s.serveBehindPx = 0.1; s.riseM = 0; s.speedKmh = speed; s.bounceGround = bounce
+            return s
+        }
+        // a first serve (a long, clean flight over the net) and the second serve 4.5 s later
+        XCTAssertEqual(IndependentStrokeRules.serves([flight(1357.7, n: 36, bounce: [1, 17]), flight(1362.3, n: 49, bounce: [1, 17])],
+                                                     priorRally: []), [0, 1])
+        // a 131 km/h serve without a tracked landing, and its return 1.8 s later with one
+        XCTAssertEqual(IndependentStrokeRules.serves([flight(847.7, speed: 131), flight(849.5, side: "far", n: 44, speed: 37, bounce: [1, 3])],
+                                                     priorRally: []), [0])
+        // a far serve that lands on its own side, 9 m from the baseline, and a ball bounced at the server's feet
+        let short = flight(1301.7, side: "far", n: 23, speed: 91, bounce: [-2.4, 15.0], net: false)
+        XCTAssertTrue(IndependentStrokeRules.isShortFault(short)); XCTAssertTrue(IndependentStrokeRules.isServeLike(short))
+        XCTAssertFalse(IndependentStrokeRules.isServeLike(flight(10, side: "far", speed: 30, bounce: [0, 22.5], net: false)))
+
+        // the pose: raised samples at the near baseline make one event; a follow-through (0.7) does not
+        let cam = IndependentProjector(camera)
+        func person(_ up: Double?, feet: SIMD3<Double> = SIMD3(1.0, -0.3, 0)) -> IndependentPersonBox {
+            let f = cam.project(feet), head = cam.project(feet + SIMD3(0, 0, 1.8))
+            var b = IndependentPersonBox(x0: f.u - 40, y0: head.v, x1: f.u + 40, y1: f.v, confidence: 0.9, fromCrop: false, cropBottom: nil)
+            b.armUp = up
+            return b
+        }
+        let people = IndependentPeople([600: [person(0.2)], 612: [person(0.7)], 624: [person(1.4)], 636: [person(1.1)], 648: [person(-0.5)],
+                                        1200: [person(0.7)], 1800: [person(1.5, feet: SIMD3(1, 6, 0))]])
+        let events = IndependentStrokeRules.poseServes(people, camera: cam)
+        XCTAssertEqual(events.count, 1, "the follow-through and the raised arm at mid-court are not serves")
+        XCTAssertEqual(events[0].end, 10.6, accuracy: 0.001)
+        var garbled = flight(10.5, n: 46, speed: nil, net: false); garbled.fitHit = [-0.5, 57.7, -3.5]
+        let returned = flight(12.0, side: "far", n: 40, speed: 60, bounce: [1, 4])
+        XCTAssertEqual(IndependentStrokeRules.poseServeShot(events[0], shots: [garbled, returned], segment: 0), 0)
+        // v30: the serve itself, first seen 0.1 s after the seen contact and its hit reached back half a second, not
+        // the eight points at the contact that go nowhere although their hit is nearer the raised arm
+        let piece = flight(10.6, n: 8, speed: nil, net: false)
+        var served = flight(10.15, n: 33, speed: 98); served.firstFrame = Int(10.8 * 60)
+        XCTAssertEqual(IndependentStrokeRules.poseServeShot(events[0], contact: 10.7, shots: [served, piece, returned], segment: 0), 0)
+        XCTAssertEqual(IndependentStrokeRules.poseServeShot(events[0], contact: 10.7, shots: [piece, returned], segment: 0), 0,
+                       "nothing goes anywhere: the nearest hit, as before")
+        garbled.poseServe = true
+        XCTAssertEqual(IndependentStrokeRules.serves([garbled, returned], priorRally: [5.0]), [0], "seen serving: no fit needed")
+        // v28: a rally flight in the three seconds before says the raised arm was a swing in the rally
+        XCTAssertEqual(IndependentStrokeRules.serves([garbled, returned], priorRally: [8.0]), [])
+        var rally = flight(8.6, side: "far", n: 40, speed: 70, bounce: [1, 4]); rally.fitHit = [0, 20, 1.0]; rally.serveBehindPx = nil
+        XCTAssertTrue(IndependentStrokeRules.isRallyFlight(rally))
+        XCTAssertEqual(IndependentStrokeRules.serves([rally, garbled], priorRally: []), [])
+        // v28: the pose serve is a row although its fit has no usable contact; the same flight unnamed is not
+        garbled.bounceGround = nil; garbled.fitHit = [-0.5, 577, -3.5]
+        XCTAssertFalse(IndependentShotPipeline.keeps(garbled))
+        garbled.stroke = "发球"
+        XCTAssertTrue(IndependentShotPipeline.keeps(garbled))
+    }
+
+    /// v29: the region poses follow the near players at their baseline and the far players behind their service
+    /// line; a sample reads the raised arm like the whole-frame pose does; a trace carries the samples.
+    func testRegionPosesFollowTheServersAndReplay() throws {
+        let cam = IndependentProjector(camera)
+        func person(_ feet: SIMD3<Double>, crop: Bool = false) -> IndependentPersonBox {
+            let f = cam.project(feet), head = cam.project(feet + SIMD3(0, 0, 1.8)), w = 0.25 * (f.v - head.v)
+            return IndependentPersonBox(x0: f.u - w, y0: head.v, x1: f.u + w, y1: f.v, confidence: 0.9, fromCrop: crop, cropBottom: crop ? 2000 : nil)
+        }
+        let server = person(SIMD3(1, -0.3, 0)), atNet = person(SIMD3(-2, 8, 0)), farServer = person(SIMD3(-1, 24, 0), crop: true)
+        let farNet = person(SIMD3(2, 14, 0), crop: true)
+        let found = IndependentLivePoses.players(boxes: [server, atNet, farServer, farNet], camera: camera)
+        XCTAssertEqual(found.near, [server]); XCTAssertEqual(found.far, [farServer])
+        let regions = IndependentLivePoses.regions(near: found.near, far: found.far, width: 1920, height: 1080)
+        XCTAssertEqual(regions.map(\.near), [true, false])
+        XCTAssertLessThan(Double(regions[0].rect.minY), server.y0 - 0.5 * server.height + 1, "room for the racket arm above the box")
+        XCTAssertGreaterThanOrEqual(Double(regions[1].rect.width), 299); XCTAssertGreaterThanOrEqual(Double(regions[1].rect.height), 149)
+        XCTAssertTrue(regions[1].rect.contains(CGPoint(x: (farServer.x0 + farServer.x1) / 2, y: farServer.y0)))
+        XCTAssertTrue(regions.allSatisfy { CGRect(x: 0, y: 0, width: 1920, height: 1080).contains($0.rect) })
+
+        // shoulders at row 400, hips at 440, the right wrist at 350: 1.25 torso lengths above the shoulders
+        var joints = [Double](repeating: 0, count: 30)
+        func set(_ j: IndependentPoseSample.Joint, _ u: Double, _ v: Double, _ c: Double = 0.8) { joints.replaceSubrange((j.rawValue * 3)..<(j.rawValue * 3 + 3), with: [u, v, c]) }
+        set(.leftShoulder, 990, 400); set(.rightShoulder, 1010, 400); set(.leftHip, 992, 440); set(.rightHip, 1008, 440)
+        set(.rightWrist, 1015, 350); set(.leftWrist, 985, 300, 0.1); set(.leftAnkle, 995, 480)
+        let sample = IndependentPoseSample(near: false, region: [850, 330, 300, 150], joints: joints)
+        XCTAssertEqual(sample.armUp ?? 0, 1.25, accuracy: 1e-9, "the wrist found with 0.1 confidence does not count")
+        XCTAssertEqual(sample.feet?.y, 480)
+        XCTAssertNil(IndependentPoseSample(near: false, region: [], joints: [Double](repeating: 0, count: 30)).armUp)
+
+        let events: [IndependentLiveTraceEvent] = [.newStream, .poses(frame: 600, samples: [sample]), .peopleReset]
+        XCTAssertEqual(try JSONDecoder().decode([IndependentLiveTraceEvent].self, from: JSONEncoder().encode(events)), events)
+        XCTAssertEqual(IndependentPeople([:], poses: [600: [sample]]).poses[600]?.first?.armUp ?? 0, 1.25, accuracy: 1e-9)
+    }
+
+    /// v29: a far server's swing in the region poses is an event with its contact at the top of the hitting
+    /// wrist; a far flight with nobody swinging where the players were watched is denied; the seen contact is
+    /// a point over the baseline above the wrist.
+    func testServeSwingsTimeTheContactAndDenyUnswungServes() {
+        let cam = IndependentProjector(camera)
+        // a far server at 10 Hz: the toss arm up first, then the hitting wrist to its top at frame 660 (11.0 s)
+        func pose(wrist z: Double, other: Double = 0.9) -> IndependentPoseSample {
+            func at(_ x: Double, _ z: Double) -> [Double] { let q = cam.project(SIMD3(x, 24.2, z)); return [q.u, q.v, 0.8] }
+            let joints = at(-0.2, 1.45) + at(0.2, 1.45) + at(-0.3, 1.2) + at(0.3, 1.2) + at(-0.25, other) + at(0.25, z)
+                + at(-0.15, 0.95) + at(0.15, 0.95) + at(-0.15, 0.05) + at(0.15, 0.05)
+            return IndependentPoseSample(near: false, region: [800, 300, 300, 150], joints: joints)
+        }
+        var poses = [Int: [IndependentPoseSample]]()
+        for (k, f) in stride(from: 600, through: 720, by: 6).enumerated() {
+            let t = Double(k - 10) / 10                                  // seconds from the contact
+            poses[f] = [pose(wrist: abs(t) <= 0.3 ? 2.45 - 15 * t * t : 0.9, other: t < -0.4 && t > -0.9 ? 2.1 : 0.9)]
+        }
+        // ... and one whose hitting wrist is never found: only the toss arm, up for half a second and slowly down
+        var tossOnly = [Int: [IndependentPoseSample]]()
+        for (k, f) in stride(from: 600, through: 720, by: 6).enumerated() {
+            let t = Double(k - 10) / 10
+            tossOnly[f] = [pose(wrist: 0.9, other: t > -0.9 && t < 0.1 ? 2.2 - 0.6 * (t + 0.5) * (t + 0.5) : 0.9)]
+        }
+        for f in stride(from: 1200, through: 1320, by: 6) { poses[f] = [pose(wrist: 0.9)] }
+        let people = IndependentPeople([:], poses: poses)
+        let swings = IndependentStrokeRules.serveSwings(people, camera: cam, near: false)
+        XCTAssertEqual(swings.count, 1)
+        XCTAssertEqual(swings.first?.contact ?? 0, 11.0, accuracy: 0.02, "the hitting wrist's top, not the toss arm's 0.6 s before")
+        XCTAssertEqual(swings.first?.swung, true)
+        let tossed = IndependentStrokeRules.serveSwings(IndependentPeople([:], poses: tossOnly), camera: cam, near: false)
+        XCTAssertEqual(tossed.count, 1); XCTAssertEqual(tossed.first?.swung, false, "a toss arm's top is not a contact")
+        XCTAssertTrue(IndependentStrokeRules.serveSwings(people, camera: cam, near: true).isEmpty)
+
+        func flight(_ t: Double, side: String?) -> IndependentShotResult {
+            IndependentShotResult(hitKind: "first observation", hitterFound: side != nil, bounceFound: false, contactUV: [0, 0], hitterBox: nil,
+                                  incoming: nil, hitterSide: side, tHit: t, nObs: 30, firstFrame: Int(t * 60), lastFrame: Int(t * 60) + 40)
+        }
+        var shots = [flight(10.2, side: "near"), flight(10.5, side: "far"), flight(10.9, side: "far"), flight(11.3, side: "far")]
+        XCTAssertNil(IndependentStrokeRules.swingShot(swings[0], shots: shots, segment: 0), "an arm raised with no flight over the net names nothing")
+        shots[2].crossesNet = true; shots[3].crossesNet = true
+        XCTAssertEqual(IndependentStrokeRules.swingShot(swings[0], shots: shots, segment: 0), 2, "the flight over the net, not the toss piece before it")
+        XCTAssertEqual(IndependentStrokeRules.watched(people, near: false, from: 9.5, to: 11.3), .raised)
+        XCTAssertEqual(IndependentStrokeRules.watched(people, near: false, from: 20.0, to: 21.8), .lowered)
+        XCTAssertEqual(IndependentStrokeRules.watched(people, near: false, from: 30.0, to: 31.8), .unseen)
+        XCTAssertEqual(IndependentStrokeRules.watched(people, near: true, from: 20.0, to: 21.8), .unseen)
+        var denied = flight(20.5, side: "far"); denied.poseDenied = true; denied.serveFit = true; denied.fromToss = true
+        XCTAssertFalse(IndependentStrokeRules.isServeLike(denied))
+
+        // the seen contact: over the far baseline, half a metre above the wrist, at serve height
+        let hand = swings[0].hand!
+        let P = IndependentStrokeRules.seenContact(hand: [hand.x, hand.y], near: false, camera: cam, fallbackX: nil)
+        XCTAssertEqual(P.y, IndependentCourt.length - 0.4, accuracy: 1e-9)
+        XCTAssertEqual(P.x, 0.25, accuracy: 0.3); XCTAssertTrue((2.6...3.3).contains(P.z))
+        XCTAssertEqual(IndependentStrokeRules.seenContact(hand: nil, near: true, camera: cam, fallbackX: 1.5), SIMD3(1.5, 0.4, 2.6))
+
+        // a trace recorded at 20 Hz replays at 10 Hz, or without poses
+        let events: [IndependentLiveTraceEvent] = [.newStream] + (0..<6).map { .poses(frame: 600 + 3 * $0, samples: []) } + [.update(now: 11)]
+        XCTAssertEqual(IndependentLiveTrace.thinningPoses(in: events, every: 2).count, 5)
+        XCTAssertEqual(IndependentLiveTrace.thinningPoses(in: events, every: 0), [.newStream, .update(now: 11)])
+
+        // a flight first seen late keeps its usual fit for the serve rules and takes the late one afterwards
+        var usual = flight(12.0, side: "far"); usual.reason = "hit and bounce on the same side of the net"
+        var late = usual; late.tHit = 11.2; late.fitHit = [1, 23.5, 1.1]; late.speedKmh = 72; late.accepted = true; late.reason = nil
+        usual.lateHit = IndependentShotResult.LateHit(late)
+        XCTAssertEqual(usual.tHit, 12.0)
+        usual.applyLateHit()
+        XCTAssertEqual(usual.tHit, 11.2); XCTAssertTrue(usual.accepted); XCTAssertNil(usual.reason); XCTAssertNil(usual.lateHit)
+        XCTAssertEqual(usual.hitKind, IndependentShotFlights.reachedKind)
+    }
+
     /// v22: a toss glued to the start of a flight (one tracked piece) marks the flight as leaving a toss.
     func testGluedTossMarksTheFlightAsFromToss() {
         let cam = IndependentProjector(camera)
@@ -788,6 +953,160 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertEqual(straight.b, 1)
         XCTAssertFalse(IndependentBallEvents.verifiedLanding(pcs, 0, 1, t: straight.t, uv: SIMD2(straight.u, straight.v), camera: cam),
                        "a straight continuation is not a landing")
+    }
+
+    /// v32 (night videos): a ball rolling at the net, or one hit from the next court, is no rally evidence; a pose
+    /// serve takes the flight first seen at the contact although a glued toss reached its hit back further.
+    func testServeRulesV32() {
+        func flight(_ t: Double, side: String = "far", n: Int = 40) -> IndependentShotResult {
+            var s = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: false, contactUV: [0, 0],
+                                          hitterBox: nil, incoming: nil, hitterSide: side, tHit: t, nObs: n, firstFrame: Int(t * 60),
+                                          lastFrame: Int(t * 60) + 2 * n)
+            s.crossesNet = true; s.accepted = true; s.fitHit = [0, 20, 1.0]; s.rmsPx = 1.5; s.imageStep = 9
+            return s
+        }
+        XCTAssertTrue(IndependentStrokeRules.isRallyFlight(flight(8.6)))
+        var rolling = flight(8.6); rolling.imageStep = 0.6
+        XCTAssertFalse(IndependentStrokeRules.isRallyFlight(rolling), "a ball rolling at the net")
+        var nextCourt = flight(8.6); nextCourt.fitHit = [-13.7, 20, 1.0]
+        XCTAssertFalse(IndependentStrokeRules.isRallyFlight(nextCourt), "hit 13.7 m off the centre line")
+        // the arm's contact at 10.7 s; the serve's hit was reached back to 9.9 s by a glued toss, its ball first seen at 10.75 s
+        let event = IndependentStrokeRules.PoseServeEvent(start: 10.2, end: 10.6, peak: 1.4, samples: 3)
+        var served = flight(9.9, side: "near", n: 33); served.firstFrame = Int(10.75 * 60)
+        XCTAssertEqual(IndependentStrokeRules.poseServeShot(event, contact: 10.7, shots: [served], segment: 0), 0)
+        served.firstFrame = Int(9.9 * 60)
+        XCTAssertNil(IndependentStrokeRules.poseServeShot(event, contact: 10.7, shots: [served], segment: 0), "first seen 0.8 s before the contact")
+    }
+
+    /// v31: a far serve landing in the near service box, seen for only five points after it. A flight rising from
+    /// the landing, on toward the near baseline, explains the tail, and the junction is a bounce; the falling ball
+    /// carried straight on is none. (On clean points the usual fits find this bounce as well; the short-tail test
+    /// is for real tails, whose fit often settles on falling.)
+    func testShortTailAfterANearLanding() throws {
+        let cam = IndependentProjector(camera)
+        var s = IndependentFlight.State(p: SIMD3(-1.0, 22.0, 2.7), v: SIMD3(0.5, -30.0, -3.0))
+        var falling = [(Double, SIMD3<Double>)]()
+        var t = 600.0
+        while IndependentFlight.rk4(s, 1 / 60).p.z > IndependentCourt.ballRadius {
+            falling.append((t, s.p)); s = IndependentFlight.rk4(s, 1 / 60); t += 1
+        }
+        // `s` is the frame the ball lands on (8.1 m from the near baseline); that frame is not seen
+        let ground = SIMD3(s.p.x, s.p.y, IndependentCourt.ballRadius)
+        func flight(from start: IndependentFlight.State) -> [IndependentTrackPoint] {
+            var q = start
+            return (1...5).map { (k: Int) -> IndependentTrackPoint in
+                q = IndependentFlight.rk4(q, 1 / 60)
+                let uv = cam.project(q.p)
+                return IndependentTrackPoint(t: t + Double(k), u: uv.u, v: uv.v)
+            }
+        }
+        let A = falling.map { (p: (Double, SIMD3<Double>)) -> IndependentTrackPoint in
+            let uv = cam.project(p.1)
+            return IndependentTrackPoint(t: p.0, u: uv.u, v: uv.v)
+        }
+        let B = flight(from: .init(p: ground, v: SIMD3(s.v.x * 0.8, s.v.y * 0.75, -s.v.z * 0.6)))
+        XCTAssertLessThan(IndependentFlight.risingAnchoredRMS(cam, frames: B.map(\.t), uv: B.map(\.uv), anchor: ground, at: t, along: -1), 2)
+        var link = try XCTUnwrap(IndependentBallEvents.junctions([A, B]).first)
+        IndependentBallEvents.testBounce(&link, pieces: [A, B], camera: cam)
+        XCTAssertTrue(link.bounce)
+        let straight = flight(from: s)
+        var none = try XCTUnwrap(IndependentBallEvents.junctions([A, straight]).first)
+        IndependentBallEvents.testBounce(&none, pieces: [A, straight], camera: cam)
+        XCTAssertFalse(none.bounce)
+    }
+
+    /// v31: two flights starting together with as many points: the one that lands is kept.
+    func testDuplicateFlightsKeepTheOneThatLands() {
+        func flight(_ t: Double, bounce: Bool) -> IndependentShotResult {
+            var r = IndependentShotResult(hitKind: "first observation", hitterFound: false, bounceFound: bounce, contactUV: [0, 0], hitterBox: nil,
+                                          incoming: nil, hitterSide: "far", tHit: t, nObs: 25, firstFrame: Int(t * 60), lastFrame: Int(t * 60) + 24)
+            if bounce { r.bounceGround = [1, 4, 0] }
+            return r
+        }
+        let kept = IndependentShotFlights.deduplicate([flight(10.0, bounce: false), flight(10.0, bounce: true)])
+        XCTAssertEqual(kept.count, 1)
+        XCTAssertNotNil(kept[0].bounceGround)
+        XCTAssertNil(IndependentShotFlights.deduplicate([flight(10.0, bounce: false), flight(10.1, bounce: false)])[0].bounceGround)
+    }
+
+    /// v33: a far ball landing on the near half whose bounce stayed in its last two points (no junction): the step
+    /// across the bounce nearly stops in the image, and the near line call takes that landing with at least the
+    /// 1 m sigma floor. Without such a knee the fit brought down a frame or two past the end is taken, when low and
+    /// accepted. Not for a near hit right then (a volley), a fit still high, a flight ending at a hit, or at the net.
+    func testIncomingLandingV33() throws {
+        let cam = IndependentProjector(camera)
+        var s = IndependentFlight.State(p: SIMD3(1.0, 23.0, 1.0), v: SIMD3(-0.5, -24.0, 3.5))
+        var t = 600.0, falling = [IndependentTrackPoint]()
+        while true {   // every frame down to the last one above the ground
+            let uv = cam.project(s.p); falling.append(IndependentTrackPoint(t: t, u: uv.u, v: uv.v))
+            let next = IndependentFlight.rk4(s, 1 / 60)
+            if next.p.z <= IndependentCourt.ballRadius { break }
+            s = next; t += 1
+        }
+        XCTAssertNil(IndependentShotFlights.tailKnee(frames: falling.map(\.t), uv: falling.map(\.uv)), "still coming down")
+        var up = IndependentFlight.State(p: SIMD3(s.p.x, s.p.y, IndependentCourt.ballRadius), v: SIMD3(s.v.x * 0.8, s.v.y * 0.75, -s.v.z * 0.6))
+        var tail = falling
+        for k in 1...2 {
+            up = IndependentFlight.rk4(up, 1 / 60)
+            let uv = cam.project(up.p); tail.append(IndependentTrackPoint(t: t + Double(k), u: uv.u, v: uv.v))
+        }
+        let j = try XCTUnwrap(IndependentShotFlights.tailKnee(frames: tail.map(\.t), uv: tail.map(\.uv)), "two points after the bounce")
+        let m = (tail[j].uv + tail[j + 1].uv) / 2, g = cam.onPlaneZ(m.x, m.y, z: IndependentCourt.ballRadius)
+        XCTAssertLessThan(simd_length(SIMD2(g.x - s.p.x, g.y - s.p.y)), 0.5, "the slow step's middle is at the landing")
+
+        func incoming(knee: [Double]?, zLast: Double = 0.2, y: Double = 4, endsAtHit: Bool = false) -> IndependentShotResult {
+            var r = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: false, contactUV: [0, 0], hitterBox: nil,
+                                          incoming: nil, hitterSide: "far", tHit: 10, nObs: 40, firstFrame: 600, lastFrame: 690)
+            r.fitHit = [0, 23, 1]
+            r.descent = .init(t: 11.52, x: 1, y: y, vx: 0, vy: -15, ahead: 1, zLast: zLast, u: 900, v: 800, px: 20, tLast: 11.5,
+                              accepted: true, rms: 2, hitY: 23, endsAtHit: endsAtHit, knee: knee)
+            return r
+        }
+        func landing(_ shots: [IndependentShotResult]) -> IndependentShotResult.LandEstimate? {
+            IndependentShotPipeline.incomingLanding(0, shots: shots, camera: cam)
+        }
+        let knee = try XCTUnwrap(landing([incoming(knee: [11.51, 1.2, 3.5])]))
+        XCTAssertTrue(knee.knee)
+        XCTAssertEqual(knee.y, 3.5)
+        XCTAssertGreaterThanOrEqual(knee.sigma.min() ?? 0, IndependentIncomingLanding.sigmaFloor)
+        var volley = incoming(knee: nil); volley.hitterSide = "near"; volley.tHit = 11.55
+        XCTAssertNil(landing([incoming(knee: [11.51, 1.2, 3.5]), volley]), "the near player hit it then")
+        XCTAssertNil(landing([incoming(knee: [11.51, 1.2, 3.5], zLast: 1.2)]), "the fit still high at the end")
+        let fit = try XCTUnwrap(landing([incoming(knee: nil)]))
+        XCTAssertFalse(fit.knee)
+        XCTAssertGreaterThan(fit.sigma[1], knee.sigma[1], "a landing brought down is less certain")
+        XCTAssertNil(landing([incoming(knee: nil, zLast: 0.5)]))
+        XCTAssertNil(landing([incoming(knee: nil, endsAtHit: true)]))
+        XCTAssertNil(landing([incoming(knee: nil, y: 11)]), "at the net")
+
+        var shot = incoming(knee: nil); shot.landEstimate = fit
+        let row = try XCTUnwrap(IndependentShotPipeline.rows(from: [shot], streamID: UUID(), all: true).first)
+        XCTAssertEqual(row.bounce?.reasonCode, .estimate)
+        XCTAssertEqual(row.bounce?.sigmaYMeters, fit.sigma[1])
+        XCTAssertEqual(row.speedReasonCode, .speedUnreliable, "the row shows a landing")
+        var shorter = incoming(knee: nil); shorter.nObs = 20
+        XCTAssertFalse(IndependentLiveShots.replaces(shot, with: shorter), "a shorter recomputation without it keeps the landing")
+    }
+
+    /// v34: a bounce whose fitted contact is no place to stand (a serve fitted 88 m away) takes the flight's
+    /// fitted landing velocity for the half-frame term, not the 66 m/s chord; a plausible contact keeps the chord,
+    /// and a fitted landing far from the bounce is not used.
+    func testBounceSigmaSkipsTheChordOfAnImplausibleContact() throws {
+        let cam = IndependentProjector(camera)
+        func bounce(hit: [Double], landingAt t: Double = 11.0) -> IndependentShotResult {
+            var r = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: true, contactUV: [0, 0], hitterBox: nil,
+                                          incoming: nil, hitterSide: "far", tHit: 10, nObs: 40, firstFrame: 600, lastFrame: 660)
+            r.bounceGround = [1, 5, IndependentCourt.ballRadius]; r.tBounce = 11; r.fitHit = hit
+            r.descent = .init(t: t, x: 1, y: 5, vx: 0, vy: -20, ahead: 0, zLast: 0.1, u: 900, v: 800, px: 2, tLast: 11)
+            return r
+        }
+        func sigmaY(_ s: IndependentShotResult) throws -> Double { try XCTUnwrap(IndependentShotPipeline.bounceSigma(s, camera: cam))[1] }
+        let pixelOnly = try XCTUnwrap(IndependentShotPipeline.pixelVariance(x: 1, y: 5, camera: cam)).yy
+        func expected(vy: Double) -> Double { (pixelOnly + pow(vy * 0.5 / IndependentShotFlights.fps, 2)).squareRoot() }
+        XCTAssertEqual(try sigmaY(bounce(hit: [1, 23, 2.5])), expected(vy: -18), accuracy: 1e-9, "a plausible contact: the chord")
+        XCTAssertEqual(try sigmaY(bounce(hit: [-6, 88, 1.8])), expected(vy: -20), accuracy: 1e-9, "the fitted landing velocity")
+        XCTAssertEqual(try sigmaY(bounce(hit: [-6, 88, 1.8], landingAt: 11.3)), expected(vy: -83), accuracy: 1e-9,
+                       "a fitted landing 0.3 s away is another landing: the chord stays")
     }
 
     /// v16: a serve whose bounce stayed inside one tracked piece: the bounce is found in the service box and

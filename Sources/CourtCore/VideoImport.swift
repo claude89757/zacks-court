@@ -101,10 +101,12 @@ public enum VideoImport {
 
     private let storageDirectory: URL
     private let live: IndependentLiveConfiguration
-    /// Frames the analysis may hold before the file waits; well below the lane's overflow limit.
+    /// Frames the analysis may hold before the file waits; well below the lane's overflow limit, and below the
+    /// backlog at which the lane stops reading region poses (an import is not paced by a clock, so it would
+    /// otherwise sit just above that and read hardly any).
     private let pendingLimit: Int
 
-    public init(storageDirectory: URL, live: IndependentLiveConfiguration, pendingLimit: Int = 16) {
+    public init(storageDirectory: URL, live: IndependentLiveConfiguration, pendingLimit: Int = CameraSideAnalyzer.poseBacklogFrames - 4) {
         self.storageDirectory = storageDirectory; self.live = live; self.pendingLimit = max(1, pendingLimit)
     }
 

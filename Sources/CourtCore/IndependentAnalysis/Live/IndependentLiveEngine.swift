@@ -27,6 +27,10 @@ public struct IndependentLiveConfiguration: Sendable {
     /// Add Vision body-pose boxes on the full frame where the rectangle detector found nobody (near
     /// players whose feet leave the frame are the common case). On by default.
     public var poseFill = true
+    /// Region poses of the players standing where a serve is hit, every this many frames (6 = 10 Hz at
+    /// 60 fps; 0 turns them off). Person frames always count; the frames between them are dropped first
+    /// when the camera sheds load.
+    public var poseInterval = 6
     public init(loadAssets: @escaping @Sendable () throws -> IndependentBallModelAssets, computeUnits: MLComputeUnits = .all,
                 camera: IndependentPinholeCamera? = nil, automaticCourt: Bool = true, personInterval: Int = 12, updateInterval: Double = 0.25) {
         self.loadAssets = loadAssets; self.computeUnits = computeUnits; self.camera = camera; self.automaticCourt = automaticCourt
@@ -132,6 +136,16 @@ public final class IndependentLiveFrameScaler {
 
 // MARK: - Analysis queue: background, batches, candidates
 
+/// One batch of the ball model's input as the live lane built it: the 512×288 RGB8 background and frames
+/// (before the /255 of `IndependentLiveBallStage.tensor`), the frames' decode indices and source times.
+/// Research runs save it to train and check a model on exactly what the lane feeds it.
+public struct IndependentBallInputBatch {
+    public let background: [UInt8]
+    public let frames: [[UInt8]]
+    public let indices: [Int]
+    public let times: [Double]
+}
+
 /// 48-frame median background, then non-overlapping 8-frame batches through the ball model. A gap of
 /// more than 1.5 frame periods, a stream change or a size change starts a new warm-up.
 final class IndependentLiveBallStage {
@@ -145,6 +159,8 @@ final class IndependentLiveBallStage {
     private var frameIndex = 0
     private(set) var resets = 0, batches = 0, inferenceSeconds = 0.0
     var backgroundReady: Bool { background != nil }
+    /// Research runs only: each batch's model input, before inference.
+    var inputObserver: ((IndependentBallInputBatch) -> Void)?
 
     /// Up to two frames may be missing without a reset (2026-11-06): the night video drops one frame every
     /// 16.9 s, and treating that as a break cleared the in-flight state 96 times in 27 minutes.
@@ -169,6 +185,7 @@ final class IndependentLiveBallStage {
         }
         pending.append(rgb); pendingTimes.append(pts); pendingIndices.append(frameIndex)
         guard pending.count == Self.batch else { return broke }
+        inputObserver?(IndependentBallInputBatch(background: background, frames: pending, indices: pendingIndices, times: pendingTimes))
         let start = ProcessInfo.processInfo.systemUptime
         let tensor = try Self.tensor(background: background, frames: pending)
         let prediction = try autoreleasepool { try model.predict(tensor) }
@@ -179,8 +196,11 @@ final class IndependentLiveBallStage {
         for k in 0..<Self.batch {
             let bank = try IndependentBallCandidateBank.extract(Array(prediction.heatmaps[(k * plane)..<((k + 1) * plane)]), transform: transform)
             for c in bank.candidates where c.originalXY.count == 2 {
+                // the heat-weighted centre, not the box centre on the model's 3.75 px grid (2026-11-11): the grid
+                // put one-cell blobs 1.9 px off and left the fits' 4-6 px gates at the size of the rounding
+                let xy = c.centroidXY ?? c.originalXY.map(Double.init)
                 out.append(IndependentShotCandidate(decodeIndex: pendingIndices[k], time: pendingTimes[k] * 60,
-                                                    u: Double(c.originalXY[0]), v: Double(c.originalXY[1]), peak: Double(c.peak)))
+                                                    u: xy[0], v: xy[1], peak: Double(c.peak)))
             }
         }
         pending.removeAll(); pendingTimes.removeAll(); pendingIndices.removeAll()
@@ -229,11 +249,14 @@ final class IndependentLivePeople {
     static let retainedSeconds = 32
     private var byFrame: [Int: [IndependentPersonBox]] = [:]
     private(set) var samples = 0, seconds = 0.0, poseAdded = 0
+    /// The boxes of the last detection, for the region poses between two detections.
+    private(set) var latest: (frame: Int, boxes: [IndependentPersonBox])?
     let poseFill: Bool
     init(poseFill: Bool) { self.poseFill = poseFill }
 
-    var people: IndependentPeople { IndependentPeople(byFrame) }
-    func reset() { byFrame.removeAll() }
+    func reset() { byFrame.removeAll(); latest = nil }
+
+    func people(poses: [Int: [IndependentPoseSample]]) -> IndependentPeople { IndependentPeople(byFrame, poses: poses) }
 
     /// Returns the frame (1/60 s units) and the boxes stored for it.
     @discardableResult
@@ -258,12 +281,21 @@ final class IndependentLivePeople {
             }
         }
         if poseFill {
-            let extra = (pose.results ?? []).compactMap { Self.poseBox($0, width: W, height: H) }
-                .filter { p in !boxes.contains { Self.overlaps($0, p) } }
+            // every pose also says how high its arm is raised (the near server's toss and swing, v27): on the
+            // rectangle box it overlaps, or on its own box when it fills a gap
+            let found = boxes.count
+            var extra = [IndependentPersonBox]()
+            for o in pose.results ?? [] {
+                guard var p = Self.poseBox(o, width: W, height: H) else { continue }
+                let up = Self.armUp(o, height: H)
+                if let k = boxes[..<found].firstIndex(where: { Self.overlaps($0, p) }) {
+                    if let up { boxes[k].armUp = max(boxes[k].armUp ?? up, up) }
+                } else { p.armUp = up; extra.append(p) }
+            }
             boxes += extra; poseAdded += extra.count
         }
         let frame = Int((pts * 60).rounded())
-        Self.store(boxes, frame: frame, in: &byFrame)
+        Self.store(boxes, frame: frame, in: &byFrame); latest = (frame, boxes)
         samples += 1; seconds += ProcessInfo.processInfo.systemUptime - start
         return (frame, boxes)
     }
@@ -287,6 +319,19 @@ final class IndependentLivePeople {
         guard h > 20 else { return nil }
         return IndependentPersonBox(x0: xs.min()! - 0.1 * h, y0: y0 - 0.12 * h, x1: xs.max()! + 0.1 * h, y1: y1 + 0.03 * h,
                                     confidence: Double(o.confidence), fromCrop: false, cropBottom: H)
+    }
+
+    /// The higher wrist above the shoulders, in torso lengths (image rows; joints above 0.2 confidence).
+    static func armUp(_ o: VNHumanBodyPoseObservation, height H: Double) -> Double? {
+        guard let points = try? o.recognizedPoints(.all) else { return nil }
+        func rows(_ names: [VNHumanBodyPoseObservation.JointName]) -> [Double] {
+            names.compactMap { points[$0] }.filter { $0.confidence > 0.2 }.map { (1 - Double($0.location.y)) * H }
+        }
+        let shoulders = rows([.leftShoulder, .rightShoulder]), hips = rows([.leftHip, .rightHip]), wrists = rows([.leftWrist, .rightWrist])
+        guard !shoulders.isEmpty, !hips.isEmpty, let wrist = wrists.min() else { return nil }
+        let shoulder = shoulders.reduce(0, +) / Double(shoulders.count), hip = hips.reduce(0, +) / Double(hips.count)
+        guard hip - shoulder > 3 else { return nil }
+        return (shoulder - wrist) / (hip - shoulder)
     }
 
     /// The pose box is already covered: IoU above 0.1, or either centre inside the other box.
@@ -321,6 +366,123 @@ final class IndependentLivePeople {
     }
 }
 
+// MARK: - Analysis queue: region poses
+
+/// Body poses read in a region around each player standing where a serve is hit (v29), several times a
+/// second: the far players are about 50 px tall and give no pose on the whole frame, but do in a 300 px
+/// region around their box; the near server's hitting wrist, sampled at 10 Hz, tops out at the contact.
+/// The regions come from the last person boxes, so nothing is read before the court and a person are known.
+final class IndependentLivePoses {
+    private var byFrame: [Int: [IndependentPoseSample]] = [:]
+    private(set) var frames = 0, requests = 0, seconds = 0.0
+    var poses: [Int: [IndependentPoseSample]] { byFrame }
+    /// The players followed at each end, with the frame their boxes were found at. A far player is missed by
+    /// the person detector for several samples in a row; the region stays where they were last seen.
+    private var followed: [Bool: (frame: Int, boxes: [IndependentPersonBox])] = [:]
+    private var boxesFrame: Int?
+    func reset() { byFrame.removeAll(); followed.removeAll(); boxesFrame = nil }
+
+    /// Players per end that get a region, the most confident boxes first.
+    static let perEnd = 2
+    /// A player not found again is followed for this long, frames.
+    static let hold = 120
+    /// Far players stand between these depths (m; a far box's feet are metres off, so the band is wide) and
+    /// within this of the centre line.
+    static let farDepth = 17.0...29.0, farHalfWidth = 8.5
+
+    static func store(_ samples: [IndependentPoseSample], frame: Int, in byFrame: inout [Int: [IndependentPoseSample]]) {
+        byFrame[frame] = samples
+        byFrame = byFrame.filter { $0.key >= frame - 60 * IndependentLivePeople.retainedSeconds }
+    }
+
+    /// The players to follow among one detection's boxes: near players at their baseline (where
+    /// `IndependentStrokeRules.poseServes` looks), far players anywhere behind their service line.
+    static func players(boxes: [IndependentPersonBox], camera: IndependentPinholeCamera) -> (near: [IndependentPersonBox], far: [IndependentPersonBox]) {
+        let cam = IndependentProjector(camera), netY = IndependentCourt.netY
+        let clean = IndependentPeople.clean(boxes)
+        let near = clean.filter { b in
+            guard !b.fromCrop else { return false }
+            let feet = IndependentShotFlights.feet(b, cam)
+            guard feet.y < netY, abs(feet.x) <= IndependentCourt.doublesHalfWidth + IndependentStrokeRules.PoseServe.side,
+                  let behind = IndependentStrokeRules.behindInBoxHeights(b, near: true, cam) else { return false }
+            return IndependentStrokeRules.Serve.behindPx.contains(behind)
+        }
+        let far = clean.filter { b in
+            let feet = IndependentShotFlights.feet(b, cam)
+            return farDepth.contains(feet.y) && abs(feet.x) <= farHalfWidth
+        }
+        return (Array(near.prefix(perEnd)), Array(far.prefix(perEnd)))
+    }
+
+    /// The regions read around the followed players.
+    static func regions(near: [IndependentPersonBox], far: [IndependentPersonBox], width W: Double, height H: Double) -> [(near: Bool, rect: CGRect)] {
+        var out = [(near: Bool, rect: CGRect)]()
+        for b in near {
+            // the racket arm reaches well above the box and to its side, and the pose needs room around the
+            // body: in a region as narrow as a side-on server's box (280 px) Vision found no pose through the
+            // swing, in one twice as wide it found the wrists in 20 of 21 frames (night video 61.96)
+            let half = max(b.width, 0.8 * b.height)
+            out.append((true, CGRect(x: (b.x0 + b.x1) / 2 - half, y: b.y0 - 0.9 * b.height, width: 2 * half, height: 2.0 * b.height)))
+        }
+        for b in far {
+            // at least 300 x 150: Vision scales the region up, and a region this small still holds the swing
+            let w = max(300, 5 * b.height), up = max(125, 2.2 * b.height), down = max(25, 0.3 * b.height)
+            out.append((false, CGRect(x: (b.x0 + b.x1) / 2 - w / 2, y: b.y1 - up, width: w, height: up + down)))
+        }
+        let frame = CGRect(x: 0, y: 0, width: W, height: H)
+        return out.compactMap { r in
+            let c = r.rect.intersection(frame)
+            return c.width >= 32 && c.height >= 32 ? (r.near, c) : nil
+        }
+    }
+
+    static let joints: [VNHumanBodyPoseObservation.JointName] = [.leftShoulder, .rightShoulder, .leftElbow, .rightElbow, .leftWrist, .rightWrist,
+                                                                 .leftHip, .rightHip, .leftAnkle, .rightAnkle]
+
+    /// Returns the frame (1/60 s units) and the poses stored for it.
+    @discardableResult
+    func detect(_ pixels: CVPixelBuffer, pts: Double, camera: IndependentPinholeCamera,
+                latest: (frame: Int, boxes: [IndependentPersonBox])) -> (frame: Int, samples: [IndependentPoseSample]) {
+        let start = ProcessInfo.processInfo.systemUptime
+        let W = Double(CVPixelBufferGetWidth(pixels)), H = Double(CVPixelBufferGetHeight(pixels))
+        let frame = Int((pts * 60).rounded())
+        if boxesFrame != latest.frame {
+            boxesFrame = latest.frame
+            let found = Self.players(boxes: latest.boxes, camera: camera)
+            if !found.near.isEmpty { followed[true] = (latest.frame, found.near) }
+            if !found.far.isEmpty { followed[false] = (latest.frame, found.far) }
+        }
+        followed = followed.filter { frame - $0.value.frame <= Self.hold }
+        var samples = [IndependentPoseSample]()
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixels, orientation: .up, options: [:])
+        for (near, r) in Self.regions(near: followed[true]?.boxes ?? [], far: followed[false]?.boxes ?? [], width: W, height: H) {
+            let request = VNDetectHumanBodyPoseRequest()
+            request.regionOfInterest = CGRect(x: r.minX / W, y: 1 - r.maxY / H, width: r.width / W, height: r.height / H)
+            requests += 1
+            guard (try? handler.perform([request])) != nil else { continue }
+            for o in request.results ?? [] {
+                guard let points = try? o.recognizedPoints(.all) else { continue }
+                // joint positions are normalized to the region (origin bottom-left)
+                var joints = [Double](), seen = 0
+                for name in Self.joints {
+                    guard let p = points[name], p.confidence > 0.05 else { joints += [0, 0, 0]; continue }
+                    let u: Double = Double(r.minX) + Double(p.location.x) * Double(r.width)
+                    let v: Double = Double(r.minY) + (1 - Double(p.location.y)) * Double(r.height)
+                    let c: Double = Double(p.confidence)
+                    joints.append((u * 10).rounded() / 10); joints.append((v * 10).rounded() / 10); joints.append((c * 100).rounded() / 100)
+                    if c > IndependentPoseSample.minimumConfidence { seen += 1 }
+                }
+                guard seen >= 4 else { continue }
+                let region: [Double] = [Double(r.minX).rounded(), Double(r.minY).rounded(), Double(r.width).rounded(), Double(r.height).rounded()]
+                samples.append(IndependentPoseSample(near: near, region: region, joints: joints))
+            }
+        }
+        Self.store(samples, frame: frame, in: &byFrame)
+        frames += 1; seconds += ProcessInfo.processInfo.systemUptime - start
+        return (frame, samples)
+    }
+}
+
 // MARK: - Analysis queue: the lane
 
 /// Confined to one serial analysis queue.
@@ -328,6 +490,9 @@ public final class IndependentLiveEngine {
     public private(set) var configuration: IndependentLiveConfiguration
     private let ball: IndependentLiveBallStage
     private let personsStage: IndependentLivePeople
+    private let posesStage = IndependentLivePoses()
+    /// Off while the camera sheds load or the analysis is behind: no region pose is read, on person frames either.
+    public var readsPoses = true
     private var shots = IndependentLiveShots()
     private var ids: [Int: UUID] = [:]           // published index -> stable row id
     private var streamID: UUID?
@@ -366,6 +531,11 @@ public final class IndependentLiveEngine {
     public var candidateObserver: (([IndependentShotCandidate]) -> Void)?
     /// Diagnostics: every input of the shot rules, in order (analysis queue), for `IndependentLiveTrace.replay`.
     public var traceObserver: ((IndependentLiveTraceEvent) -> Void)?
+    /// Research runs only: every batch of the ball model's input (analysis queue).
+    public var ballInputObserver: ((IndependentBallInputBatch) -> Void)? {
+        get { ball.inputObserver }
+        set { ball.inputObserver = newValue }
+    }
 
     public init(configuration: IndependentLiveConfiguration) throws {
         self.configuration = configuration
@@ -405,13 +575,15 @@ public final class IndependentLiveEngine {
 
     /// Stream change, pause or a dropped frame: new warm-up, nothing stitched across.
     public func restart() {
-        ball.reset(); shots.reset(); personsStage.reset(); lastUpdate = -.infinity
+        ball.reset(); shots.reset(); personsStage.reset(); posesStage.reset(); lastUpdate = -.infinity
         traceObserver?(.reset); traceObserver?(.peopleReset)
     }
 
     /// One frame: `small` is the 512×288 RGB8 copy; `full` is a full-resolution analysis-owned copy on
-    /// person frames (or nil). Returns a snapshot when rows changed or on each update.
-    public func process(small: [UInt8], full: CVPixelBuffer?, pts: Double, streamID: UUID,
+    /// person frames (or nil); `pose` is one on the frames between them that only the region poses read (the
+    /// court, the background check and the person boxes never see it). Returns a snapshot when rows changed
+    /// or on each update.
+    public func process(small: [UInt8], full: CVPixelBuffer?, pose: CVPixelBuffer? = nil, pts: Double, streamID: UUID,
                         sourceWidth: Int, sourceHeight: Int) throws -> TennisAnalysisSnapshot? {
         processed += 1; lastPTS = pts
         if self.streamID != streamID {
@@ -437,6 +609,10 @@ public final class IndependentLiveEngine {
             let found = personsStage.detect(full, pts: pts, camera: configuration.camera)
             traceObserver?(.people(frame: found.frame, boxes: found.boxes))
         }
+        if configuration.poseInterval > 0, readsPoses, let frame = full ?? pose, let camera = configuration.camera, let latest = personsStage.latest {
+            let found = posesStage.detect(frame, pts: pts, camera: camera, latest: latest)
+            traceObserver?(.poses(frame: found.frame, samples: found.samples))
+        }
         let broke = try ball.append(rgb: small, pts: pts, streamID: streamID, sourceWidth: sourceWidth, sourceHeight: sourceHeight) { batch in
             candidates += batch.count
             candidateObserver?(batch)
@@ -446,7 +622,7 @@ public final class IndependentLiveEngine {
                 shots.trim(keeping: 0, now: movedUntil); traceObserver?(.discard(before: movedUntil))
             }
         }
-        if broke { shots.reset(); personsStage.reset(); traceObserver?(.reset); traceObserver?(.peopleReset) }
+        if broke { shots.reset(); personsStage.reset(); posesStage.reset(); traceObserver?(.reset); traceObserver?(.peopleReset) }
         guard pts - lastUpdate >= configuration.updateInterval else { return nil }
         lastUpdate = pts
         return update(now: pts)
@@ -480,13 +656,17 @@ public final class IndependentLiveEngine {
         }
         let start = ProcessInfo.processInfo.systemUptime
         traceObserver?(catchUpPending ? .catchUp(now: now) : .update(now: now))
-        let changed = catchUpPending ? shots.catchUp(now: now, camera: camera, people: personsStage.people)
-                                     : shots.update(now: now, camera: camera, people: personsStage.people)
+        let changed = catchUpPending ? shots.catchUp(now: now, camera: camera, people: personsStage.people(poses: posesStage.poses))
+                                     : shots.update(now: now, camera: camera, people: personsStage.people(poses: posesStage.poses))
         catchUpPending = false
         var rows = [TennisShotEvent]()
         for i in changed where i < shots.published.count {
-            // a shot with nothing to show has no row (IndependentShotPipeline.keeps): skip it, do not index
-            guard var row = IndependentShotPipeline.rows(from: [shots.published[i].shot], streamID: streamID).first else { continue }
+            // a shot with nothing to show has no row (IndependentShotPipeline.keeps): skip it, do not index.
+            // One that had a row and lost its claim to it in a revision (a serve named by the server's pose, then
+            // given to another flight) is still updated: a row cannot be taken back, and left alone it would go
+            // on saying what the rules no longer do (night video, v29: four stale "serve" rows in 27 minutes)
+            let shot = shots.published[i].shot
+            guard var row = IndependentShotPipeline.rows(from: [shot], streamID: streamID, all: ids[i] != nil).first else { continue }
             if let id = ids[i] { row.id = id } else { ids[i] = row.id }
             rows.append(row)
         }
@@ -524,6 +704,8 @@ public final class IndependentLiveEngine {
 
     public struct Stats: Sendable {
         public var batches: Int, inferenceSeconds: Double, personSamples: Int, personSeconds: Double, ballResets: Int, published: Int, candidates: Int
+        /// Region poses (v29): frames read, Vision requests made and the seconds they took.
+        public var poseFrames = 0, poseRequests = 0, poseSeconds = 0.0
         public var courtSolves = 0, courtSolveSeconds = 0.0, courtSamples = 0, courtFound = 0, courtMoved = 0, courtLost = 0
         /// Ball backgrounds rebuilt because the picture moved away from them (counted in `ballResets` too).
         public var backgroundRebuilds = 0
@@ -536,6 +718,7 @@ public final class IndependentLiveEngine {
         var s = Stats(batches: ball.batches, inferenceSeconds: ball.inferenceSeconds, personSamples: personsStage.samples, personSeconds: personsStage.seconds,
                       ballResets: ball.resets, published: shots.published.count, candidates: candidates)
         s.backgroundRebuilds = backgroundRebuilds; s.pictureMoving = pictureMoving
+        s.poseFrames = posesStage.frames; s.poseRequests = posesStage.requests; s.poseSeconds = posesStage.seconds
         if let c = court?.stats {
             s.courtSolves = c.solves; s.courtSolveSeconds = c.solveSeconds; s.courtSamples = c.samples
             s.courtFound = c.found; s.courtMoved = c.moved; s.courtLost = c.lost

@@ -1,7 +1,7 @@
 import Foundation
 import CourtCore
 
-/// court-analyze independent-replay TRACE.json OUT.json
+/// court-analyze independent-replay TRACE.json OUT.json [--candidates CANDIDATES.json] [--pose-every N]
 ///
 /// Replays the shot-rule inputs an `independent-live` run recorded (`OUT.trace.json`: ball candidates,
 /// person boxes, camera changes and update times, in order) through the current rules, without the ball
@@ -10,7 +10,7 @@ import CourtCore
 /// unchanged rules it reproduces the live run's rows; it measures rule changes only, not detection.
 enum IndependentReplayCommand {
     static func run(_ args: [String]) throws {
-        guard args.count >= 3 else { throw CourtError.message("Usage: court-analyze independent-replay TRACE.json OUT.json [--candidates CANDIDATES.json]") }
+        guard args.count >= 3 else { throw CourtError.message("Usage: court-analyze independent-replay TRACE.json OUT.json [--candidates CANDIDATES.json] [--pose-every N]") }
         let out = URL(fileURLWithPath: args[2])
         guard !FileManager.default.fileExists(atPath: out.path) else { throw CourtError.message("Output already exists; choose a new output path.") }
         let began = ProcessInfo.processInfo.systemUptime
@@ -20,6 +20,10 @@ enum IndependentReplayCommand {
         if let flag = args.firstIndex(of: "--candidates"), flag + 1 < args.count {
             let candidates = try decoder.decode([IndependentShotCandidate].self, from: Data(contentsOf: URL(fileURLWithPath: args[flag + 1])))
             events = IndependentLiveTrace.replacingCandidates(in: events, with: candidates.sorted { (a: IndependentShotCandidate, b: IndependentShotCandidate) -> Bool in a.time < b.time })
+        }
+        // region poses recorded denser than the App reads them: keep one frame in N (0: none)
+        if let flag = args.firstIndex(of: "--pose-every"), flag + 1 < args.count, let every = Int(args[flag + 1]) {
+            events = IndependentLiveTrace.thinningPoses(in: events, every: every)
         }
         let streams = IndependentLiveTrace.replay(events)
         var paired = [(TennisShotEvent, IndependentShotResult)]()
