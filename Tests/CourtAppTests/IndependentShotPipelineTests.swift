@@ -1088,6 +1088,27 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertFalse(IndependentLiveShots.replaces(shot, with: shorter), "a shorter recomputation without it keeps the landing")
     }
 
+    /// v34: a bounce whose fitted contact is no place to stand (a serve fitted 88 m away) takes the flight's
+    /// fitted landing velocity for the half-frame term, not the 66 m/s chord; a plausible contact keeps the chord,
+    /// and a fitted landing far from the bounce is not used.
+    func testBounceSigmaSkipsTheChordOfAnImplausibleContact() throws {
+        let cam = IndependentProjector(camera)
+        func bounce(hit: [Double], landingAt t: Double = 11.0) -> IndependentShotResult {
+            var r = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: true, contactUV: [0, 0], hitterBox: nil,
+                                          incoming: nil, hitterSide: "far", tHit: 10, nObs: 40, firstFrame: 600, lastFrame: 660)
+            r.bounceGround = [1, 5, IndependentCourt.ballRadius]; r.tBounce = 11; r.fitHit = hit
+            r.descent = .init(t: t, x: 1, y: 5, vx: 0, vy: -20, ahead: 0, zLast: 0.1, u: 900, v: 800, px: 2, tLast: 11)
+            return r
+        }
+        func sigmaY(_ s: IndependentShotResult) throws -> Double { try XCTUnwrap(IndependentShotPipeline.bounceSigma(s, camera: cam))[1] }
+        let pixelOnly = try XCTUnwrap(IndependentShotPipeline.pixelVariance(x: 1, y: 5, camera: cam)).yy
+        func expected(vy: Double) -> Double { (pixelOnly + pow(vy * 0.5 / IndependentShotFlights.fps, 2)).squareRoot() }
+        XCTAssertEqual(try sigmaY(bounce(hit: [1, 23, 2.5])), expected(vy: -18), accuracy: 1e-9, "a plausible contact: the chord")
+        XCTAssertEqual(try sigmaY(bounce(hit: [-6, 88, 1.8])), expected(vy: -20), accuracy: 1e-9, "the fitted landing velocity")
+        XCTAssertEqual(try sigmaY(bounce(hit: [-6, 88, 1.8], landingAt: 11.3)), expected(vy: -83), accuracy: 1e-9,
+                       "a fitted landing 0.3 s away is another landing: the chord stays")
+    }
+
     /// v16: a serve whose bounce stayed inside one tracked piece: the bounce is found in the service box and
     /// anchors the speed. A short serve flight without a bounce gets no speed.
     func testServeRefitFindsABounceInsideTheTrackAndSkipsShortFlights() throws {

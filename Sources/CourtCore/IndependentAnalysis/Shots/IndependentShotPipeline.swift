@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v33"
+    public static let rulesVersion = "independent-shots-v34"
 
     /// Median image step of a run of track points, pixels per frame (0 for fewer than two points).
     static func imageSpeed(_ P: [IndependentTrackPoint]) -> Double {
@@ -500,15 +500,22 @@ public enum IndependentShotPipeline {
 
     /// Image noise of a bounce, in pixels, for its uncertainty on the ground.
     static let bouncePixelSigma = 2.0
+    /// How close (s) the flight's own fitted landing must be to the bounce to stand in for its ground speed.
+    static let landingMatchSeconds = 0.1
 
     /// Standard deviations (m) of a bounce's ground x and y: `bouncePixelSigma` through the ground
     /// mapping's Jacobian at the bounce, plus half a frame of ground travel (the bounce falls between frames).
+    /// The ground speed is the hit-to-bounce chord. When the fitted contact is not where a player could stand
+    /// (v34, `HawkEye.plausibleHit`), the chord is no speed: three serves on the night video fitted contacts
+    /// 54-144 m away and chords of 40-118 m/s. Such a bounce takes the flight's fitted velocity at its landing.
     static func bounceSigma(_ s: IndependentShotResult, camera: IndependentProjector) -> [Double]? {
         guard let b = s.bounceGround, b.count >= 2, let pixel = pixelVariance(x: b[0], y: b[1], camera: camera) else { return nil }
         var sxx = pixel.xx, syy = pixel.yy
         if let h = s.fitHit, h.count >= 2, let tb = s.tBounce, tb - s.tHit > 0.1 {
             let T = tb - s.tHit, step = 0.5 / IndependentShotFlights.fps
-            let vx = (b[0] - h[0]) / T, vy = (b[1] - h[1]) / T
+            var vx = (b[0] - h[0]) / T, vy = (b[1] - h[1]) / T
+            if h.count >= 3, !HawkEye.plausibleHit(xCentred: h[0], y: h[1], z: h[2]),
+               let d = s.descent, abs(d.t - tb) <= landingMatchSeconds { vx = d.vx; vy = d.vy }
             sxx += (vx * step) * (vx * step); syy += (vy * step) * (vy * step)
         }
         guard sxx.isFinite, syy.isFinite else { return nil }
