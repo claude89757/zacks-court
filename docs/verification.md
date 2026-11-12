@@ -6344,3 +6344,5 @@ B 段没给速的 12 拍全是近端发球，超差的 12 拍里 9 拍是近端�
 
 **没有验证**：iOS 分支的编译（要等下次用 Xcode 构建 iOS）；iPhone 上读到的实际值。
 
+
+**手动 CI**（PR #64，run 43209763743，提交 `d787333`，GitHub `macos-15`，不带模型）：`swift build`、`court-check` 3 项 PASS、`swift test` 350 项、跳过 23 项（需要显式启用的）、0 失败，用时约 15 分钟。v35 与曝光两处的新测试 `testIncomingLandingAtTheLastObservation`、`testSummaryReportsTheExposure` 都通过。CI 只编 macOS，`CameraEngine.exposure` 的 iOS 分支仍没编译过。
