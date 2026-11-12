@@ -264,6 +264,8 @@ public struct IndependentShotResult: Sendable, Codable {
         /// The bounce inside the flight's last steps (`IndependentShotFlights.tailKnee`): time (s), court point
         /// (x centred).
         public var knee: [Double]?
+        /// The last observation in the image (pixels).
+        public var last: [Double]?
     }
     /// The landing a near line call takes when no bounce was tracked (v33, `IndependentShotPipeline.incomingLanding`).
     public var landEstimate: LandEstimate?
@@ -789,6 +791,7 @@ enum IndependentShotFlights {
         var d = IndependentShotResult.Descent(t: t / fps, x: P.x, y: P.y, vx: V.x, vy: V.y, ahead: t - tLast,
                                               zLast: IndependentFlight.state(at: tLast, from: x, F0: F0).p.z,
                                               u: q.u, v: q.v, px: simd_length(SIMD2(q.u, q.v) - last), tLast: tLast / fps)
+        d.last = [last.x, last.y]
         if let j = tailKnee(frames: frames, uv: uv) {
             let m = (uv[j] + uv[j + 1]) / 2, g = cam.onPlaneZ(m.x, m.y, z: r)
             if g.x.isFinite, g.y.isFinite { d.knee = [(frames[j] + frames[j + 1]) / 2 / fps, g.x, g.y] }
@@ -1197,6 +1200,11 @@ enum IndependentIncomingLanding {
     static let aheadFrames = -2.0...4.0 // fitted landing this many frames after the last observation
     static let maxImagePx = 60.0        // image distance from the last observation to the landing
     static let maxRms = 4.0             // the flight's own fit, px
+    // the last observation on the ground (v35)
+    static let lastLandZ = -0.8...0.5   // the fit's height at the last observation, m
+    static let lastLandFrames = 1.0     // frames of ground travel in its sigma: the colour-found bounces were within
+                                        // 0.3 frame of the last observation on 14 of 16 such flights
+    static let lastLandSigmaFloor = 0.15 // m, instead of `sigmaFloor`
     static let timingFrames = 3.0       // frames of landing-time uncertainty in its sigma ...
     static let perAheadFrame = 1.0      //   plus this per frame brought down
     static let frameWidth = 1920.0, frameHeight = 1080.0   // capture is fixed at 1080p

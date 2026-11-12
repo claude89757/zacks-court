@@ -1088,6 +1088,37 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertFalse(IndependentLiveShots.replaces(shot, with: shorter), "a shorter recomputation without it keeps the landing")
     }
 
+    /// v35: an incoming flight followed down to the ground and lost there: its fit is still a little high at the
+    /// last observation and comes down well past it, so the landing is that observation on the ground, with a sigma
+    /// of its own (no 1 m floor). Not when the fit is still high there (the ball in the air), not at a near volley,
+    /// and not past the net.
+    func testIncomingLandingAtTheLastObservation() throws {
+        let cam = IndependentProjector(camera)
+        func incoming(lastAt ground: SIMD2<Double>, zLast: Double = 0.3) -> IndependentShotResult {
+            var r = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: false, contactUV: [0, 0], hitterBox: nil,
+                                          incoming: nil, hitterSide: "far", tHit: 10, nObs: 40, firstFrame: 600, lastFrame: 690)
+            r.fitHit = [0, 23, 1]
+            let q = cam.project(SIMD3(ground.x, ground.y, IndependentCourt.ballRadius))
+            r.descent = .init(t: 11.56, x: ground.x, y: ground.y - 1.5, vx: 0, vy: -15, ahead: 3.5, zLast: zLast, u: q.u, v: q.v + 120,
+                              px: 120, tLast: 11.5, accepted: true, rms: 2, hitY: 23)
+            r.descent?.last = [q.u, q.v]
+            return r
+        }
+        func landing(_ shots: [IndependentShotResult]) -> IndependentShotResult.LandEstimate? {
+            IndependentShotPipeline.incomingLanding(0, shots: shots, camera: cam)
+        }
+        let l = try XCTUnwrap(landing([incoming(lastAt: SIMD2(1.0, 3.0))]), "the fit comes down 120 px past the end")
+        XCTAssertEqual(l.x, 1.0, accuracy: 1e-6); XCTAssertEqual(l.y, 3.0, accuracy: 1e-6); XCTAssertEqual(l.t, 11.5)
+        XCTAssertTrue(l.knee)
+        XCTAssertGreaterThanOrEqual(l.sigma.min() ?? 0, IndependentIncomingLanding.lastLandSigmaFloor)
+        XCTAssertLessThan(l.sigma[1], IndependentIncomingLanding.sigmaFloor, "its own sigma, not the brought-down floor")
+        XCTAssertNil(landing([incoming(lastAt: SIMD2(1.0, 3.0), zLast: 0.7)]), "the ball still in the air there")
+        var volley = incoming(lastAt: SIMD2(1.0, 3.0)); volley.hitterSide = "near"; volley.tHit = 11.55
+        XCTAssertNil(landing([incoming(lastAt: SIMD2(1.0, 3.0)), volley]), "the near player hit it then")
+        XCTAssertNil(landing([incoming(lastAt: SIMD2(1.0, 12.5))]), "past the net")
+        XCTAssertNil(landing([incoming(lastAt: SIMD2(1.0, 11.0))]), "at the net")
+    }
+
     /// v34: a bounce whose fitted contact is no place to stand (a serve fitted 88 m away) takes the flight's
     /// fitted landing velocity for the half-frame term, not the 66 m/s chord; a plausible contact keeps the chord,
     /// and a fitted landing far from the bounce is not used.

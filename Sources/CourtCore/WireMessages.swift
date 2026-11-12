@@ -43,6 +43,10 @@ public struct CameraDeviceState: Codable, Equatable, Sendable {
     public var freeBytes: Int64?
     /// "live" (preview on screen) or "standby" (black, dimmed).
     public var screen = "live"
+    /// The active camera's exposure time (milliseconds) and ISO (iOS); auto exposure lengthens it at night and a
+    /// fast ball smears over more pixels.
+    public var exposureMs: Double?
+    public var iso: Double?
     public init() {}
 }
 
