@@ -101,6 +101,9 @@ public struct CameraLogLine: Codable, Sendable {
     public var zoom: Double?
     public var thermal: String?
     public var pressure: String?
+    /// Exposure time (milliseconds) and ISO of the active camera; nil from older versions.
+    public var exposureMs: Double?
+    public var iso: Double?
     public var battery: Double?
     public var charging: Bool?
     public var lowPower: Bool?
@@ -136,7 +139,7 @@ public struct CameraLogLine: Codable, Sendable {
         recordingSeconds = status.recordingSeconds.map { ($0 * 10).rounded() / 10 }; zoom = status.zoom
         thermal = status.device.thermal; pressure = status.device.pressure; battery = status.device.battery
         charging = status.device.charging; lowPower = status.device.lowPowerMode; freeBytes = status.device.freeBytes
-        screen = status.device.screen; shed = status.shed; shedReason = status.shedReason; shedCause = status.shedCause
+        screen = status.device.screen; exposureMs = status.device.exposureMs; iso = status.device.iso; shed = status.shed; shedReason = status.shedReason; shedCause = status.shedCause
         let a = status.analysis
         if let latest = a.latestPTS, let analyzed = a.analyzedPTS { analysisDelay = (max(0, latest - analyzed) * 100).rounded() / 100 }
         pendingFrames = a.pendingFrames; restarts = a.restarts; analysisReason = a.reason
@@ -414,9 +417,10 @@ public enum DiagnosticBundle {
             let batteries = status.compactMap(\.battery)
             if let a = batteries.first, let b = batteries.last { out.append(String(format: "- 电量 %.0f%% → %.0f%%", a * 100, b * 100)) }
             if let poses = poseReport(inSession) { out.append(poses) }
+            if let exposure = exposureReport(inSession) { out.append(exposure) }
         }
         out.append("")
-        out.append("文件：<记录ID>.json 是记录本身；capture-*.jsonl 是机位每秒的状态（球场识别、温度、负载、发球人姿态读了几次）；-analysis.jsonl 是辅助检测；-status.jsonl 是看板收到的机位状态。不含录像和配对密钥。")
+        out.append("文件：<记录ID>.json 是记录本身；capture-*.jsonl 是机位每秒的状态（球场识别、温度、负载、发球人姿态读了几次、曝光）；-analysis.jsonl 是辅助检测；-status.jsonl 是看板收到的机位状态。不含录像和配对密钥。")
         return out.joined(separator: "\n") + "\n"
     }
 
@@ -446,6 +450,16 @@ public enum DiagnosticBundle {
         if skipped > 0 { text += "；分析落后时跳过 \(skipped) 次" }
         if requests > 0 { text += String(format: "；每次请求约 %.0f 毫秒", spent / Double(requests) * 1000) }
         return text
+    }
+
+    /// The camera's exposure while recording, median and longest (ms), and the median ISO: auto exposure lengthens
+    /// it at night, and a fast ball smears over more pixels.
+    static func exposureReport(_ lines: [CameraLogLine]) -> String? {
+        let ms = lines.compactMap(\.exposureMs).filter(\.isFinite).sorted(), iso = lines.compactMap(\.iso).filter(\.isFinite).sorted()
+        guard let longest = ms.last else { return nil }
+        var text = String(format: "- 曝光：记录中中位 %.1f 毫秒，最长 %.1f 毫秒", ms[ms.count / 2], longest)
+        if !iso.isEmpty { text += String(format: "，ISO 中位 %.0f", iso[iso.count / 2]) }
+        return text + "（曝光越长，快球在画面里拖得越长）"
     }
 
     private static func percent(_ part: Int, _ whole: Int) -> String {

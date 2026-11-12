@@ -254,6 +254,16 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             completion(value.delivered, value.captureDrops, value.encoded, value.recordedFrames)
         }
     }
+    /// Exposure time (milliseconds) and ISO of the active camera (iOS); nil elsewhere or before a device is set.
+    var exposure: (ms: Double, iso: Double)? {
+        #if os(iOS)
+        guard let device else { return nil }
+        let seconds = CMTimeGetSeconds(device.exposureDuration)
+        return seconds.isFinite && seconds > 0 ? (seconds * 1000, Double(device.iso)) : nil
+        #else
+        return nil
+        #endif
+    }
     /// AVCaptureDevice.SystemPressureState level of the active camera (iOS), e.g. "nominal".
     var pressureLevel: String? {
         #if os(iOS)

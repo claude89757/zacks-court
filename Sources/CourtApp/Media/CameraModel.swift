@@ -156,7 +156,7 @@ final class CameraModel {
             identity: CameraIdentity(device: name, hardware: Self.hardware, app: CameraIdentity.appVersion),
             pipeline: engine.pipeline, analyzer: analyzer)
         let engine = engine, standby = standby
-        controller.deviceState = { Self.deviceState(pressure: engine.pressureLevel, standby: standby.isDimmed) }
+        controller.deviceState = { Self.deviceState(pressure: engine.pressureLevel, exposure: engine.exposure, standby: standby.isDimmed) }
         controller.extraWarnings = { [weak self] in self?.selfCheckWarnings ?? [] }
         controller.onWebCredentials = { value in
             if let value { WebDisplayKeychain.save(value) } else { WebDisplayKeychain.delete() }
@@ -435,7 +435,7 @@ final class CameraModel {
         return text + "；持续落后时机位会自动减少预览和人员检测。关掉机位上其他 App 也有帮助。"
     }
 
-    nonisolated static func deviceState(pressure: String?, standby: Bool) -> CameraDeviceState {
+    nonisolated static func deviceState(pressure: String?, exposure: (ms: Double, iso: Double)?, standby: Bool) -> CameraDeviceState {
         var state = CameraDeviceState()
         #if os(iOS)
         let level = MainActor.assumeIsolated { UIDevice.current.batteryLevel }
@@ -452,6 +452,7 @@ final class CameraModel {
         @unknown default: state.thermal = "unknown"
         }
         state.pressure = pressure
+        state.exposureMs = exposure.map { ($0.ms * 100).rounded() / 100 }; state.iso = exposure.map { $0.iso.rounded() }
         let home = URL(fileURLWithPath: NSHomeDirectory())
         if let values = try? home.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),
            let free = values.volumeAvailableCapacityForImportantUsage { state.freeBytes = free }

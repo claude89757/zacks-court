@@ -202,6 +202,22 @@ final class CameraDiagnosticsTests: XCTestCase {
         XCTAssertNil(older.poses)
     }
 
+    /// The capture log keeps the camera's exposure and ISO each second; the summary gives the median and longest
+    /// exposure while recording. Older lines and states without them decode with nil.
+    func testSummaryReportsTheExposure() throws {
+        var device = CameraDeviceState(); device.exposureMs = 16.4; device.iso = 1250
+        var status = CameraStatus(); status.device = device
+        let line = CameraLogLine(status: status, t: 1, shots: nil, display: false, browsers: 0, linkPath: nil)
+        XCTAssertEqual(line.exposureMs, 16.4); XCTAssertEqual(line.iso, 1250)
+        func at(_ ms: Double?, _ iso: Double?) -> CameraLogLine { var l = CameraLogLine(kind: .status, t: 1); l.exposureMs = ms; l.iso = iso; return l }
+        XCTAssertEqual(DiagnosticBundle.exposureReport([at(8, 800), at(16.6, 2000), at(10, 1000), at(nil, nil)]),
+                       "- 曝光：记录中中位 10.0 毫秒，最长 16.6 毫秒，ISO 中位 1000（曝光越长，快球在画面里拖得越长）")
+        XCTAssertNil(DiagnosticBundle.exposureReport([at(nil, nil)]), "no exposure (Mac, older versions): no line")
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(CameraDeviceState()), as: UTF8.self).contains("exposureMs"), "nil is left out on the wire")
+        let older = try JSONDecoder().decode(CameraDeviceState.self, from: Data(#"{"lowPowerMode":false,"thermal":"nominal","screen":"live"}"#.utf8))
+        XCTAssertNil(older.exposureMs); XCTAssertNil(older.iso)
+    }
+
     private func write(_ lines: [CameraLogLine], to url: URL) throws {
         try lines.compactMap(CameraCaptureLog.encode).reduce(Data(), +).write(to: url)
     }
