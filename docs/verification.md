@@ -6166,3 +6166,17 @@ B 段前半 0.64 → 0.74、后半 0.71 → 0.81。发球球速端到端在两�
 - `swift run court-check`：3 项 PASS。全量 `swift build` 在这台 Mac 上照旧编不过 CourtApp（SwiftUI `@Entry` 宏插件只随完整 Xcode 提供），这次没改 CourtApp。
 
 **没有验证**：完整 `swift test`（没有 Xcode）；用 v34 重跑整段实时链；新视频；σ 是否等于真实误差（只有和另一款软件的对照）；这三个发球的击球拟合为什么会发散。
+
+## 2026-11-12 手动 CI（PR #60，规则 v34）
+
+**环境**：GitHub Actions `Code-only native build`（`workflow_dispatch`，镜像 macos-15-arm64 20261104，不带分析模型）。这个工作流在仓库里第一次运行。
+
+**结果**
+- 第 1 次：`swift build` 失败，`HawkEyeChallenge.swift` 的 `verdict(_:challenged:)` 两行 `Text` 里三元、拼接和插值写成一个表达式，编译器在限定时间内推断不出类型。
+  main 上是同样的代码，本机 Swift 6.1 编得过。改成先算出局部值再放进视图，显示的文字不变。
+- 第 2 次：构建和 `court-check` 通过；测试目标卡在 `IndependentCourtKeypointsTests` 的 `let fx = 100 + (0.45 - 0.15) / (0.9 + 0.45 + 0.15)`（本机类型检查 2 ms）。标成 `Double`，值不变。
+- 第 3 次：`swift build`、`swift run court-check` 通过；`swift test` 执行 347 个 XCTest，**0 失败**、23 个跳过（都是要模型、视频、真机或环境变量的可选测试），
+  日志写 "All tests passed"。0.5 秒后 job 撞上工作流的 15 分钟上限，这次运行的状态记为 cancelled，不是 success。
+
+**没有验证**：跳过的 23 个测试，其中 3 个是实时链在暂存 FP16 模型上的测试（背景重建、按模型运行、降载），CI 没有模型跑不了；
+CI 工具链比本机严，本机扫不出这类类型检查超时，以后的改动仍可能在 CI 上碰到；15 分钟上限已经不够跑完构建加全部测试。
