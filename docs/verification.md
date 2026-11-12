@@ -6339,7 +6339,8 @@ B 段没给速的 12 拍全是近端发球，超差的 12 拍里 9 拍是近端�
 **本机检查**：
 - `swift run court-check` 3 项 PASS。
 - 新测试 `CameraDiagnosticsTests.testSummaryReportsTheExposure` 搬进本地 XCTest 替身后通过（52 项全过）。
-- `CameraEngine`、`CameraModel` 在 `CourtApp` 里，这台机器没有 Xcode，编不了，要靠 CI 的 `swift build`。
+- `CameraEngine`、`CameraModel` 在 `CourtApp` 里，这台机器没有 Xcode，编不了。CI 的 `swift build` 只编 macOS 那一支；`CameraEngine.exposure` 里读 `exposureDuration` 和 `iso` 的 iOS 分支，CI 也编不到，只核对了它取 `device` 的方式与旁边的 `pressureLevel` 相同。
+- `CameraModel.deviceState(pressure:exposure:standby:)` 只有一处调用，已一起改好。
 
-**没有验证**：iOS 编译；iPhone 上读到的实际值。
+**没有验证**：iOS 分支的编译（要等下次用 Xcode 构建 iOS）；iPhone 上读到的实际值。
 
