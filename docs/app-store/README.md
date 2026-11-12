@@ -23,6 +23,13 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 
 用户本人要处理：在 2026-11-10 前续费开发者会员（免费 App 协议、证书和描述文件都到这天，过期后 App 会下架、不能上传）。以后做收费订阅前，再同意付费 App 协议、填写税务表格（W-8BEN 等）、等银行信息生效。
 
+**2026-11-12 11:30（上海）只读核查**（没有改 App Store Connect）：
+
+- 唯一在架版本是 1.2，发布方式 `AFTER_APPROVAL`。确切构建是 1.2 (2)，ID `7a5c5d41-4209-4ecb-9c46-67cbff61df1f`，2026-11-05 09:33（上海）上传。对应仓库 main `3d49b15`。没有在审版本，也没有 1.3 或别的可编辑新版本。1.2 已上架，不能再收构建，也不能用 1.2 的二进制去更新它。
+- 最近一个没被商店占用的构建是 1.2 (3)，ID `9cf11f2a-0b6f-4539-a11d-70daebe95a38`，2026-11-05 10:33（上海）上传。它只含当天的审查修复，盖不住其后合入 main 的代码，也不能挂到新的 1.3 上。
+- 四种语言 zh-Hans、zh-Hant、en-US、en-GB 的 1.2 元数据是齐的。1.3 沿用这些文字，只换「新功能」。不改价格、销售范围、备案号、账号或权限。11-05 表里的 `ICP_NUMBER_MISSING` 是当时的查询；用户说明 ICP 豁免已于 11-10 获批、175 个地区含中国大陆为 `AVAILABLE`。这次不去改这些字段。
+- 会员、证书和描述文件的文档截止日期是 2026-11-10。仓库无法证实 11-12 是否已续费；没续费就不能上传。上传前在开发者网站上核对会员和 Apple Distribution 证书。
+
 ## 2. 提交前必须做的事
 
 1. **用自研模型重新构建**。上架版只能带自研模型（`COURT_MODEL_SET=independent`，见 AGENTS.md），不能带 S家 的权重。6 号构建是用哪一套打的没有记录，而且之后代码改了很多，所以要重新出一个 1.0 的构建。`apps/iphone/project.yml` 已改成 `MARKETING_VERSION` `1.0`、`CURRENT_PROJECT_VERSION` `1`（`asc builds next-build-number --version 1.0` 返回 1）。用 `COURT_MODEL_SET=independent ./scripts/generate-ios.sh` 生成工程，以 Release 归档上传。
@@ -80,6 +87,8 @@ App Store Connect 里的记录：Zacks Court，App ID `6827224757`，Bundle ID `
 | `metadata/app-info/{zh-Hans,zh-Hant,en-US,en-GB}.json` | 名称、副标题、隐私政策网址（zh-Hant、en-GB 从 1.1 起新增） |
 | `metadata/version/1.0/zh-Hans.json`、`en-US.json` | 1.0 的描述、关键词、推广文本、技术支持网址 |
 | `metadata/version/1.1/{zh-Hans,zh-Hant,en-US,en-GB}.json` | 1.1 的描述、关键词、推广文本、技术支持网址、新功能（「新功能」里的修复条目等主会话合入后补） |
+| `metadata/version/1.2/{zh-Hans,zh-Hant,en-US,en-GB}.json` | 1.2 的描述、关键词、推广文本、技术支持网址、新功能（其余文字与 1.1 相同） |
+| `metadata/version/1.3/{zh-Hans,zh-Hant,en-US,en-GB}.json` | 1.3 的描述、关键词、推广文本、技术支持网址、新功能（其余文字与 1.2 相同；尚未推送） |
 | [privacy-policy.md](privacy-policy.md) | 中英文隐私政策，公开版在上面的隐私政策网址 |
 | [review-notes.md](review-notes.md) | 给审核员的说明 |
 | [testflight.md](testflight.md) | TestFlight 内测、公测的说明文字和 Beta 审核备注 |
@@ -172,3 +181,27 @@ asc status --app 6827224757                     # 发布状态总览
 2. 「新功能」写在 `metadata/version/1.2/`（四种语言，其余文字与 1.1 相同）：3D 回放与量尺、司线语音（PR #34）、手持不再凭空多拍并提示画面在动、诊断包、降载（含 PR #35 分析落后触发）、保存失败和误报模型未就绪的修复。
 3. 1.2 版本（`34e5a8f7`，`PREPARE_FOR_SUBMISSION`，`AFTER_APPROVAL`）是 2026-11-05 09:19 为了放预览视频，用 `asc versions create --app 6827224757 --version 1.2 --platform IOS --release-type AFTER_APPROVAL --copy-metadata-from 1.1 --exclude-fields whatsNew` 建的，描述、关键词、推广文本和网址从 1.1 复制；之后再 `asc versions create` 会报版本号已用过。同日用 `asc metadata plan/approve/apply --version 1.2` 推送了四种语言的「新功能」（计划里只有这四项，其余文字和 1.1 相同）。审核信息从 1.1 带过来了。截图换成了重渲染的 5 张，并加了预览视频，见第 6 节「预览视频」。还没关联构建。
 4. 2026-11-05 用户说等其他会话做完、审查一遍后直接提交。审查结论见 verification.md 同日小节（没有阻塞问题）。手动走了一遍提交：`asc versions attach-build` 关联 1.2 (2)（构建 `7a5c5d41`，main `3d49b15`，带 PR #34 司线语音和 PR #35），`asc review submissions-create` 建提交 `f480d8af`，`asc review items add` 加入 1.2 版本和三张 iOS 27 创意素材，`asc review submissions-submit --confirm`。提交和版本都是 `WAITING_FOR_REVIEW`，过审后自动发布（`AFTER_APPROVAL`）。审核备注加了一段 1.2 新增内容（AI 语音、诊断包），见 [review-notes.md](review-notes.md)。如果苹果只对创意素材有意见，就把它们从提交里撤下，不让它们拖住 App。
+5. 同日稍后的 1.2 (3)（构建 `9cf11f2a`，PR #43 合入后的 main `d6f9879`，构建号提交 `a76e32d`）只进了 TestFlight 内测，不含其后的发球和落点规则。仓库没有把 1.2 (3) 或更新的代码关联到商店版本的记录。
+
+### 1.3 发版准备（2026-11-12，尚未构建、尚未上传）
+
+main 的营销版本仍是 1.2，没有更高版本号，所以这次用 1.3 (1)。`apps/iphone/project.yml` 的 `MARKETING_VERSION` 是 `1.3`，`CURRENT_PROJECT_VERSION` 是 `1`。11:30 的只读结果里没有 1.3 构建；若归档前 `asc builds next-build-number --version 1.3` 不是 1，先改构建号。四种语言的「新功能」在 `metadata/version/1.3/`，描述、关键词、推广文本和技术支持网址与 1.2 相同。
+
+仓库里没有能产出 App Store IPA 的脚本，现有 CI 也不能：
+
+- `scripts/build-mac.sh` 只打 Mac App（`build/Zacks Court.app`），`codesign --sign -` 临时签名，并把 Mac 的短版本写死成 1.0。它不是 iOS 包。
+- `scripts/generate-ios.sh` 用 XcodeGen 生成 `apps/iphone/ZacksCourt.xcodeproj`（该工程不进 Git）。`COURT_MODEL_SET=independent` 时只准备两个 TrackNetV3，并把 S家链关掉。它停在生成工程，不归档。
+- 1.2 (1) 和 1.2 (3) 的记录写了本机脚本 `build8.sh`。仓库里没有这个文件，也没有 `xcodebuild archive` / `exportArchive` 的参数。能对上的做法只在 verification.md：完整 Xcode 的 Mac 上先 `generate-ios.sh`，Release 归档时若 Xcode 没登录开发者账号就先不签名，再用钥匙串里的 Apple Distribution 和描述文件「Zacks Court App Store 20261027」手动签名导出，然后还原 `Info.plist`。
+- `.github/workflows/build.yml` 只能手动触发，跑在 GitHub 的 `macos-15` 上，做不带模型的 `swift build`、`court-check` 和 `swift test`。工作流自己写明：不打包模型、不编译 iOS、不验证网球分析。它没有证书、描述文件或上传步骤，不能出 IPA。PR #61 把超时改成 25 分钟之后，还没有一次成功的运行。
+
+1.2 (2) 那次导出在上传之前就占过一条 `AWAITING_UPLOAD`。本阶段不要执行会联系 App Store Connect 的导出、上传或 `asc versions create`。要先在本机得到可检查的 IPA，先确认所用导出命令不会向苹果登记构建号；这条命令没有进仓库，不能当成离线的。
+
+用户明确要上传之后，才在那台已经打过 1.2 (2) 的 Mac 上、单独的 zacks-court 工作副本里做：
+
+1. 核对会员、Apple Distribution 和描述文件「Zacks Court App Store 20261027」。`git lfs pull`。`scripts/reference-chain.sh status` 必须是 `off`（`generate-ios.sh` 在 independent 下会自己关掉）。
+2. `asc builds next-build-number --version 1.3`，与 `project.yml` 不一致就先改构建号。
+3. `COURT_MODEL_SET=independent ./scripts/generate-ios.sh`，再按上面的未入库步骤 Release 归档并手动签名。之后还原 `Info.plist`。
+4. 解开 IPA：只有 `tracknetv3-base-v1` 和 `tracknetv3-base-fp16-v1`，没有 `AnalysisModels`，`LocalReferenceChain` 为 0；短版本 1.3、构建号与第 2 步一致；`codesign --verify --deep --strict` 通过；TeamIdentifier 为 `A2YR8HBQKY`。
+5. `asc builds upload --app 6827224757`。然后 `asc versions create --app 6827224757 --version 1.3 --platform IOS --release-type AFTER_APPROVAL --copy-metadata-from 1.2 --exclude-fields whatsNew`，再 `asc metadata plan/approve/apply --version 1.3`。截图和预览沿用 1.2；11-05 的截图早于「约 N 厘米」，要重录再说。审核备注用 [review-notes.md](review-notes.md) 的 1.3 段。关联构建和提交审核仍分开做。
+
+不要把这次构建派到当前已连接的私人 Mac worker 上。那些 worker 的工作目录都不是 zacks-court，对本项目也未获准；签名身份在那台 Mac 的登录钥匙串里，派到别的仓库目录会用错树。若以后要用云端代理在 Mac 上打，应在一份只含本仓库的检出里另起 worker，注册仓库为 `https://github.com/claude89757/zacks-court`，由机器主人批准后再做。这一阶段不派、不上传。
