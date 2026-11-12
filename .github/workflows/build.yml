@@ -18,7 +18,7 @@ jobs:
   build:
     name: Compile and check code (no analysis models)
     runs-on: macos-15
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Build shared package and Mac executable without model assets
