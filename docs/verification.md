@@ -6197,3 +6197,23 @@ CI 工具链比本机严，本机扫不出这类类型检查超时，以后的�
 本环境：Linux，没有 `swift`，没有 Xcode。跑了 `scripts/score-run.py --self-test`、`scripts/field-test-sheet.py --self-test`、`scripts/field-test-report.py --self-test`，都通过；`node --check Sources/CourtCore/Web/app.js` 通过。这些不覆盖 Swift 或 iOS。
 
 没有验证：`swift build`、`court-check`、`swift test`、iOS 归档、签名、解包、上传、App Store Connect 上的 1.3 版本。没有声称已构建。1.2 (2) 导出时占过 `AWAITING_UPLOAD`，所以本阶段也不做会联系苹果的导出。
+
+## 2026-11-12 机位诊断记下区域姿态读了多少（只加诊断，不改分析）
+
+**为什么**：发球规则只用每秒至少 8 次的区域姿态定击球时刻（`Swing.densePeriod`）。两段夜场的 v29 trace 把姿态抽稀到每秒 5 次或更少时，v34 重放退回 v29 之前的发球规则，发球球速 ±20% 内从 58/76、88/119 掉到 42、71。手机上只在分析积压不超过 0.2 秒时读区域姿态，降载时不读，实际读到多密从来没记过。
+
+**改了什么**：
+- `CameraSideAnalyzer.Metrics.poseSkippedBehind`：按姿态节奏该读、因分析落后跳过的帧数。
+- `CameraPoseCounts`（读到的帧、Vision 请求、秒数、跳过的帧，都是累计数）放进 `status.analysis.poses`（可选字段，旧看板忽略），并写进机位采集日志每秒一行。
+- 诊断包摘要多一行：记录中有球场时平均每秒读几次、不到 8 次的秒数和比例、其中降载不读的秒数、分析落后跳过的次数、每次请求的耗时。
+- `court-analyze independent-live` 的输出多了 `poseSkipped`。
+- 分析、规则、录像和界面都没动。
+
+**本机（M4 Pro，命令行工具，没有 Xcode）跑了什么**：
+- `swift build --product court-analyze` 与 `swift run court-check`：court-check 3 项 PASS（含协议 v2 的可选字段）。
+- 新测试 `CameraDiagnosticsTests.testSummaryReportsHowOftenTheServerWasRead` 原样搬进本地的 XCTest 替身（`@testable import CourtCore`），与两份规则测试一起跑：50 项、0 失败。故意改错期望值时它会失败。
+- 端到端：`court-analyze independent-live` 按真实节奏跑 maozi 400–490 s：球场 400.3 s 认出；读到区域姿态 737 帧（约每秒 8.2 次），因分析落后跳过 161 帧（应读的 18%），每次 Vision 请求约 4.9 ms，没有溢出。737 + 161 正好是 90 秒每秒 10 次的应读数。**在这台 Mac 上按真实节奏，平均也只刚到 8 次这道门**。
+
+**手动 CI**（PR #63，run 43172546200，提交 `90bfb05`，GitHub `macos-15`，不带模型）：`swift build`、`court-check` 3 项 PASS、`swift test` 348 项、跳过 23 项（需要显式启用的）、0 失败，用时约 15 分钟；新测试 `testSummaryReportsHowOftenTheServerWasRead` 通过。
+
+**没有验证**：iOS 编译；iPhone 上的实际读数。这一项本身不提升精度，只是让下一次实机记录能回答姿态在手机上读得多密。

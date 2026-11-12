@@ -286,7 +286,7 @@ S家模型不在仓库里，也不会进 Git。有的话放在 `.local/s-models/
 | --- | --- | --- |
 | 会话、录像、逐拍结果 | App 文稿 › `Zacks Court/Sessions`（「文件」App 里可见） | `~/Movies/Zacks Court/Sessions` |
 | 看板取到的单拍片段 | `Zacks Court/Sessions/Clips/会话ID/` | `~/Movies/Zacks Court/Sessions/Clips/会话ID/` |
-| 机位采集日志（每秒的球场识别、温度、负载，不含画面，保留 14 天） | `Zacks Court/Sessions/Diagnostics/` | —（Mac 不做机位） |
+| 机位采集日志（每秒的球场识别、温度、负载、发球人姿态读了几次，不含画面，保留 14 天） | `Zacks Court/Sessions/Diagnostics/` | —（Mac 不做机位） |
 
 > [!WARNING]
 > 配对二维码和配对链接含本次连接的密钥，不要截图公开。

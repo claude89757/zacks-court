@@ -39,6 +39,9 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         /// In-house lane region poses: frames read, Vision requests and their seconds; and the full-resolution
         /// copies made for them alone, between person frames (not counted in `copies`).
         public var poseFramesLive = 0, poseRequestsLive = 0, poseSecondsLive = 0.0, poseCopies = 0
+        /// In-house lane: frames on the region poses' cadence passed over because the analysis was behind (more
+        /// than `poseBacklogFrames` waiting). Under load shedding the cadence is off and nothing is counted here.
+        public var poseSkippedBehind = 0
         /// Automatic court (in-house lane): solves, their seconds on the utility queue, frames sampled, and
         /// how often the court was found, moved or lost.
         public var courtSolves = 0, courtSolveSeconds = 0.0, courtSamples = 0, courtFound = 0, courtMoved = 0, courtLost = 0
@@ -261,11 +264,12 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         // the region poses wait while the analysis is behind (v29): on a Mac fed at the source clock they pushed a
         // lane that kept up 68 % busy to 76 %, and its bursts over the queue limit seven times as often
         let readPoses = poseInterval > 0 && pending <= Self.poseBacklogFrames
+        let onPoseCadence = poseInterval > 0 && (liveFrames % poseInterval == 1 || poseInterval == 1)
         var copy: CVPixelBuffer?, poseOnly = false
         if liveFrames % personInterval == 1 || personInterval == 1 {
             copy = makeCopy(pixelBuffer)
             if copy == nil { lock.lock(); metrics.poolExhausted += 1; lock.unlock() }   // a missed person sample is not a break
-        } else if readPoses, liveFrames % poseInterval == 1 || poseInterval == 1 {
+        } else if readPoses, onPoseCadence {
             copy = makeCopy(pixelBuffer); poseOnly = copy != nil       // a missed pose sample is not counted: nothing waits for it
         }
         var work = Work(pts: pts, streamID: streamID, pixels: copy, slot: copy == nil || poseOnly ? nil : 0, restart: restart, submitted: now,
@@ -276,6 +280,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         metrics.scaledFrames += 1; timings.scale.append(scaleMilliseconds)
         if restart { metrics.restarts += 1 }
         if copy != nil { if poseOnly { metrics.poseCopies += 1 } else { metrics.copies += 1 } }
+        if onPoseCadence && !readPoses { metrics.poseSkippedBehind += 1 }
         lock.unlock()
         worker.async { [self] in process(work) }
     }

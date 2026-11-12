@@ -156,6 +156,52 @@ final class CameraDiagnosticsTests: XCTestCase {
         XCTAssertEqual(clean.solveSeconds, 0); XCTAssertEqual(clean.heightMeters, 3.1)
     }
 
+    /// The summary says how often the server's arm was read while recording with a court (the serve rules
+    /// need 8 a second), how many of those seconds fell short, shed or behind, and a request's cost. Seconds
+    /// without a court, and a count that went back (the analysis restarted), are left out; an older camera's
+    /// status without pose counts still decodes.
+    func testSummaryReportsHowOftenTheServerWasRead() throws {
+        let root = makeRoot("court-pose-summary")
+        let store = try SessionStore(directory: root)
+        let t0 = Date().addingTimeInterval(-300).timeIntervalSince1970.rounded()
+        let session = CourtSession(title: "姿态测试", startedAt: Date(timeIntervalSince1970: t0))
+        try store.save(session)
+        func line(_ s: Int, _ state: CameraCourtDiagnostics.State, frames: Int, skipped: Int, shed: Int = 0) -> CameraLogLine {
+            var l = CameraLogLine(kind: .status, t: t0 + Double(s))
+            l.session = session.id; l.sessionState = .active; l.court = CameraCourtDiagnostics(state: state); l.shed = shed
+            l.poses = CameraPoseCounts(frames: frames, requests: 2 * frames, seconds: 0.02 * Double(frames), skippedBehind: skipped)
+            return l
+        }
+        var start = CameraLogLine(kind: .start, t: t0); start.app = "1.3 (1)"
+        let lines = [start,
+                     line(1, .found, frames: 0, skipped: 0), line(2, .found, frames: 10, skipped: 0), line(3, .found, frames: 20, skipped: 0),
+                     line(4, .found, frames: 24, skipped: 6),             // behind: 4 read, 6 passed over
+                     line(5, .found, frames: 24, skipped: 6, shed: 1),    // shed: none read
+                     line(6, .found, frames: 34, skipped: 6),
+                     line(7, .searching, frames: 44, skipped: 6),         // no court: not counted
+                     line(8, .found, frames: 3, skipped: 0),              // the analysis restarted: not counted
+                     CameraLogLine(kind: .stop, t: t0 + 9)]
+        let expected = "记录中有球场的 5 秒里平均每秒读 6.8 次，不到 8 次的 2 秒（40%），其中降载 1 秒不读；分析落后时跳过 6 次；每次请求约 10 毫秒"
+        let report = try XCTUnwrap(DiagnosticBundle.poseReport(lines))
+        XCTAssertTrue(report.contains(expected), report)
+        XCTAssertNil(DiagnosticBundle.poseReport([CameraLogLine(kind: .status, t: t0), CameraLogLine(kind: .status, t: t0 + 1)]),
+                     "no pose counts (S家 lane, older versions): no line")
+
+        let folder = DiagnosticBundle.folder(in: root)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try write(lines, to: folder.appendingPathComponent("capture-poses.jsonl"))
+        let text = DiagnosticBundle.summary(session: session, logs: DiagnosticBundle.captureLogs(for: session, storageDirectory: root))
+        XCTAssertTrue(text.contains(expected), text)
+
+        var analysis = CameraAnalysisStatus()
+        XCTAssertFalse(String(decoding: try JSONEncoder().encode(analysis), as: UTF8.self).contains("poses"), "nil is left out on the wire")
+        analysis.poses = CameraPoseCounts(frames: 3, requests: 6, seconds: 0.0601, skippedBehind: 1)
+        let again = try JSONDecoder().decode(CameraAnalysisStatus.self, from: try JSONEncoder().encode(analysis))
+        XCTAssertEqual(again.poses, CameraPoseCounts(frames: 3, requests: 6, seconds: 0.06, skippedBehind: 1))
+        let older = try JSONDecoder().decode(CameraLogLine.self, from: Data(#"{"kind":"status","t":1,"shed":0}"#.utf8))
+        XCTAssertNil(older.poses)
+    }
+
     private func write(_ lines: [CameraLogLine], to url: URL) throws {
         try lines.compactMap(CameraCaptureLog.encode).reduce(Data(), +).write(to: url)
     }

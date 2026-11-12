@@ -63,6 +63,22 @@ public struct CameraCourtDiagnostics: Codable, Equatable, Sendable {
     }
 }
 
+/// The in-house lane's region poses since its analysis started: frames read, Vision requests and their
+/// seconds, and frames on the poses' cadence passed over because the analysis was behind. The serve rules
+/// time a contact only from poses read at least 8 times a second (`IndependentStrokeRules.Swing.densePeriod`),
+/// so the rate a phone reaches decides how much of them it gets. Sent in `status.analysis.poses` (optional,
+/// older peers ignore it) and written to the camera's capture log once a second.
+public struct CameraPoseCounts: Codable, Equatable, Sendable {
+    public var frames: Int
+    public var requests: Int
+    public var seconds: Double
+    public var skippedBehind: Int
+    public init(frames: Int = 0, requests: Int = 0, seconds: Double = 0, skippedBehind: Int = 0) {
+        self.frames = frames; self.requests = requests; self.seconds = seconds.isFinite ? (seconds * 1000).rounded() / 1000 : 0
+        self.skippedBehind = skippedBehind
+    }
+}
+
 /// One line of the camera's capture log (`Diagnostics/capture-*.jsonl`): a `start` line when capture
 /// begins (app, hardware and system), a `status` line every second while capturing, and a `stop` line.
 /// Written on the camera, so a camera used alone keeps the record a display would otherwise keep.
@@ -102,6 +118,8 @@ public struct CameraLogLine: Codable, Sendable {
     public var court: CameraCourtDiagnostics?
     /// What the camera screen says about the court.
     public var courtText: String?
+    /// Region poses so far (in-house lane, `CameraPoseCounts`); nil from older versions.
+    public var poses: CameraPoseCounts?
     public var shots: Int?
     /// An App display is connected; browsers that joined.
     public var display: Bool?
@@ -122,7 +140,7 @@ public struct CameraLogLine: Codable, Sendable {
         let a = status.analysis
         if let latest = a.latestPTS, let analyzed = a.analyzedPTS { analysisDelay = (max(0, latest - analyzed) * 100).rounded() / 100 }
         pendingFrames = a.pendingFrames; restarts = a.restarts; analysisReason = a.reason
-        court = a.court; courtText = a.calibration?.reason
+        court = a.court; courtText = a.calibration?.reason; poses = a.poses
         self.shots = shots; self.display = display; self.browsers = browsers; self.linkPath = linkPath?.rawValue
     }
 }
@@ -395,10 +413,39 @@ public enum DiagnosticBundle {
             if let lastDrop = drops.last, let firstDrop = drops.first { out.append("- 采集丢帧 \(lastDrop >= firstDrop ? lastDrop - firstDrop : lastDrop) 帧") }
             let batteries = status.compactMap(\.battery)
             if let a = batteries.first, let b = batteries.last { out.append(String(format: "- 电量 %.0f%% → %.0f%%", a * 100, b * 100)) }
+            if let poses = poseReport(inSession) { out.append(poses) }
         }
         out.append("")
-        out.append("文件：<记录ID>.json 是记录本身；capture-*.jsonl 是机位每秒的状态（球场识别、温度、负载）；-analysis.jsonl 是辅助检测；-status.jsonl 是看板收到的机位状态。不含录像和配对密钥。")
+        out.append("文件：<记录ID>.json 是记录本身；capture-*.jsonl 是机位每秒的状态（球场识别、温度、负载、发球人姿态读了几次）；-analysis.jsonl 是辅助检测；-status.jsonl 是看板收到的机位状态。不含录像和配对密钥。")
         return out.joined(separator: "\n") + "\n"
+    }
+
+    /// How often the server's arm was read while recording with a court: the mean rate, the seconds under
+    /// the rate the serve rules need (`IndependentStrokeRules.Swing.densePeriod`), the seconds shed (no
+    /// region poses then), the frames passed over while the analysis was behind, and a request's cost on
+    /// this phone. Consecutive status lines only: a gap, a new run or a count that went back is skipped.
+    /// nil without pose counts (the S家 lane, versions before them).
+    static func poseReport(_ lines: [CameraLogLine]) -> String? {
+        let need = 1 / IndependentStrokeRules.Swing.densePeriod
+        var seconds = 0.0, counted = 0, frames = 0, sparse = 0, shed = 0, skipped = 0, requests = 0, spent = 0.0
+        for (a, b) in zip(lines, lines.dropFirst()) {
+            guard let pa = a.poses, let pb = b.poses, b.t - a.t > 0.5, b.t - a.t < 2.5,
+                  pb.frames >= pa.frames, pb.requests >= pa.requests, pb.skippedBehind >= pa.skippedBehind,
+                  b.court?.state == .found || b.court?.state == .fixed else { continue }
+            let dt = b.t - a.t, read = pb.frames - pa.frames
+            counted += 1; seconds += dt; frames += read
+            if Double(read) / dt < need { sparse += 1 }
+            if (b.shed ?? 0) > 0 { shed += 1 }
+            skipped += pb.skippedBehind - pa.skippedBehind
+            requests += pb.requests - pa.requests; spent += max(0, pb.seconds - pa.seconds)
+        }
+        guard counted > 0, seconds > 0 else { return nil }
+        var text = String(format: "- 发球人姿态（发球识别和发球球速要每秒 %.0f 次以上）：记录中有球场的 %d 秒里平均每秒读 %.1f 次，不到 %.0f 次的 %d 秒（%@）",
+                          need, Int(seconds.rounded()), Double(frames) / seconds, need, sparse, percent(sparse, counted))
+        if shed > 0 { text += "，其中降载 \(shed) 秒不读" }
+        if skipped > 0 { text += "；分析落后时跳过 \(skipped) 次" }
+        if requests > 0 { text += String(format: "；每次请求约 %.0f 毫秒", spent / Double(requests) * 1000) }
+        return text
     }
 
     private static func percent(_ part: Int, _ whole: Int) -> String {
