@@ -878,6 +878,10 @@ public final class CameraSessionController {
         analysis.limitations = tennisAnalysis?.limitations ?? []
         analysis.court = metrics.court
         analysis.pictureMoving = metrics.pictureMoving ? true : nil
+        if metrics.inHouse {
+            analysis.poses = CameraPoseCounts(frames: metrics.poseFramesLive, requests: metrics.poseRequestsLive,
+                                              seconds: metrics.poseSecondsLive, skippedBehind: metrics.poseSkippedBehind)
+        }
         status.analysis = analysis
         status.device = deviceState()
         status.shed = shed.level; status.shedReason = shed.reason; status.shedCause = shed.level > 0 ? shedCause?.rawValue : nil

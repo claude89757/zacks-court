@@ -64,6 +64,8 @@ public struct CameraAnalysisStatus: Codable, Equatable, Sendable {
     /// True while the picture moves and shots are not counted (in-house lane); nil otherwise and from
     /// older v2 cameras.
     public var pictureMoving: Bool?
+    /// Region poses read so far (in-house lane); nil otherwise and from older v2 cameras.
+    public var poses: CameraPoseCounts?
     public init() {}
 }
 
