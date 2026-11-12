@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v34"
+    public static let rulesVersion = "independent-shots-v35"
 
     /// Median image step of a run of track points, pixels per frame (0 for fewer than two points).
     static func imageSpeed(_ P: [IndependentTrackPoint]) -> Double {
@@ -404,6 +404,7 @@ public enum IndependentShotPipeline {
     /// The near landing of shot `i`, hit on the far half, that has no bounce (v33): the bounce inside its last steps
     /// (`IndependentShotFlights.tailKnee`), else, when there is no such knee, where its own accepted fit comes down a
     /// few frames past the last observation, low and close to it in the image, unless the flight ends at a hit.
+    /// Else, when the flight was followed down to the ground and lost there, its last observation (v35).
     /// Neither at the net, nor when a near player hits the ball right then (a volley).
     static func incomingLanding(_ i: Int, shots: [IndependentShotResult], camera: IndependentProjector) -> IndependentShotResult.LandEstimate? {
         typealias L = IndependentIncomingLanding
@@ -421,22 +422,34 @@ public enum IndependentShotPipeline {
                   !receiverHits(from: k[0] - L.receiverBefore, to: k[0] + L.receiverAfter) else { return nil }
             return landEstimate(t: k[0], x: k[1], y: k[2], vx: d.vx, vy: d.vy, frames: L.kneeSigmaFrames, knee: true, camera: camera)
         }
-        guard d.accepted, let rms = d.rms, rms <= L.maxRms, !d.endsAtHit, onNearHalf(d.x, d.y),
-              let hitY = d.hitY, hitY > netY, d.zLast <= L.fitHighZ,
-              (0...L.frameWidth).contains(d.u), (0...L.frameHeight).contains(d.v),
-              L.aheadFrames.contains(d.ahead), d.px <= L.maxImagePx,
-              !receiverHits(from: d.tLast - L.receiverBefore, to: d.t + L.receiverAfter) else { return nil }
-        // a tracked bounce's half frame of travel, plus the landing time's uncertainty
-        let frames = (0.5 * 0.5 + pow(L.timingFrames + L.perAheadFrame * abs(d.ahead), 2)).squareRoot()
-        return landEstimate(t: d.t, x: d.x, y: d.y, vx: d.vx, vy: d.vy, frames: frames, knee: false, camera: camera)
+        if d.accepted, let rms = d.rms, rms <= L.maxRms, !d.endsAtHit, onNearHalf(d.x, d.y),
+           let hitY = d.hitY, hitY > netY, d.zLast <= L.fitHighZ,
+           (0...L.frameWidth).contains(d.u), (0...L.frameHeight).contains(d.v),
+           L.aheadFrames.contains(d.ahead), d.px <= L.maxImagePx,
+           !receiverHits(from: d.tLast - L.receiverBefore, to: d.t + L.receiverAfter) {
+            // a tracked bounce's half frame of travel, plus the landing time's uncertainty
+            let frames = (0.5 * 0.5 + pow(L.timingFrames + L.perAheadFrame * abs(d.ahead), 2)).squareRoot()
+            return landEstimate(t: d.t, x: d.x, y: d.y, vx: d.vx, vy: d.vy, frames: frames, knee: false, camera: camera)
+        }
+        // Tracked down to the ground and lost right there (v35): the fit is still a little high at the last
+        // observation, so the landing is that observation on the ground, not where the fit comes down. Night videos: of the incoming flights without a landing whose last observation is a colour-found
+        // bounce, 14 of 16 pass; of those still in the air there (fit 0.63-1.01 m high), none.
+        guard d.accepted, let rms = d.rms, rms <= L.maxRms, let hitY = d.hitY, hitY > netY,
+              L.lastLandZ.contains(d.zLast), let last = d.last, last.count >= 2 else { return nil }
+        let g = camera.onPlaneZ(last[0], last[1], z: IndependentCourt.ballRadius)
+        guard g.x.isFinite, g.y.isFinite, onNearHalf(g.x, g.y),
+              !receiverHits(from: d.tLast - L.receiverBefore, to: d.tLast + L.receiverAfter) else { return nil }
+        return landEstimate(t: d.tLast, x: g.x, y: g.y, vx: d.vx, vy: d.vy, frames: L.lastLandFrames, knee: true,
+                            camera: camera, floor: L.lastLandSigmaFloor)
     }
 
     /// A landing with its standard deviations (m): `bouncePixelSigma` through the ground mapping, `frames` of the
-    /// ball's ground travel, and `IndependentIncomingLanding.sigmaFloor`; nil when they are not finite.
+    /// ball's ground travel, and `floor` (`IndependentIncomingLanding.sigmaFloor` unless given); nil when they are
+    /// not finite.
     static func landEstimate(t: Double, x: Double, y: Double, vx: Double, vy: Double, frames: Double, knee: Bool,
-                             camera: IndependentProjector) -> IndependentShotResult.LandEstimate? {
+                             camera: IndependentProjector, floor: Double = IndependentIncomingLanding.sigmaFloor) -> IndependentShotResult.LandEstimate? {
         guard let pixel = pixelVariance(x: x, y: y, camera: camera) else { return nil }
-        let dt = frames / IndependentShotFlights.fps, floor2 = IndependentIncomingLanding.sigmaFloor * IndependentIncomingLanding.sigmaFloor
+        let dt = frames / IndependentShotFlights.fps, floor2 = floor * floor
         let sxx = pixel.xx + (vx * dt) * (vx * dt) + floor2, syy = pixel.yy + (vy * dt) * (vy * dt) + floor2
         guard t.isFinite, x.isFinite, y.isFinite, sxx.isFinite, syy.isFinite else { return nil }
         return IndependentShotResult.LandEstimate(t: t, x: x, y: y, sigma: [sxx.squareRoot(), syy.squareRoot()], knee: knee)
