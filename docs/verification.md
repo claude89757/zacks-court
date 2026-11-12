@@ -6180,3 +6180,20 @@ B 段前半 0.64 → 0.74、后半 0.71 → 0.81。发球球速端到端在两�
 
 **没有验证**：跳过的 23 个测试，其中 3 个是实时链在暂存 FP16 模型上的测试（背景重建、按模型运行、降载），CI 没有模型跑不了；
 CI 工具链比本机严，本机扫不出这类类型检查超时，以后的改动仍可能在 CI 上碰到；15 分钟上限已经不够跑完构建加全部测试。
+
+## 2026-11-12 准备 App Store 1.3（未构建、未上传）
+
+用户要求按已合入 main 的代码准备线上更新。2026-11-12 11:30（上海）的只读核查：唯一在架版本是 1.2，发布方式 `AFTER_APPROVAL`；构建 1.2 (2)，ID `7a5c5d41-4209-4ecb-9c46-67cbff61df1f`，11-05 09:33（上海）上传，对应 main `3d49b15`。没有在审版本，没有 1.3，也没有可编辑的新版本。1.2 (3) ID `9cf11f2a-0b6f-4539-a11d-70daebe95a38`（11-05 10:33 上海）没被商店占用，只含当天的审查修复，盖不住其后的 main，也不能拿去更新已上架的 1.2 或挂到 1.3。main 的营销版本仍是 1.2，所以这次写成 1.3 (1)。
+
+做了什么：`apps/iphone/project.yml` 改为 1.3 (1)。四种语言的「新功能」写在 `docs/app-store/metadata/version/1.3/`，描述、关键词、推广文本和网址从 1.2 原样复制。文字只写 1.2 (2) 之后用户能看到的行为（回放停帧、音乐恢复、约 N 厘米、空行、不可能的击球点、举臂发球、过网后跟丢仍可能有球速、近端落点候选、发散击球点不再撑大压线带），并写明仍是模型估计、同一段录像可能与 1.2 不同。没有写夜场对照里的比例，也没有写成球场实测。价格、地区、备案、账号和权限都没改。
+
+构建路径（没有在这台机器上执行）：
+- 仓库没有 iOS 归档脚本。`build8.sh` 只出现在上文的打包记录里，Git 里没有这个文件，也没有 `xcodebuild archive` 的参数。
+- `scripts/build-mac.sh` 只打临时签名的 Mac App，短版本写死 1.0。
+- `scripts/generate-ios.sh` 只生成 Xcode 工程。
+- `.github/workflows/build.yml` 只能手动触发，在 GitHub `macos-15` 上做不带模型的 `swift build`、`court-check`、`swift test`，工作流写明不编译 iOS。不能出 IPA。PR #61 把超时改成 25 分钟后还没有成功运行；PR #60 那次是测试打完后被 15 分钟上限取消，状态不是成功。
+- 当时能看到的私人 Mac worker 都挂在别的目录上，没有 zacks-court 专用 worker，对本项目也未获准。没有向它们派任务。
+
+本环境：Linux，没有 `swift`，没有 Xcode。跑了 `scripts/score-run.py --self-test`、`scripts/field-test-sheet.py --self-test`、`scripts/field-test-report.py --self-test`，都通过；`node --check Sources/CourtCore/Web/app.js` 通过。这些不覆盖 Swift 或 iOS。
+
+没有验证：`swift build`、`court-check`、`swift test`、iOS 归档、签名、解包、上传、App Store Connect 上的 1.3 版本。没有声称已构建。1.2 (2) 导出时占过 `AWAITING_UPLOAD`，所以本阶段也不做会联系苹果的导出。

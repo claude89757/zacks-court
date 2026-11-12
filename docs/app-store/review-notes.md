@@ -17,6 +17,8 @@ With a second device: choose "看板" (Display) on a second iPhone, and pair by 
 
 New in 1.2: the line-call replay adds a 3D view and a measuring scale. The "Out!" call and challenge verdicts now play short voice clips bundled in the app. The clips were generated with OpenAI's text-to-speech and play offline, and the settings say so ("语音由 AI 合成（OpenAI）", the voice is AI-generated). A record's "导出" (Export) menu adds "诊断包（不含录像）" (Diagnostic package, no video). It is a zip of the record's data and the camera's log, with no video and no pairing key, and it is sent only through the system share sheet when the user chooses to.
 
+New in 1.3: replays hold the last frame, and other apps' audio is restored after a line-call clip. The scale says the distance is approximate. Rows with no landing, no speed and a contact far off the court are omitted. Serve detection may use a raised arm when the phone is keeping up, and a near-side landing can be estimated when the ball is tracked only to around the bounce. The same recording can therefore differ from 1.2. Speeds and line calls are still on-device model estimates, not measurements, and this version was not checked against a court or a radar gun. No new permissions.
+
 The app never connects to the internet: no analytics, no ads, no developer server.
 
 Permissions: camera (recording and QR scanning), local network (connecting the two devices), add-only Photos access (saving a clip when the user taps "存到相册").
@@ -38,6 +40,8 @@ Zacks Court 在场边录网球，在设备本机估计每一拍的球速、落�
 - 界内外回放有 3D 视角和量尺。
 - 出界的「Out!」和挑战结论改播 App 内置的短语音。语音由 OpenAI 的文字转语音生成，离线播放，设置里写明了「语音由 AI 合成（OpenAI）」。
 - 记录的「导出」里新增「诊断包（不含录像）」：把这条记录的数据和机位日志打成 zip，不含录像和配对密钥，只在用户自己选择时通过系统分享面板发出。
+
+1.3 新增：回放停在最后一帧；司线语音结束后恢复其他 App 的音量；量尺写明大约多少厘米。没有落点、没有球速、击球点又远在场地外的空行不再写入。发球识别可能参考举臂；近端来球只跟到落地附近时也可能给出落点。同一段录像的结果可能与 1.2 不同。球速和界内外仍是本机模型估计，这一版没有用球场或测速枪核对。没有新增权限。
 
 App 不连互联网：没有统计、广告或开发者服务器。
 
