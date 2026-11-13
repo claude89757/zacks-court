@@ -177,7 +177,7 @@ public final class CameraSessionController {
         analyzer.onSnapshot = { [weak self] snapshot in Task { @MainActor in self?.handle(snapshot) } }
         analyzer.onEventUpdate = { [weak self] rows in Task { @MainActor in self?.handleLate(rows) } }
         analyzer.onPeople = { [weak self] snapshot in Task { @MainActor in self?.handlePeople(snapshot) } }
-        journal.onError = { [weak self] message in Task { @MainActor in self?.error = "分析轨迹保存失败：\(message)" } }
+        journal.onError = { [weak self] message in Task { @MainActor in self?.error = courtFormat("分析轨迹保存失败：%1$@", "\(message)") } }
         ticker = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
@@ -238,9 +238,9 @@ public final class CameraSessionController {
 
     public func startSession(title: String, kind: SessionKind = .training) {
         guard !hasOpenSession, !isBusy else { return }
-        guard store != nil else { error = "记录目录不可用：检查存储空间后重新打开 App。"; return }
+        guard store != nil else { error = courtText("记录目录不可用：检查存储空间后重新打开 App。"); return }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        var created = CourtSession(title: trimmed.isEmpty ? "球场分析" : String(trimmed.prefix(100)), kind: kind)
+        var created = CourtSession(title: trimmed.isEmpty ? courtText("球场分析") : String(trimmed.prefix(100)), kind: kind)
         created.setCapturedOn(identity.device)
         open(created)
     }
@@ -312,7 +312,7 @@ public final class CameraSessionController {
         let rows = challengeRows
         let latest = capturing ? counters.latestPTS : nil
         guard let row = shot.map({ id in rows.first { $0.id == id } }) ?? HawkEye.challengeTarget(rows, latestPTS: latest) else {
-            return shot == nil ? "还没有可以挑战的击球。" : "找不到这一拍，可能已不在当前记录里。"
+            return shot == nil ? courtText("还没有可以挑战的击球。") : courtText("找不到这一拍，可能已不在当前记录里。")
         }
         challenges[row.id] = HawkEyeChallenge(format: hawkEye.format)
         publishChallenged(row)
@@ -388,7 +388,7 @@ public final class CameraSessionController {
 
     /// Older displays can still ask for manual corners or a calibration still; the court now
     /// always comes from automatic recognition, so they get this refusal instead of no answer.
-    private let manualCourtRemoved = "此版本已去掉手动标定，球场由机位自动识别。请更新看板 App。"
+    private let manualCourtRemoved = courtText("此版本已去掉手动标定，球场由机位自动识别。请更新看板 App。")
 
     /// Leaving the camera role: finish the open session, then stop the link and tickers.
     public func shutdown() async {
@@ -412,7 +412,7 @@ public final class CameraSessionController {
         } else {
             capturing = false; streamID = nil
             tennisAnalysis = nil
-            if session?.state == .active { Task { await pause(reason: "采集已停止，记录已暂停。重新开始采集后点「继续」。") } }
+            if session?.state == .active { Task { await pause(reason: courtText("采集已停止，记录已暂停。重新开始采集后点「继续」。")) } }
             else { recordingRequested = false }
         }
         sendStatus()
@@ -443,10 +443,10 @@ public final class CameraSessionController {
                 if session?.id == owner { try session?.addRecording(item); persist(); sendSession() }
                 else if var original = try store?.loadAll(recoverUnfinished: false).first(where: { $0.id == owner }) {
                     try original.addRecording(item); try store?.save(original)
-                } else { throw CourtError.message("录像已保存，但找不到对应会话：\(clip.url.lastPathComponent)") }
-            } catch { self.error = "关联录像失败：\(error.localizedDescription)" }
+                } else { throw CourtError.message(courtFormat("录像已保存，但找不到对应会话：%1$@", "\(clip.url.lastPathComponent)")) }
+            } catch { self.error = courtFormat("关联录像失败：%1$@", "\(error.localizedDescription)") }
         case .failure(let error):
-            self.error = "录像保存失败：\(error.localizedDescription)"
+            self.error = courtFormat("录像保存失败：%1$@", "\(error.localizedDescription)")
             recordingRequested = false
         }
     }
@@ -549,7 +549,7 @@ public final class CameraSessionController {
         switch packet.wireKind {
         case .hello:
             guard let hello = try? packet.decode(WireHello.self), hello.role == .display else {
-                error = "看板发来的连接信息无效：在看板上刷新配对码后重新扫码。"; return
+                error = courtText("看板发来的连接信息无效：在看板上刷新配对码后重新扫码。"); return
             }
             displayConnected = true; displayName = hello.device
             reconcile(with: hello.session)
@@ -611,10 +611,10 @@ public final class CameraSessionController {
     private func apply(_ control: WireControl, from origin: Target) async {
         var ok = true, message: String?
         let matches = control.sessionID == nil || control.sessionID == session?.id
-        let busy = "机位正忙，请稍后再试。"
+        let busy = courtText("机位正忙，请稍后再试。")
         if case .web = origin, [.transfer, .clip, .cancelTransfer, .reply, .superseded].contains(control.command) {
             // Browsers fetch files over HTTP (`/api/*`), never through the control channel.
-            reply(to: control, ok: false, message: "浏览器看板不支持这条命令。", origin); return
+            reply(to: control, ok: false, message: courtText("浏览器看板不支持这条命令。"), origin); return
         }
         switch control.command {
         case .start:
@@ -623,7 +623,7 @@ public final class CameraSessionController {
             guard let remote = control.session else {
                 // A browser sends only a title; the camera creates the session itself.
                 if let current = session, hasOpenSession {
-                    ok = false; message = "机位已有进行中的记录「\(current.title)」。"
+                    ok = false; message = courtFormat("机位已有进行中的记录「%1$@」。", "\(current.title)")
                 } else {
                     startSession(title: control.label ?? "")
                     ok = hasOpenSession; if !ok { message = error ?? busy }
@@ -631,7 +631,7 @@ public final class CameraSessionController {
                 break
             }
             if let current = session, hasOpenSession, current.id != remote.id {
-                ok = false; message = "机位已有进行中的记录「\(current.title)」，看板已切换到这条记录。"
+                ok = false; message = courtFormat("机位已有进行中的记录「%1$@」，看板已切换到这条记录。", "\(current.title)")
                 sendSession()
             } else if session?.id != remote.id || !hasOpenSession { adopt(remote) }
         // The reply says whether the state was reached: with two displays a command can arrive
@@ -639,30 +639,30 @@ public final class CameraSessionController {
         // Pause, resume and finish are idempotent: a state already reached is success, so two
         // displays pressing the same button both see it done.
         case .pause:
-            if !matches || session == nil { ok = false; message = "机位上的记录已经变化，请以机位显示为准。" }
+            if !matches || session == nil { ok = false; message = courtText("机位上的记录已经变化，请以机位显示为准。") }
             else if session?.state == .active {
                 await pause()
                 if session?.state == .active { ok = false; message = busy }
-            } else if session?.state != .paused { ok = false; message = "机位没有进行中的记录。" }
+            } else if session?.state != .paused { ok = false; message = courtText("机位没有进行中的记录。") }
         case .resume:
-            if !matches || session == nil { ok = false; message = "机位上的记录已经变化，请以机位显示为准。" }
+            if !matches || session == nil { ok = false; message = courtText("机位上的记录已经变化，请以机位显示为准。") }
             else if session?.state == .paused || session?.state == .interrupted {
                 resume()
                 if session?.state != .active { ok = false; message = busy }
-            } else if session?.state != .active { ok = false; message = "机位上的这次记录已结束。" }
+            } else if session?.state != .active { ok = false; message = courtText("机位上的这次记录已结束。") }
         case .finish:
-            if !matches || session == nil { ok = false; message = "机位上的记录已经变化，请以机位显示为准。" }
+            if !matches || session == nil { ok = false; message = courtText("机位上的记录已经变化，请以机位显示为准。") }
             else if session?.state != .completed {
                 await finish()
                 if session?.state != .completed { ok = false; message = busy }
             }
         case .marker:
-            if !matches || session?.state != .active { ok = false; message = "机位没有进行中的记录，标记未保存。" }
-            else { addMarker(control.label ?? "标记", at: control.date ?? Date()) }
+            if !matches || session?.state != .active { ok = false; message = courtText("机位没有进行中的记录，标记未保存。") }
+            else { addMarker(control.label ?? courtText("标记"), at: control.date ?? Date()) }
         case .handedness:
             setHandedness(near: control.near ?? nearHandedness, far: control.far ?? farHandedness)
         case .hawkEye:
-            if let settings = control.hawkEye { setHawkEye(settings) } else { ok = false; message = "界内外设置无效。" }
+            if let settings = control.hawkEye { setHawkEye(settings) } else { ok = false; message = courtText("界内外设置无效。") }
         case .challenge:
             if let refusal = challenge(shot: control.shot, format: control.format) { ok = false; message = refusal }
         case .corners:
@@ -715,7 +715,7 @@ public final class CameraSessionController {
         let open = session?.analysisGaps?.last.map { $0.endPTS == nil } ?? false
         let pts = pipeline.currentCounters.latestPTS ?? counters.latestPTS ?? segmentStartPTS
         if shed.level >= 3, !open {
-            session?.openAnalysisGap(streamID: streamID, at: pts, reason: shed.reason ?? "设备过热，分析暂停")
+            session?.openAnalysisGap(streamID: streamID, at: pts, reason: shed.reason ?? courtText("设备过热，分析暂停"))
             persist(); sendSession()
         } else if shed.level < 3, open {
             session?.closeAnalysisGap(at: pts)
@@ -731,13 +731,13 @@ public final class CameraSessionController {
     /// behind gigabytes of video.
     private func startTransfer(_ request: WireControl) {
         func refuse(_ message: String) { reply(to: request, ok: false, message: message, .native) }
-        guard session?.state != .active else { refuse("机位正在记录，暂停或结束后再回传录像。"); return }
-        guard transferring == nil, webDownload == nil else { refuse("机位正在发送另一份文件，请稍后再回传。"); return }
-        guard let id = request.sessionID, let name = request.label, let store else { refuse("回传请求无效。"); return }
+        guard session?.state != .active else { refuse(courtText("机位正在记录，暂停或结束后再回传录像。")); return }
+        guard transferring == nil, webDownload == nil else { refuse(courtText("机位正在发送另一份文件，请稍后再回传。")); return }
+        guard let id = request.sessionID, let name = request.label, let store else { refuse(courtText("回传请求无效。")); return }
         let owner = session?.id == id ? session : (try? store.loadAll(recoverUnfinished: false))?.first { $0.id == id }
         guard let owner, owner.recordings.contains(where: { $0.filename == name }),
               let url = try? store.recordingURL(filename: name), FileManager.default.fileExists(atPath: url.path) else {
-            refuse("机位上找不到这段录像。"); return
+            refuse(courtText("机位上找不到这段录像。")); return
         }
         let total = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.int64Value ?? 0
         let offset = min(max(0, request.offset ?? 0), total)
@@ -749,7 +749,7 @@ public final class CameraSessionController {
             guard let self else { return }
             guard case .success(let sha) = digest, let link = self.link else {
                 self.transferring = nil
-                if case .failure(let error) = digest { self.error = "回传前校验失败：\(error.localizedDescription)" }
+                if case .failure(let error) = digest { self.error = courtFormat("回传前校验失败：%1$@", "\(error.localizedDescription)") }
                 return
             }
             var header = StreamHeader(kind: WireKind.file.rawValue)
@@ -757,7 +757,7 @@ public final class CameraSessionController {
             link.sendFile(url, header: header, offset: offset, total: total) { [weak self] failure in
                 Task { @MainActor in
                     self?.transferring = nil
-                    if let failure { self?.notice = "录像回传中断：\(failure)" }
+                    if let failure { self?.notice = courtFormat("录像回传中断：%1$@", "\(failure)") }
                 }
             }
         }
@@ -767,13 +767,13 @@ public final class CameraSessionController {
     /// close behind. Allowed while recording: the segment being recorded is cut from memory.
     private func startClip(_ request: WireControl) {
         func refuse(_ message: String) { reply(to: request, ok: false, message: message, .native) }
-        guard transferring == nil else { refuse("机位正在发送另一份文件，请稍后再取片段。"); return }
+        guard transferring == nil else { refuse(courtText("机位正在发送另一份文件，请稍后再取片段。")); return }
         guard let id = request.sessionID, let stream = request.stream, let start = request.sourcePTS, let end = request.endPTS,
               let name = request.label, (try? ClipExport.validate(filename: name)) != nil,
               start.isFinite, end.isFinite, start >= 0, end > start, end - start <= ClipExport.maxSeconds + 0.001,
-              let store else { refuse("片段请求无效。"); return }
+              let store else { refuse(courtText("片段请求无效。")); return }
         guard session?.id == id || ((try? store.loadAll(recoverUnfinished: false))?.contains { $0.id == id } ?? false) else {
-            refuse("机位上找不到这条记录。"); return
+            refuse(courtText("机位上找不到这条记录。")); return
         }
         transferring = name; clipCancelled = false
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("CourtClips", isDirectory: true).appendingPathComponent(name)
@@ -790,7 +790,7 @@ public final class CameraSessionController {
             let total = ((try? FileManager.default.attributesOfItem(atPath: clip.url.path)[.size]) as? NSNumber)?.int64Value ?? 0
             guard !self.clipCancelled, case .success(let sha) = digest, let link = self.link, self.linkState == .connected else {
                 try? FileManager.default.removeItem(at: clip.url); self.transferring = nil
-                if !self.clipCancelled { refuse("片段准备好了，但看板已断开或校验失败。") }
+                if !self.clipCancelled { refuse(courtText("片段准备好了，但看板已断开或校验失败。")) }
                 return
             }
             var reply = WireControl.reply(to: request, ok: true)
@@ -821,15 +821,15 @@ public final class CameraSessionController {
                 }
                 if !live.samples.isEmpty { return .success(try await ClipExport.write(live.samples, to: url)) }
                 if !live.closed {
-                    throw CourtError.message("这一拍早于机位内存里最近 \(Int(pipeline.liveClipSeconds)) 秒的录像；暂停或结束本段录像后可以取片段。")
+                    throw CourtError.message(courtFormat("这一拍早于机位内存里最近 %1$@ 秒的录像；暂停或结束本段录像后可以取片段。", "\(Int(pipeline.liveClipSeconds))"))
                 }
             }
             let owner = session?.id == id ? session : (try store.loadAll(recoverUnfinished: false)).first { $0.id == id }
             guard let recording = owner?.recordings.first(where: { $0.streamID == stream && end > $0.firstPTS && start < $0.firstPTS + $0.duration }) else {
-                throw CourtError.message("机位上没有这段时间的录像（可能还在保存，请稍后再试）。")
+                throw CourtError.message(courtText("机位上没有这段时间的录像（可能还在保存，请稍后再试）。"))
             }
             let source = try store.recordingURL(filename: recording.filename)
-            guard FileManager.default.fileExists(atPath: source.path) else { throw CourtError.message("机位上的录像文件已不在。") }
+            guard FileManager.default.fileExists(atPath: source.path) else { throw CourtError.message(courtText("机位上的录像文件已不在。")) }
             let from = max(0, start - recording.firstPTS), to = min(recording.duration, end - recording.firstPTS)
             return .success(try await ClipExport.cut(source, firstPTS: recording.firstPTS, from: from, to: to, into: url))
         } catch { return .failure(error) }
@@ -845,7 +845,7 @@ public final class CameraSessionController {
             }
             if let link, linkState == .connected { link.send(try StreamPacket.message(kind, body)) }
             if target == .everyone, let web, !webJoined.isEmpty { web.broadcast(try WebWire.envelope(kind.rawValue, body)) }
-        } catch { self.error = "无法编码发往看板的数据：\(error.localizedDescription)" }
+        } catch { self.error = courtFormat("无法编码发往看板的数据：%1$@", "\(error.localizedDescription)") }
     }
     private func sendSession(_ value: CourtSession? = nil, to target: Target = .everyone) {
         guard let value = value ?? session else { return }
@@ -869,7 +869,7 @@ public final class CameraSessionController {
         status.sessionID = session?.id
         var analysis = CameraAnalysisStatus()
         analysis.available = metrics.tennisAvailable
-        analysis.reason = metrics.loadError ?? (metrics.ready ? nil : "正在加载分析模型…")
+        analysis.reason = metrics.loadError ?? (metrics.ready ? nil : courtText("正在加载分析模型…"))
         analysis.streamID = streamID; analysis.latestPTS = counters.latestPTS; analysis.analyzedPTS = metrics.lastAnalyzedPTS
         analysis.processedFrames = metrics.processedFrames; analysis.pendingFrames = metrics.pendingFrames
         analysis.restarts = metrics.restarts
@@ -935,12 +935,12 @@ public final class CameraSessionController {
             }
         }
         server.onHTTP = { [weak self] request in
-            guard let self else { return .error(503, "机位已关闭。") }
+            guard let self else { return .error(503, courtText("机位已关闭。")) }
             return await self.handleWebHTTP(request)
         }
         web = server
         // Without the page there is nothing to serve; never show a QR code that leads to a 503.
-        guard webRoot != nil else { webState = .failed("浏览器看板资源缺失，请重新安装 App。"); return }
+        guard webRoot != nil else { webState = .failed(courtText("浏览器看板资源缺失，请重新安装 App。")); return }
         webState = .starting
         server.start(port: port)
     }
@@ -1034,19 +1034,19 @@ public final class CameraSessionController {
         let encoder = WebWire.encoder
         switch request.path {
         case "/api/sessions":
-            guard store != nil else { return .error(503, "机位的记录目录不可用：检查机位存储空间后重新打开 App。") }
+            guard store != nil else { return .error(503, courtText("机位的记录目录不可用：检查机位存储空间后重新打开 App。")) }
             var all = await storedSessions()
             if let session { all.removeAll { $0.id == session.id }; all.append(session) }
             let rows = all.sorted { $0.startedAt > $1.startedAt }.map(WebSessionSummary.init)
-            return (try? encoder.encode(rows)).map(WebHTTPResponse.json) ?? .error(500, "无法编码会话列表。")
+            return (try? encoder.encode(rows)).map(WebHTTPResponse.json) ?? .error(500, courtText("无法编码会话列表。"))
         case "/api/session":
-            guard let id = request.query["id"].flatMap(UUID.init(uuidString:)), let value = await loadSession(id) else { return .error(404, "机位上找不到这条记录。") }
-            return (try? encoder.encode(WebSessionDetail(value, store: store))).map(WebHTTPResponse.json) ?? .error(500, "无法编码会话。")
+            guard let id = request.query["id"].flatMap(UUID.init(uuidString:)), let value = await loadSession(id) else { return .error(404, courtText("机位上找不到这条记录。")) }
+            return (try? encoder.encode(WebSessionDetail(value, store: store))).map(WebHTTPResponse.json) ?? .error(500, courtText("无法编码会话。"))
         case "/api/clip":
             guard let id = request.query["session"].flatMap(UUID.init(uuidString:)),
                   let shotID = request.query["shot"].flatMap(UUID.init(uuidString:)),
                   let owner = await loadSession(id), let shot = owner.tennisEvents?.first(where: { $0.id == shotID }) else {
-                return .error(404, "机位上找不到这一拍。")
+                return .error(404, courtText("机位上找不到这一拍。"))
             }
             switch await webClip(session: id, shot: shot) {
             case .success(let url): return .file(url, contentType: "video/mp4", downloadName: nil, onFinish: nil)
@@ -1056,16 +1056,16 @@ public final class CameraSessionController {
             guard let id = request.query["session"].flatMap(UUID.init(uuidString:)), let name = request.query["file"],
                   let owner = await loadSession(id), owner.recordings.contains(where: { $0.filename == name }),
                   let store, let url = try? store.recordingURL(filename: name), FileManager.default.fileExists(atPath: url.path) else {
-                return .error(404, "机位上找不到这段录像。")
+                return .error(404, courtText("机位上找不到这段录像。"))
             }
-            guard session?.state != .active else { return .error(409, "机位正在记录，暂停或结束后再下载录像。") }
-            guard transferring == nil, webDownload == nil || webDownload == name else { return .error(409, "机位正在发送另一份录像，请稍后再下载。") }
+            guard session?.state != .active else { return .error(409, courtText("机位正在记录，暂停或结束后再下载录像。")) }
+            guard transferring == nil, webDownload == nil || webDownload == name else { return .error(409, courtText("机位正在发送另一份录像，请稍后再下载。")) }
             webDownload = name
             return .file(url, contentType: "video/quicktime", downloadName: name) { [weak self] in
                 Task { @MainActor in if self?.webDownload == name { self?.webDownload = nil } }
             }
         default:
-            return .error(404, "没有这个接口。")
+            return .error(404, courtText("没有这个接口。"))
         }
     }
 
@@ -1076,9 +1076,9 @@ public final class CameraSessionController {
         let url = Self.webClipDirectory.appendingPathComponent(name)
         if FileManager.default.fileExists(atPath: url.path) { return .success(url) }
         if let job = webClipJobs[name] { return await job.value }
-        guard let store else { return .failure(CourtError.message("会话目录不可用。")) }
+        guard let store else { return .failure(CourtError.message(courtText("会话目录不可用。"))) }
         let job = Task { @MainActor [weak self] () -> Result<URL, Error> in
-            guard let self else { return .failure(CourtError.message("机位已关闭。")) }
+            guard let self else { return .failure(CourtError.message(courtText("机位已关闭。"))) }
             let temporary = url.deletingPathExtension().appendingPathExtension("part.mp4")
             switch await self.makeClip(session: id, stream: shot.streamID, from: window.start, to: window.end, store: store, into: temporary) {
             case .failure(let error): return .failure(error)
@@ -1197,7 +1197,7 @@ final class AnalysisJournal: @unchecked Sendable {
         guard !failed.contains(sessionID) else { lock.unlock(); return }
         guard pending < 16 else {
             failed.insert(sessionID); lock.unlock()
-            onError?("磁盘写入积压，已停止本次轨迹日志。会话概要和视频仍独立保存。")
+            onError?(courtText("磁盘写入积压，已停止本次轨迹日志。会话概要和视频仍独立保存。"))
             return
         }
         pending += 1
@@ -1207,7 +1207,7 @@ final class AnalysisJournal: @unchecked Sendable {
             do {
                 let url = directory.appendingPathComponent("\(sessionID.uuidString)-analysis.jsonl")
                 if !FileManager.default.fileExists(atPath: url.path) {
-                    guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw CourtError.message("无法创建分析记录。") }
+                    guard FileManager.default.createFile(atPath: url.path, contents: nil) else { throw CourtError.message(courtText("无法创建分析记录。")) }
                 }
                 let handle = try FileHandle(forWritingTo: url)
                 defer { try? handle.close() }

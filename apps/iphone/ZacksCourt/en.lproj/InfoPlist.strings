@@ -1,0 +1,5 @@
+/* Permission purpose strings. Simplified Chinese in the base plist is the development language. */
+
+NSCameraUsageDescription = "Records and analyzes the court in Camera mode, or scans a Display pairing code.";
+NSPhotoLibraryAddUsageDescription = "Saves a recording or one shot's clip to Photos. Adds only; does not read your library.";
+NSLocalNetworkUsageDescription = "Connects to another device running Zacks Court, or lets a browser on the same network open the display, over a local network, Personal Hotspot, or peer-to-peer Wi-Fi. Sends per-shot analysis, a low-resolution preview, and video clips.";

@@ -257,7 +257,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         }
         let start = ProcessInfo.processInfo.systemUptime
         guard let small = scaler.scale(pixelBuffer) else {
-            lock.lock(); metrics.scaleFailures += 1; metrics.lastError = "自研分析不支持这种像素格式"; lock.unlock(); return
+            lock.lock(); metrics.scaleFailures += 1; metrics.lastError = courtText("自研分析不支持这种像素格式"); lock.unlock(); return
         }
         let scaleMilliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
         liveFrames += 1
@@ -466,7 +466,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             lock.lock(); metrics.personSamples += 1; lock.unlock()
             handler?(snapshot)
         } catch {
-            lock.lock(); metrics.lastError = "人体检测失败：\(error.localizedDescription)"; lock.unlock()
+            lock.lock(); metrics.lastError = courtFormat("人体检测失败：%1$@", "\(error.localizedDescription)"); lock.unlock()
         }
     }
 
@@ -474,7 +474,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
     private static func configureCPUComputeDevices(for request: VNRequest) throws {
         let supported = try request.supportedComputeStageDevices
         guard let mainCPU = supported[.main]?.first(where: { if case .cpu = $0 { return true }; return false }) else {
-            throw CourtError.message("此模拟器的人体检测不支持 CPU 推理。")
+            throw CourtError.message(courtText("此模拟器的人体检测不支持 CPU 推理。"))
         }
         request.setComputeDevice(mainCPU, for: .main)
         for (stage, devices) in supported where stage != .main {
@@ -499,7 +499,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         if request.eventID != nil, !bounceEnabled {
             metrics.bounceShed += 1; lock.unlock()
             if let id = request.eventID {
-                applyBounce(id, .init(sourcePTS: request.pts, confidence: 0, reason: "设备降载期间未做触地定位"), nil, resolved: false)
+                applyBounce(id, .init(sourcePTS: request.pts, confidence: 0, reason: courtText("设备降载期间未做触地定位")), nil, resolved: false)
             }
             return
         }
@@ -507,7 +507,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             if request.eventID != nil { metrics.bounceRejectedBusy += 1 }
             lock.unlock()
             if let id = request.eventID {
-                applyBounce(id, .init(sourcePTS: request.pts, confidence: 0, reason: "触地定位队列繁忙，未定位"), nil, resolved: false)
+                applyBounce(id, .init(sourcePTS: request.pts, confidence: 0, reason: courtText("触地定位队列繁忙，未定位")), nil, resolved: false)
             }
             return
         }
@@ -522,7 +522,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
                 do {
                     resolved = try autoreleasepool { try runtime.resolve(request) }
                 } catch { failure = error.localizedDescription }
-            } else { failure = "触地定位模型未加载" }
+            } else { failure = courtText("触地定位模型未加载") }
             let elapsed = ProcessInfo.processInfo.systemUptime - start
             lock.lock()
             bounceInFlight = false; metrics.bounceBusySeconds += elapsed
@@ -533,7 +533,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             if let failure { metrics.bounceErrors += 1; metrics.lastError = failure }
             lock.unlock()
             guard let id = request.eventID else { return }
-            let estimate = resolved?.estimate ?? .init(sourcePTS: request.pts, confidence: 0, reason: "触地定位失败：\(failure ?? "未知错误")")
+            let estimate = resolved?.estimate ?? .init(sourcePTS: request.pts, confidence: 0, reason: courtFormat("触地定位失败：%1$@", "\(failure ?? "未知错误")"))
             let succeeded = resolved != nil
             worker.async { [self] in applyBounce(id, estimate, resolved?.mapping, resolved: succeeded) }
         }

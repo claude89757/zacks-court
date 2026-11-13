@@ -13,7 +13,7 @@ import CourtCore
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    CourtNotice(text: "实验功能：查看独立模型的球点候选，暂不提供球速。")
+                    CourtNotice(text: courtText("实验功能：查看独立模型的球点候选，暂不提供球速。"))
                         .accessibilityIdentifier("court.independent.notice")
                     inputPanel
                     if model.isBusy { progressPanel }
@@ -23,22 +23,22 @@ import CourtCore
                     }
                     if let result = model.result { resultPanel(result) }
                     CourtPanel {
-                        CourtMetric(title: "球速", value: model.speedText, unit: "km/h")
+                        CourtMetric(title: courtText("球速"), value: model.speedText, unit: "km/h")
                             .accessibilityIdentifier("court.independent.speed")
                         Text(model.speedReason).font(.callout).foregroundStyle(CourtStyle.muted)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("court.independent.speedReason")
-                        CourtNotice(text: "只在本机保存分析报告，不复制视频。重新打开画面需重选原视频。")
+                        CourtNotice(text: courtText("只在本机保存分析报告，不复制视频。重新打开画面需重选原视频。"))
                     }
                 }
                 .padding(22).frame(maxWidth: 850).frame(maxWidth: .infinity)
             }
             .accessibilityIdentifier("court.independent.scroll")
             .background(CourtStyle.background)
-            .navigationTitle("本地视频实验")
+            .navigationTitle(courtText("本地视频实验"))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") { model.close(); dismiss() }
+                    Button(courtText("完成")) { model.close(); dismiss() }
                         .frame(minHeight: 44).accessibilityIdentifier("court.independent.close")
                 }
             }
@@ -64,13 +64,13 @@ import CourtCore
     }
     private var inputPanel: some View {
         @Bindable var editable = model
-        return CourtPanel("分析本机视频") {
+        return CourtPanel(courtText("分析本机视频")) {
             switch model.modelAvailability {
-            case .checking: Text("正在检查独立模型…").font(.callout).accessibilityIdentifier("court.independent.modelStatus")
-            case .available: CourtStatus(text: "独立模型可用", tone: .idle).accessibilityIdentifier("court.independent.modelStatus")
+            case .checking: Text(courtText("正在检查独立模型…")).font(.callout).accessibilityIdentifier("court.independent.modelStatus")
+            case .available: CourtStatus(text: courtText("独立模型可用"), tone: .idle).accessibilityIdentifier("court.independent.modelStatus")
             case .unavailable(let reason): CourtNotice(text: reason, warning: true).accessibilityIdentifier("court.independent.modelStatus")
             }
-            Button { choosingVideo = true } label: { Label("选择视频", systemImage: "folder") }
+            Button { choosingVideo = true } label: { Label(courtText("选择视频"), systemImage: "folder") }
                 .buttonStyle(CourtButton()).disabled(model.isBusy)
                 .accessibilityIdentifier("court.independent.choose")
             if let filename = model.filename {
@@ -78,15 +78,15 @@ import CourtCore
                     .accessibilityIdentifier("court.independent.filename")
             }
             VStack(alignment: .leading, spacing: 8) {
-                Text("起始位置（秒）").font(.callout)
-                secondsField("起始位置", value: $editable.startSeconds, id: "court.independent.startSeconds")
-                Text("分析时长（秒）").font(.callout)
-                secondsField("分析时长", value: $editable.durationSeconds, id: "court.independent.durationSeconds")
-                Text("需要60fps视频，每次最多120秒；实际帧时间以原视频为准。")
+                Text(courtText("起始位置（秒）")).font(.callout)
+                secondsField(courtText("起始位置"), value: $editable.startSeconds, id: "court.independent.startSeconds")
+                Text(courtText("分析时长（秒）")).font(.callout)
+                secondsField(courtText("分析时长"), value: $editable.durationSeconds, id: "court.independent.durationSeconds")
+                Text(courtText("需要60fps视频，每次最多120秒；实际帧时间以原视频为准。"))
                     .font(.caption).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
             }.disabled(model.isBusy)
             Button { model.start() } label: {
-                Label(model.result == nil ? "开始分析" : "重新分析", systemImage: "sparkle.magnifyingglass")
+                Label(model.result == nil ? courtText("开始分析") : courtText("重新分析"), systemImage: "sparkle.magnifyingglass")
                     .frame(maxWidth: .infinity)
             }.buttonStyle(CourtButton(primary: true)).disabled(!model.canStart)
                 .accessibilityIdentifier("court.independent.start")
@@ -104,18 +104,18 @@ import CourtCore
             ProgressView(value: model.progressFraction).accessibilityIdentifier("court.independent.progress")
             Text(model.progressText).font(.callout).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("court.independent.progressText")
-            Button(model.phase == .cancelling ? "正在取消…" : "取消") { model.cancel() }
+            Button(model.phase == .cancelling ? courtText("正在取消…") : courtText("取消")) { model.cancel() }
                 .buttonStyle(CourtButton()).disabled(model.phase == .cancelling)
                 .accessibilityIdentifier("court.independent.cancel")
         }
     }
     private func resultPanel(_ result: IndependentLocalVideoResult) -> some View {
-        CourtPanel("逐帧结果") {
-            Text("读取\(result.frames.count)帧 · 分析\(result.inferredFrames)帧")
+        CourtPanel(courtText("逐帧结果")) {
+            Text(courtFormat("读取%1$@帧 · 分析%2$@帧", "\(result.frames.count)", "\(result.inferredFrames)"))
                 .font(.callout).accessibilityIdentifier("court.independent.result")
             saveStatus
             if let frame = model.selectedFrame {
-                Text("解码帧索引 \(frame.decodeIndex) · 第\(model.selectedFrameIndex+1)/\(result.frames.count)帧")
+                Text(courtFormat("解码帧索引 %1$@ · 第%2$@/%3$@帧", "\(frame.decodeIndex)", "\(model.selectedFrameIndex+1)", "\(result.frames.count)"))
                     .font(.headline).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("court.independent.frameIndex")
                 Text(Self.frameStatus(frame)).font(.callout).foregroundStyle(CourtStyle.muted)
@@ -138,67 +138,67 @@ import CourtCore
                             }
                         }
                         .background(CourtStyle.inset)
-                        .accessibilityLabel("与原始时间精确对应的视频帧")
+                        .accessibilityLabel(courtText("与原始时间精确对应的视频帧"))
                         .accessibilityIdentifier("court.independent.frameImage")
                 } else if model.isLoadingFrame {
-                    ProgressView("正在读取这一帧…").frame(maxWidth: .infinity, minHeight: 80)
+                    ProgressView(courtText("正在读取这一帧…")).frame(maxWidth: .infinity, minHeight: 80)
                 } else {
-                    CourtNotice(text: model.frameError ?? "这一帧暂无可显示画面。", warning: model.frameError != nil)
+                    CourtNotice(text: model.frameError ?? courtText("这一帧暂无可显示画面。"), warning: model.frameError != nil)
                         .accessibilityIdentifier("court.independent.frameUnavailable")
-                    Button(model.frameError == nil ? "读取此帧" : "重试画面") { model.selectFrame(index: model.selectedFrameIndex) }
+                    Button(model.frameError == nil ? courtText("读取此帧") : courtText("重试画面")) { model.selectFrame(index: model.selectedFrameIndex) }
                         .buttonStyle(CourtButton()).disabled(model.isBusy || model.isLoadingFrame)
                         .accessibilityIdentifier("court.independent.reloadFrame")
                 }
                 HStack(spacing: 8) {
                     Circle().stroke(Color.white, lineWidth: 2).background(CourtStyle.inset, in: Circle()).frame(width: 12, height: 12)
-                    Text("球点候选").font(.caption)
+                    Text(courtText("球点候选")).font(.caption)
                 }.foregroundStyle(.white).accessibilityIdentifier("court.independent.legend")
                 Text(Self.point(frame)).font(.callout.monospaced()).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("court.independent.framePoint")
                 VStack(spacing: 10) {
-                    Button { model.selectFrame(index: model.selectedFrameIndex-1) } label: { Label("上一帧", systemImage: "chevron.left").frame(maxWidth: .infinity) }
+                    Button { model.selectFrame(index: model.selectedFrameIndex-1) } label: { Label(courtText("上一帧"), systemImage: "chevron.left").frame(maxWidth: .infinity) }
                         .buttonStyle(CourtButton()).disabled(model.selectedFrameIndex == 0)
                         .accessibilityIdentifier("court.independent.previous")
-                    Button { model.selectFrame(index: model.selectedFrameIndex+1) } label: { Label("下一帧", systemImage: "chevron.right").frame(maxWidth: .infinity) }
+                    Button { model.selectFrame(index: model.selectedFrameIndex+1) } label: { Label(courtText("下一帧"), systemImage: "chevron.right").frame(maxWidth: .infinity) }
                         .buttonStyle(CourtButton()).disabled(model.selectedFrameIndex+1 >= result.frames.count)
                         .accessibilityIdentifier("court.independent.next")
                 }
-            } else { CourtNotice(text: "所选时间段没有返回实际帧。") }
+            } else { CourtNotice(text: courtText("所选时间段没有返回实际帧。")) }
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("独立基础模型 · \(result.modelID)")
-                    Text("来源摘要 \(result.sourceSHA256)").textSelection(.enabled)
-                    Text("候选未经事件、人审或物理精度确认；预热与不完整分组不产生球点。")
+                    Text(courtFormat("独立基础模型 · %1$@", "\(result.modelID)"))
+                    Text(courtFormat("来源摘要 %1$@", "\(result.sourceSHA256)")).textSelection(.enabled)
+                    Text(courtText("候选未经事件、人审或物理精度确认；预热与不完整分组不产生球点。"))
                 }.font(.caption).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
-            } label: { Text("分析来源与限制").frame(minHeight: 44) }
+            } label: { Text(courtText("分析来源与限制")).frame(minHeight: 44) }
             .accessibilityIdentifier("court.independent.provenance")
         }
     }
     @ViewBuilder private var saveStatus: some View {
         if let error = model.saveError {
             CourtNotice(text: error, warning: true).accessibilityIdentifier("court.independent.saveStatus")
-            Button("重试保存报告") { model.retrySave() }.buttonStyle(CourtButton()).disabled(model.isBusy)
+            Button(courtText("重试保存报告")) { model.retrySave() }.buttonStyle(CourtButton()).disabled(model.isBusy)
                 .accessibilityIdentifier("court.independent.retrySave")
         } else if model.savedDirectory != nil {
-            CourtStatus(text: "分析报告已保存在本机", tone: .idle).accessibilityIdentifier("court.independent.saveStatus")
-        } else { Text("报告尚未保存。").font(.caption).foregroundStyle(CourtStyle.muted).accessibilityIdentifier("court.independent.saveStatus") }
+            CourtStatus(text: courtText("分析报告已保存在本机"), tone: .idle).accessibilityIdentifier("court.independent.saveStatus")
+        } else { Text(courtText("报告尚未保存。")).font(.caption).foregroundStyle(CourtStyle.muted).accessibilityIdentifier("court.independent.saveStatus") }
     }
     private static func frameStatus(_ frame: IndependentLocalVideoFrameResult) -> String {
         switch frame.state {
-        case .warmup: return "准备背景 · 尚未推理球点"
-        case .pendingWindow: return "等待完整八帧分组"
-        case .incompleteWindow: return "分组不足或遇到断层 · 未推理球点"
-        case .tracked: return "球点候选 · 未确认真实球身份"
-        case .missing: return frame.selection?.missingReason == "association_rejected" ? "关联未通过 · 球点未知" : "未找到球点候选"
+        case .warmup: return courtText("准备背景 · 尚未推理球点")
+        case .pendingWindow: return courtText("等待完整八帧分组")
+        case .incompleteWindow: return courtText("分组不足或遇到断层 · 未推理球点")
+        case .tracked: return courtText("球点候选 · 未确认真实球身份")
+        case .missing: return frame.selection?.missingReason == "association_rejected" ? courtText("关联未通过 · 球点未知") : courtText("未找到球点候选")
         }
     }
     private static func pts(_ frame: IndependentLocalVideoFrameResult) -> String {
         let t = frame.time
         let raw = frame.presentationTime
-        return "原PTS \(t.sourcePTS) × \(t.timeBaseNumerator)/\(t.timeBaseDenominator) 秒\n原始刻度 \(raw.value)/\(raw.timescale) · epoch \(raw.epoch)"
+        return courtFormat("原PTS %1$@ × %2$@/%3$@ 秒n原始刻度 %4$@/%5$@ · epoch %6$@", "\(t.sourcePTS)", "\(t.timeBaseNumerator)", "\(t.timeBaseDenominator)", "\(raw.value)", "\(raw.timescale)", "\(raw.epoch)")
     }
     private static func point(_ frame: IndependentLocalVideoFrameResult) -> String {
-        guard let point = frame.candidate?.originalXY, point.count == 2 else { return "原图球点：—" }
-        return "原图候选球点：x \(point[0])，y \(point[1]) 像素"
+        guard let point = frame.candidate?.originalXY, point.count == 2 else { return courtText("原图球点：—") }
+        return courtFormat("原图候选球点：x %1$@，y %2$@ 像素", "\(point[0])", "\(point[1])")
     }
 }

@@ -15,8 +15,8 @@ public enum WireProtocol {
     public static let version = 2
     static func mismatch(_ peer: Int) -> String {
         peer < version
-            ? "另一台设备运行旧版 Zacks Court（协议 v\(peer)），请把两台设备更新到同一版本。"
-            : "另一台设备运行更新版本的 Zacks Court（协议 v\(peer)），请更新这台设备。"
+            ? courtFormat("另一台设备运行旧版 Zacks Court（协议 v%1$@），请把两台设备更新到同一版本。", "\(peer)")
+            : courtFormat("另一台设备运行更新版本的 Zacks Court（协议 v%1$@），请更新这台设备。", "\(peer)")
     }
 }
 
@@ -65,7 +65,7 @@ public struct StreamPacket {
         let metadata = try JSONEncoder().encode(header)
         let size = 4 + metadata.count + payload.count
         guard metadata.count <= PacketDecoder.maximumHeader, size <= PacketDecoder.maximumBody else {
-            throw CourtError.message("传输包超过协议上限。")
+            throw CourtError.message(courtText("传输包超过协议上限。"))
         }
         var data = Data()
         data.appendUInt32(UInt32(size)); data.appendUInt32(UInt32(metadata.count))
@@ -83,23 +83,23 @@ public struct PacketDecoder {
     public mutating func append(_ chunk: Data) throws -> [StreamPacket] {
         guard chunk.count <= Self.maximumBody + 4,
               pending.count + chunk.count <= Self.maximumBody * 2 + 8 else {
-            throw CourtError.message("接收缓冲超限。")
+            throw CourtError.message(courtText("接收缓冲超限。"))
         }
         pending.append(chunk)
         var packets: [StreamPacket] = []
         var offset = 0
         while pending.count - offset >= 4 {
             let count = Int(pending.uint32(at: offset))
-            guard count >= 4, count <= Self.maximumBody else { throw CourtError.message("无效的视频包长度。") }
+            guard count >= 4, count <= Self.maximumBody else { throw CourtError.message(courtText("无效的视频包长度。")) }
             guard pending.count - offset >= count + 4 else { break }
             let headerCount = Int(pending.uint32(at: offset + 4))
             guard headerCount > 0, headerCount <= Self.maximumHeader, headerCount <= count - 4 else {
-                throw CourtError.message("无效的视频元数据长度。")
+                throw CourtError.message(courtText("无效的视频元数据长度。"))
             }
             let start = offset + 8
             let header = try JSONDecoder().decode(StreamHeader.self, from: pending.subdata(in: start..<(start + headerCount)))
             guard header.version == WireProtocol.version else { throw CourtError.incompatible(WireProtocol.mismatch(header.version)) }
-            guard let kind = WireKind(rawValue: header.kind) else { throw CourtError.message("不支持的传输内容：\(header.kind)") }
+            guard let kind = WireKind(rawValue: header.kind) else { throw CourtError.message(courtFormat("不支持的传输内容：%1$@", "\(header.kind)")) }
             let payload = pending.subdata(in: (start + headerCount)..<(offset + 4 + count))
             switch kind {
             case .preview:
@@ -107,19 +107,19 @@ public struct PacketDecoder {
                       let duration = header.duration, duration.isFinite, duration > 0, duration <= 1,
                       header.streamID != nil, header.sequence != nil,
                       header.keyframe != nil, !payload.isEmpty else {
-                    throw CourtError.message("视频帧缺少有效的来源时间戳。")
+                    throw CourtError.message(courtText("视频帧缺少有效的来源时间戳。"))
                 }
                 if let sets = header.parameterSets {
                     guard sets.count == 2, sets.allSatisfy({ !$0.isEmpty && $0.count <= 4096 }) else {
-                        throw CourtError.message("无效的 H.264 参数集。")
+                        throw CourtError.message(courtText("无效的 H.264 参数集。"))
                     }
                 }
             case .still:
                 guard !payload.isEmpty, let width = header.width, let height = header.height,
-                      (1...4096).contains(width), (1...4096).contains(height) else { throw CourtError.message("无效的标定静帧。") }
+                      (1...4096).contains(width), (1...4096).contains(height) else { throw CourtError.message(courtText("无效的标定静帧。")) }
             case .file:
                 guard header.sessionID != nil, let name = header.filename, let chunkOffset = header.offset, let total = header.total,
-                      chunkOffset >= 0, total >= chunkOffset + Int64(payload.count) else { throw CourtError.message("无效的录像传输分块。") }
+                      chunkOffset >= 0, total >= chunkOffset + Int64(payload.count) else { throw CourtError.message(courtText("无效的录像传输分块。")) }
                 try SessionStore.validateRecordingFilename(name)
             case .hello, .status, .control, .analysis, .session:
                 break

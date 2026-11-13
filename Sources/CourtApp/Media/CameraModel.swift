@@ -50,12 +50,12 @@ final class CameraModel {
     /// Why this device cannot be the camera, in the words the user sees.
     static var unsupportedReason: String {
         #if targetEnvironment(simulator)
-        return "模拟器没有相机，不能作为机位。"
+        return courtText("模拟器没有相机，不能作为机位。")
         #elseif os(macOS)
         // A Mac's model identifier (Mac16,11) means nothing to the user; say what to do instead.
-        return "Mac 不能作为机位：机位需要 iPhone 13 或更新的 iPhone。这台 Mac 可以选择「看板」。"
+        return courtText("Mac 不能作为机位：机位需要 iPhone 13 或更新的 iPhone。这台 Mac 可以选择「看板」。")
         #else
-        return "该设备（\(CameraHardware.name(hardware))）不能作为机位：机位需要 iPhone 13 或更新的 iPhone。"
+        return courtFormat("该设备（%1$@）不能作为机位：机位需要 iPhone 13 或更新的 iPhone。", "\(CameraHardware.name(hardware))")
         #endif
     }
 
@@ -144,9 +144,9 @@ final class CameraModel {
             #endif
         }
         #if os(iOS)
-        let name = CameraHardware.name(Self.hardware) + " 机位"
+        let name = CameraHardware.name(Self.hardware) + courtText(" 机位")
         #else
-        let name = (Host.current().localizedName ?? "Mac") + " 机位"
+        let name = (Host.current().localizedName ?? "Mac") + courtText(" 机位")
         #endif
         // 自研 selected (or the only bundled set): the in-house live lane replaces the S家 models.
         let analyzer = CourtAnalysisBackend.effective() == .independent
@@ -187,12 +187,12 @@ final class CameraModel {
     var webStatus: String {
         guard let controller else { return "" }
         switch controller.webState {
-        case .off: return "未开启"
-        case .starting: return "正在开启…"
-        case .failed(let reason): return "无法开启：" + reason
+        case .off: return courtText("未开启")
+        case .starting: return courtText("正在开启…")
+        case .failed(let reason): return courtText("无法开启：") + reason
         case .listening:
-            if webAddresses.isEmpty { return "没有可用的局域网地址：请连接 Wi-Fi 或打开个人热点" }
-            return controller.webClients == 0 ? "等待浏览器连接" : "已连接 \(controller.webClients) 个浏览器"
+            if webAddresses.isEmpty { return courtText("没有可用的局域网地址：请连接 Wi-Fi 或打开个人热点") }
+            return controller.webClients == 0 ? courtText("等待浏览器连接") : courtFormat("已连接 %1$@ 个浏览器", "\(controller.webClients)")
         }
     }
 
@@ -203,11 +203,11 @@ final class CameraModel {
         let browsers = controller?.webClients ?? 0
         switch controller?.linkState ?? .unpaired {
         case .connected:
-            return browsers > 0 ? status + " · \(browsers) 个浏览器" : status
+            return browsers > 0 ? status + courtFormat(" · %1$@ 个浏览器", "\(browsers)") : status
         case .unpaired:
-            return browsers > 0 ? "已连接 \(browsers) 个浏览器看板" : "单机模式 · 未连接看板"
+            return browsers > 0 ? courtFormat("已连接 %1$@ 个浏览器看板", "\(browsers)") : courtText("单机模式 · 未连接看板")
         default:
-            return browsers > 0 ? status + " · \(browsers) 个浏览器" : status
+            return browsers > 0 ? status + courtFormat(" · %1$@ 个浏览器", "\(browsers)") : status
         }
     }
 
@@ -235,7 +235,7 @@ final class CameraModel {
         let wasRecording = controller?.session?.state == .active
         stop()
         guard wasRecording else { return }
-        let reason = "应用进入后台，采集已停止，记录已暂停。回到 App 后画面会自动打开，再点「继续」接着记录。"
+        let reason = courtText("应用进入后台，采集已停止，记录已暂停。回到 App 后画面会自动打开，再点「继续」接着记录。")
         await controller?.pause(reason: reason)
         if controller?.session?.state != .active { controller?.notice = reason }
     }
@@ -246,10 +246,10 @@ final class CameraModel {
     var connected: Bool { controller?.linkState == .connected }
     var status: String {
         switch controller?.linkState ?? .unpaired {
-        case .unpaired: return "单机模式 · 未连接看板"
-        case .connecting: return "正在连接看板…"
-        case .waiting(let reason): return "看板连接中断，正在重连（\(reason == CourtConnection.peerClosed ? "看板已断开" : reason)）· 录像与分析照常进行"
-        case .connected: return "已连接看板" + (controller?.displayName.map { " · \($0)" } ?? "") + (controller?.linkPath.map { " · \($0.title)" } ?? "")
+        case .unpaired: return courtText("单机模式 · 未连接看板")
+        case .connecting: return courtText("正在连接看板…")
+        case .waiting(let reason): return courtFormat("看板连接中断，正在重连（%1$@）· 录像与分析照常进行", "\(reason == CourtConnection.peerClosed ? "看板已断开" : reason)")
+        case .connected: return courtText("已连接看板") + (controller?.displayName.map { " · \($0)" } ?? "") + (controller?.linkPath.map { " · \($0.title)" } ?? "")
         case .failed(let reason): return reason
         }
     }
@@ -272,16 +272,16 @@ final class CameraModel {
         let token = lifecycle
         let allowed = await AVCaptureDevice.requestAccess(for: .video)
         guard token == lifecycle else { return }
-        guard allowed else { error = "请在系统设置中允许 Zacks Court 使用相机。"; return }
+        guard allowed else { error = courtText("请在系统设置中允许 Zacks Court 使用相机。"); return }
         #if os(iOS)
         let orientation = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first(where: { $0.activationState == .foregroundActive })?.interfaceOrientation
         guard orientation == .landscapeLeft || orientation == .landscapeRight else {
-            error = "正在切换横屏。请将设备横放并固定后再开始采集。"
+            error = courtText("正在切换横屏。请将设备横放并固定后再开始采集。")
             return
         }
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            error = "没有可用的后置主摄像头。"; return
+            error = courtText("没有可用的后置主摄像头。"); return
         }
         stopMonitoringRotation()
         let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
@@ -308,7 +308,7 @@ final class CameraModel {
     func startForMeasurement() async {
         guard !streaming else { return }
         guard Self.isSupportedDevice else { error = Self.unsupportedReason; return }
-        guard await AVCaptureDevice.requestAccess(for: .video) else { error = "请在系统设置中允许 Zacks Court 使用相机。"; return }
+        guard await AVCaptureDevice.requestAccess(for: .video) else { error = courtText("请在系统设置中允许 Zacks Court 使用相机。"); return }
         error = nil; engine.start(rotationAngle: 0)
     }
     /// The picture opens by itself when camera mode starts and when the app returns to the
@@ -321,7 +321,7 @@ final class CameraModel {
         guard autoStartWanted, !streaming, Self.isSupportedDevice, CameraAutopilot.requested == nil else { return }
         // Ask for the camera the moment camera mode opens, not after the phone is turned.
         let token = lifecycle
-        guard await AVCaptureDevice.requestAccess(for: .video) else { error = "请在系统设置中允许 Zacks Court 使用相机。"; return }
+        guard await AVCaptureDevice.requestAccess(for: .video) else { error = courtText("请在系统设置中允许 Zacks Court 使用相机。"); return }
         guard token == lifecycle, autoStartWanted, !streaming else { return }
         #if os(iOS)
         // Entering camera mode turns the screen to landscape; wait for it instead of reporting an error.
@@ -354,7 +354,7 @@ final class CameraModel {
         let wasRecording = controller?.session?.state == .active
         engine.stop()
         guard wasRecording else { return }
-        let reason = "手机方向已改变，记录已暂停。横放固定后画面会自动恢复，再点「继续」接着记录。"
+        let reason = courtText("手机方向已改变，记录已暂停。横放固定后画面会自动恢复，再点「继续」接着记录。")
         await controller?.pause(reason: reason)
         // Stopping capture may pause first with the generic reason; this one says what happened.
         if controller?.session?.state != .active { controller?.notice = reason }
@@ -402,24 +402,24 @@ final class CameraModel {
         guard let controller else { return [] }
         var warnings: [String] = []
         let metrics = controller.metrics
-        if let failure = metrics.loadError { warnings.append("分析模型未能加载（\(failure)），本次只录像。") }
-        else if streaming, metrics.ready, !metrics.tennisAvailable { warnings.append("分析模型不可用，本次只录像。") }
+        if let failure = metrics.loadError { warnings.append(courtFormat("分析模型未能加载（%1$@），本次只录像。", "\(failure)")) }
+        else if streaming, metrics.ready, !metrics.tennisAvailable { warnings.append(courtText("分析模型不可用，本次只录像。")) }
         if streaming, metrics.pictureMoving {
-            warnings.append("画面在动：暂不记击球，录像照常。把机位架稳或靠住，画面停稳后自动继续。")
+            warnings.append(courtText("画面在动：暂不记击球，录像照常。把机位架稳或靠住，画面停稳后自动继续。"))
         }
         if streaming, let lag = controller.analysisLag, lag > CameraLoadPolicy.lagHighSeconds {
             warnings.append(Self.lagWarning(lag, shed: controller.shed.level, cause: controller.shedCause,
                                             thermal: ProcessInfo.processInfo.thermalState))
         }
-        if ProcessInfo.processInfo.isLowPowerModeEnabled { warnings.append("低电量模式已开启，可能影响实时分析：接上电源后在设置里关闭低电量模式。") }
+        if ProcessInfo.processInfo.isLowPowerModeEnabled { warnings.append(courtText("低电量模式已开启，可能影响实时分析：接上电源后在设置里关闭低电量模式。")) }
         switch ProcessInfo.processInfo.thermalState {
-        case .serious: warnings.append("机位温度偏高：把机位移到阴凉处、避开阳光直射，取下手机壳。")
-        case .critical: warnings.append("机位过热：遮阳降温，必要时暂停记录。")
+        case .serious: warnings.append(courtText("机位温度偏高：把机位移到阴凉处、避开阳光直射，取下手机壳。"))
+        case .critical: warnings.append(courtText("机位过热：遮阳降温，必要时暂停记录。"))
         default: break
         }
         // Only recent drops: one dropped frame early on must not keep a warning up for the whole record.
         if let latest = controller.counters.latestPTS, let drop = controller.counters.lastCaptureDropPTS, latest - drop <= 30 {
-            warnings.append("最近 30 秒相机丢帧：关掉其他占用相机或耗电的 App，或让机位降温。")
+            warnings.append(courtText("最近 30 秒相机丢帧：关掉其他占用相机或耗电的 App，或让机位降温。"))
         }
         return warnings
     }
@@ -428,11 +428,11 @@ final class CameraModel {
     /// cool phone comes from the work itself, and the camera sheds load for it on its own.
     nonisolated static func lagWarning(_ lag: Double, shed: Int, cause: CameraLoadPolicy.Cause?,
                                        thermal: ProcessInfo.ThermalState) -> String {
-        let text = String(format: "实时分析落后 %.1f 秒：录像不受影响", lag)
+        let text = courtPrintf("实时分析落后 %.1f 秒：录像不受影响", lag)
         if cause == .lag, shed >= 2 { return text + "。" }     // the shedding notice beside it says what was cut
-        if cause == .lag, shed == 1 { return text + "，机位已减少预览和人员检测来追赶。" }
-        if [.fair, .serious, .critical].contains(thermal) { return text + "，让机位遮阳降温、关掉其他 App 可以缓解。" }
-        return text + "；持续落后时机位会自动减少预览和人员检测。关掉机位上其他 App 也有帮助。"
+        if cause == .lag, shed == 1 { return text + courtText("，机位已减少预览和人员检测来追赶。") }
+        if [.fair, .serious, .critical].contains(thermal) { return text + courtText("，让机位遮阳降温、关掉其他 App 可以缓解。") }
+        return text + courtText("；持续落后时机位会自动减少预览和人员检测。关掉机位上其他 App 也有帮助。")
     }
 
     nonisolated static func deviceState(pressure: String?, exposure: (ms: Double, iso: Double)?, standby: Bool) -> CameraDeviceState {
@@ -479,29 +479,29 @@ final class CameraModel {
         standbyMinute = Int(Date().timeIntervalSince(recordingSince ?? Date()) / 60)
     }
     var standbyLines: [String] {
-        var lines = ["REC \(standbyMinute) 分"]
+        var lines = [courtFormat("REC %1$@ 分", "\(standbyMinute)")]
         if let controller {
-            if controller.shed.level >= 3 { lines.append("分析：暂停（设备降载）") }
-            else if controller.shed.level > 0 { lines.append("分析：降载") }
-            else { lines.append(controller.metrics.tennisAvailable ? "分析：正常" : "分析：未运行") }
+            if controller.shed.level >= 3 { lines.append(courtText("分析：暂停（设备降载）")) }
+            else if controller.shed.level > 0 { lines.append(courtText("分析：降载")) }
+            else { lines.append(controller.metrics.tennisAvailable ? courtText("分析：正常") : courtText("分析：未运行")) }
         }
-        lines.append(anyDisplayConnected ? "已连接看板" : "未连接看板 · 本机录像继续")
+        lines.append(anyDisplayConnected ? courtText("已连接看板") : courtText("未连接看板 · 本机录像继续"))
         #if os(iOS)
         let level = UIDevice.current.batteryLevel
-        if level >= 0 { lines.append("电量 \(Int((level * 100).rounded()))%") }
+        if level >= 0 { lines.append(courtFormat("电量 %1$@%", "\(Int((level * 100).rounded()))")) }
         #endif
         return lines
     }
     var standbyWarning: String? {
         #if os(iOS)
         let level = UIDevice.current.batteryLevel
-        if level >= 0, level < 0.15, UIDevice.current.batteryState == .unplugged { return "电量低，请接上电源" }
+        if level >= 0, level < 0.15, UIDevice.current.batteryState == .unplugged { return courtText("电量低，请接上电源") }
         #endif
         switch ProcessInfo.processInfo.thermalState {
-        case .serious, .critical: return "设备温度偏高"
+        case .serious, .critical: return courtText("设备温度偏高")
         default:
             let drops = controller?.counters.captureDrops ?? 0
-            return drops > 0 ? "相机丢帧 \(drops)" : nil
+            return drops > 0 ? courtFormat("相机丢帧 %1$@", "\(drops)") : nil
         }
     }
 

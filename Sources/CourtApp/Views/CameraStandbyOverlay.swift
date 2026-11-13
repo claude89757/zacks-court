@@ -16,7 +16,7 @@ struct CameraStandbyOverlay: View {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(lines, id: \.self) { Text($0) }
                 if let warning { Text(warning).foregroundStyle(CourtStyle.warning.opacity(0.7)) }
-                Text("轻点屏幕唤醒").padding(.top, 6)
+                Text(courtText("轻点屏幕唤醒")).padding(.top, 6)
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(Color(white: 0.38))
@@ -27,8 +27,8 @@ struct CameraStandbyOverlay: View {
         .contentShape(Rectangle())
         .onTapGesture(perform: wake)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("省电值守中。" + lines.joined(separator: "，") + (warning.map { "，" + $0 } ?? ""))
-        .accessibilityHint("轻点唤醒机位画面")
+        .accessibilityLabel(courtText("省电值守中。") + lines.joined(separator: "，") + (warning.map { "，" + $0 } ?? ""))
+        .accessibilityHint(courtText("轻点唤醒机位画面"))
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("court.camera.standby")
     }

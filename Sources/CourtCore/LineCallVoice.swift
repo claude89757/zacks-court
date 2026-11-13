@@ -9,7 +9,7 @@ import Foundation
 public struct LineCallVoice: Identifiable, Hashable, Sendable {
     public enum Gender: String, Sendable, CaseIterable {
         case male, female
-        public var text: String { self == .male ? "男声" : "女声" }
+        public var text: String { self == .male ? courtText("男声") : courtText("女声") }
     }
 
     public let id: String

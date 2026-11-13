@@ -43,12 +43,12 @@ public final class H264Encoder {
                 let encoder = Unmanaged<H264Encoder>.fromOpaque(reference).takeUnretainedValue()
                 let context = frameReference.map { Unmanaged<FrameContext>.fromOpaque($0).takeRetainedValue() }
                 guard status == noErr, let sample, let context else {
-                    if status != noErr { encoder.onError?("视频编码失败：\(status)") }; return
+                    if status != noErr { encoder.onError?(courtFormat("视频编码失败：%1$@", "\(status)")) }; return
                 }
                 do { try encoder.output(sample, context: context) }
                 catch { encoder.onError?(error.localizedDescription) }
             }, refcon: Unmanaged.passUnretained(self).toOpaque(), compressionSessionOut: &session)
-        guard status == noErr, let session else { throw CourtError.message("无法启动 H.264 编码器：\(status)") }
+        guard status == noErr, let session else { throw CourtError.message(courtFormat("无法启动 H.264 编码器：%1$@", "\(status)")) }
         let properties: [CFString: Any] = [
             kVTCompressionPropertyKey_RealTime: true,
             kVTCompressionPropertyKey_AllowFrameReordering: false,
@@ -60,10 +60,10 @@ public final class H264Encoder {
         ]
         for (key, value) in properties {
             let code = VTSessionSetProperty(session, key: key, value: value as CFTypeRef)
-            guard code == noErr else { throw CourtError.message("编码参数设置失败：\(key) (\(code))") }
+            guard code == noErr else { throw CourtError.message(courtFormat("编码参数设置失败：%1$@ (%2$@)", "\(key)", "\(code)")) }
         }
         let prepared = VTCompressionSessionPrepareToEncodeFrames(session)
-        guard prepared == noErr else { throw CourtError.message("编码器准备失败：\(prepared)") }
+        guard prepared == noErr else { throw CourtError.message(courtFormat("编码器准备失败：%1$@", "\(prepared)")) }
         if #available(iOS 17.4, *) {
             let hardware = UnsafeMutablePointer<CFTypeRef?>.allocate(capacity: 1)
             hardware.initialize(to: nil)
@@ -85,7 +85,7 @@ public final class H264Encoder {
         let status = VTCompressionSessionEncodeFrame(session, imageBuffer: image, presentationTimeStamp: pts,
             duration: CMTime(value: 1, timescale: Int32(fps)), frameProperties: properties,
             sourceFrameRefcon: context.toOpaque(), infoFlagsOut: nil)
-        if status != noErr { context.release(); onError?("无法编码这一帧：\(status)") }
+        if status != noErr { context.release(); onError?(courtFormat("无法编码这一帧：%1$@", "\(status)")) }
     }
 
     public func finish() {
@@ -101,12 +101,12 @@ public final class H264Encoder {
         let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: false) as? [[CFString: Any]]
         let keyframe = !((attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool) ?? false)
         let size = CMBlockBufferGetDataLength(block)
-        guard size > 0, size < PacketDecoder.maximumBody - PacketDecoder.maximumHeader else { throw CourtError.message("编码帧大小异常。") }
+        guard size > 0, size < PacketDecoder.maximumBody - PacketDecoder.maximumHeader else { throw CourtError.message(courtText("编码帧大小异常。")) }
         var payload = Data(count: size)
         let copied = payload.withUnsafeMutableBytes {
             CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: size, destination: $0.baseAddress!)
         }
-        guard copied == noErr else { throw CourtError.message("无法读取编码帧。") }
+        guard copied == noErr else { throw CourtError.message(courtText("无法读取编码帧。")) }
         var header = StreamHeader(kind: kind)
         header.streamID = streamID; header.sequence = context.sequence
         header.pts = CMSampleBufferGetPresentationTimeStamp(sample).seconds
@@ -120,7 +120,7 @@ public final class H264Encoder {
                 var pointer: UnsafePointer<UInt8>?; var length = 0; var count = 0; var nalLength: Int32 = 0
                 let code = CMVideoFormatDescriptionGetH264ParameterSetAtIndex(format, parameterSetIndex: index,
                     parameterSetPointerOut: &pointer, parameterSetSizeOut: &length, parameterSetCountOut: &count, nalUnitHeaderLengthOut: &nalLength)
-                guard code == noErr, let pointer, nalLength == 4 else { throw CourtError.message("不支持的 H.264 参数。") }
+                guard code == noErr, let pointer, nalLength == 4 else { throw CourtError.message(courtText("不支持的 H.264 参数。")) }
                 return Data(bytes: pointer, count: length)
             }
         }
@@ -142,10 +142,10 @@ public final class H264SampleAssembler {
         guard h.kind == "video" || h.kind == "preview", let id = h.streamID, let pts = h.pts, pts.isFinite,
               pts >= 0, let duration = h.duration, duration.isFinite, duration > 0, duration <= 1,
               let sequence = h.sequence, !packet.payload.isEmpty, packet.payload.count < PacketDecoder.maximumBody else {
-            throw CourtError.message("缺少视频时间信息。")
+            throw CourtError.message(courtText("缺少视频时间信息。"))
         }
         if streamID != id { reset(); streamID = id }
-        if let lastPTS, pts <= lastPTS { throw CourtError.message("视频时间戳未递增。") }
+        if let lastPTS, pts <= lastPTS { throw CourtError.message(courtText("视频时间戳未递增。")) }
         if let lastSequence, sequence != lastSequence &+ 1 {
             // Predictive compressed frames after a gap are unsafe until the next keyframe.
             format = nil
@@ -153,7 +153,7 @@ public final class H264SampleAssembler {
         lastSequence = sequence; lastPTS = pts
         if h.keyframe == true, let sets = h.parameterSets {
             guard sets.count == 2, sets.allSatisfy({ !$0.isEmpty && $0.count <= 4096 }) else {
-                throw CourtError.message("缺少 H.264 参数集。")
+                throw CourtError.message(courtText("缺少 H.264 参数集。"))
             }
             let status = sets[0].withUnsafeBytes { first in sets[1].withUnsafeBytes { second in
                 let pointers = [first.bindMemory(to: UInt8.self).baseAddress!, second.bindMemory(to: UInt8.self).baseAddress!]
@@ -161,11 +161,11 @@ public final class H264SampleAssembler {
                 return CMVideoFormatDescriptionCreateFromH264ParameterSets(allocator: kCFAllocatorDefault,
                     parameterSetCount: 2, parameterSetPointers: pointers, parameterSetSizes: sizes, nalUnitHeaderLength: 4, formatDescriptionOut: &format)
             }}
-            guard status == noErr else { throw CourtError.message("无法解析 H.264 参数：\(status)") }
+            guard status == noErr else { throw CourtError.message(courtFormat("无法解析 H.264 参数：%1$@", "\(status)")) }
             if let format {
                 let dimensions = CMVideoFormatDescriptionGetDimensions(format)
                 guard dimensions.width > 0, dimensions.height > 0, dimensions.width <= 1920, dimensions.height <= 1920,
-                      dimensions.width * dimensions.height <= 1920 * 1080 else { throw CourtError.message("视频尺寸超出 1080p 上限。") }
+                      dimensions.width * dimensions.height <= 1920 * 1080 else { throw CourtError.message(courtText("视频尺寸超出 1080p 上限。")) }
             }
         }
         guard let format else { return nil }
@@ -173,18 +173,18 @@ public final class H264SampleAssembler {
         let code = CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil,
             blockLength: packet.payload.count, blockAllocator: kCFAllocatorDefault, customBlockSource: nil,
             offsetToData: 0, dataLength: packet.payload.count, flags: 0, blockBufferOut: &block)
-        guard code == noErr, let block else { throw CourtError.message("无法创建视频缓冲。") }
+        guard code == noErr, let block else { throw CourtError.message(courtText("无法创建视频缓冲。")) }
         let copyStatus = packet.payload.withUnsafeBytes {
             CMBlockBufferReplaceDataBytes(with: $0.baseAddress!, blockBuffer: block, offsetIntoDestination: 0, dataLength: packet.payload.count)
         }
-        guard copyStatus == noErr else { throw CourtError.message("视频缓冲写入失败。") }
+        guard copyStatus == noErr else { throw CourtError.message(courtText("视频缓冲写入失败。")) }
         var timing = CMSampleTimingInfo(duration: CMTime(seconds: duration, preferredTimescale: 1_000_000),
             presentationTimeStamp: CMTime(seconds: pts, preferredTimescale: 1_000_000), decodeTimeStamp: .invalid)
         var size = packet.payload.count; var sample: CMSampleBuffer?
         let result = CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: block, formatDescription: format,
             sampleCount: 1, sampleTimingEntryCount: 1, sampleTimingArray: &timing,
             sampleSizeEntryCount: 1, sampleSizeArray: &size, sampleBufferOut: &sample)
-        guard result == noErr, let sample else { throw CourtError.message("无法创建可播放视频帧。") }
+        guard result == noErr, let sample else { throw CourtError.message(courtText("无法创建可播放视频帧。")) }
         if let attachments = CMSampleBufferGetSampleAttachmentsArray(sample, createIfNecessary: true) as? [NSMutableDictionary], let first = attachments.first {
             first[kCMSampleAttachmentKey_NotSync] = h.keyframe != true
         }

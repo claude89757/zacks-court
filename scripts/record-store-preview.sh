@@ -2,7 +2,10 @@
 # Records the App Store preview video (iPhone 6.9", landscape 1920x886, 30 fps, silent audio track)
 # from the demo record on a simulator: the full-screen speed board, then three line-call replays.
 #
-#   ./scripts/record-store-preview.sh <SIMULATOR_UDID> <OUT_DIR>
+#   ./scripts/record-store-preview.sh <SIMULATOR_UDID> <OUT_DIR> [zh-Hans|zh-Hant|en|ja|de|fr]
+#
+# Records one language. Do not copy the file into another locale: the UI must be that language.
+# Requires Xcode, a dedicated simulator, and ffmpeg. This script does not upload anything.
 #
 # Use a dedicated new iPhone 17 Pro Max simulator (booted ones are shared with other sessions).
 # The record is made up by `court-probe demo-session` and titled 演示数据; the video says so in its
@@ -13,6 +16,17 @@
 set -euo pipefail
 UDID=${1:?simulator UDID}
 OUT=${2:?output folder}
+LOCALE=${3:-zh-Hans}
+case "$LOCALE" in
+  zh-Hans) APPLE_LANG=zh-Hans; APPLE_LOCALE=zh_CN ;;
+  zh-Hant) APPLE_LANG=zh-Hant; APPLE_LOCALE=zh_TW ;;
+  en) APPLE_LANG=en; APPLE_LOCALE=en_US ;;
+  ja) APPLE_LANG=ja; APPLE_LOCALE=ja_JP ;;
+  de) APPLE_LANG=de; APPLE_LOCALE=de_DE ;;
+  fr) APPLE_LANG=fr; APPLE_LOCALE=fr_FR ;;
+  *) echo "Unknown locale $LOCALE" >&2; exit 2 ;;
+esac
+command -v xcodebuild >/dev/null || { echo "xcodebuild is required. This environment has not recorded a preview." >&2; exit 2; }
 ROOT=${0:A:h:h}
 DD="$ROOT/.local/dd-store-preview"
 FONT=${COURT_PREVIEW_FONT:-/System/Library/Fonts/Hiragino Sans GB.ttc}
@@ -32,6 +46,10 @@ trap 'git -C "$ROOT" checkout -- apps/iphone/ZacksCourt/Info.plist 2>/dev/null |
 xcodebuild build-for-testing -project apps/iphone/ZacksCourt.xcodeproj -scheme ZacksCourt -configuration Release \
   -destination "id=$UDID" -derivedDataPath "$DD" CODE_SIGNING_ALLOWED=NO -quiet
 APP=$(find "$DD/Build/Products/Release-iphonesimulator" -maxdepth 1 -name 'ZacksCourt.app' | head -1)
+xcrun simctl spawn "$UDID" defaults write "Apple Global Domain" AppleLanguages -array "$APPLE_LANG"
+xcrun simctl spawn "$UDID" defaults write "Apple Global Domain" AppleLocale -string "$APPLE_LOCALE"
+xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
+xcrun simctl boot "$UDID" >/dev/null
 xcrun simctl bootstatus "$UDID" -b >/dev/null
 xcrun simctl install "$UDID" "$APP"
 DATA=$(xcrun simctl get_app_container "$UDID" com.claude89757.zackscourt data)
@@ -44,7 +62,7 @@ xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$RAW" 2>"$LOG" &
 REC=$!
 for _ in {1..50}; do grep -q -i 'recording started' "$LOG" && break; sleep 0.1; done
 START=$(python3 -c 'import time; print(time.time())')
-TEST_RUNNER_COURT_UI_STORE_PREVIEW="$OUT" xcodebuild test-without-building -project apps/iphone/ZacksCourt.xcodeproj -scheme ZacksCourt \
+TEST_RUNNER_COURT_UI_STORE_PREVIEW="$OUT" TEST_RUNNER_COURT_LANGUAGE="$LOCALE" xcodebuild test-without-building -project apps/iphone/ZacksCourt.xcodeproj -scheme ZacksCourt \
   -configuration Release -destination "id=$UDID" -derivedDataPath "$DD" \
   -only-testing:ZacksCourtUITests/WorkspaceUITests/testStorePreviewFlow -quiet || { kill -INT $REC; wait $REC || true; exit 1; }
 STOP=$(python3 -c 'import time; print(time.time())')

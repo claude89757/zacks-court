@@ -1,11 +1,20 @@
 <!doctype html>
 <html lang="zh-Hans">
 <head>
+  <script>
+    // Hide until l10n.js applies a non-Chinese language, so the first paint is not Simplified Chinese.
+    (function () {
+      var q = new URLSearchParams(location.search).get("lang") || "";
+      var tag = q || (navigator.languages && navigator.languages[0]) || "";
+      var hans = !tag || /^zh($|-Hans|-CN|-SG)/i.test(tag);
+      if (!hans) document.documentElement.hidden = true;
+    })();
+  </script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#090e0c">
   <meta name="referrer" content="no-referrer">
-  <title>Zacks Court 看板</title>
+  <title data-l10n="Zacks Court 看板">Zacks Court 看板</title>
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
@@ -13,47 +22,47 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand"><img class="logo" src="logo.svg" alt="" aria-hidden="true"><strong>Zacks Court</strong><span class="muted">浏览器看板</span></div>
-    <div id="link" class="pill" data-testid="court.web.link" role="status" aria-live="polite">连接中…</div>
+    <div class="brand"><img class="logo" src="logo.svg" alt="" aria-hidden="true"><strong>Zacks Court</strong><span class="muted" data-l10n="浏览器看板">浏览器看板</span></div>
+    <div id="link" class="pill" data-testid="court.web.link" role="status" aria-live="polite" data-l10n="连接中…">连接中…</div>
   </header>
 
   <section id="login" class="login" hidden data-testid="court.web.login">
-    <h1>连接机位</h1>
-    <p id="login-reason" class="muted">在机位上点「连接」，扫描二维码；扫不了时输入那一页显示的 6 位配对码。</p>
+    <h1 data-l10n="连接机位">连接机位</h1>
+    <p id="login-reason" class="muted" data-l10n="在机位上点「连接」，扫描二维码；扫不了时输入那一页显示的 6 位配对码。">在机位上点「连接」，扫描二维码；扫不了时输入那一页显示的 6 位配对码。</p>
     <form id="pin-form" autocomplete="off">
-      <input id="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 位配对码" aria-label="6 位配对码" data-testid="court.web.pin">
-      <button type="submit" class="primary" data-testid="court.web.pin.submit">连接</button>
+      <input id="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="6 位配对码" data-l10n-placeholder="6 位配对码" aria-label="6 位配对码" data-l10n-aria="6 位配对码" data-testid="court.web.pin">
+      <button type="submit" class="primary" data-testid="court.web.pin.submit" data-l10n="连接">连接</button>
     </form>
     <p id="login-error" class="error" role="alert"></p>
   </section>
 
   <main id="app" hidden>
-    <section class="bar" aria-label="机位状态" data-testid="court.web.status">
+    <section class="bar" aria-label="机位状态" data-l10n-aria="机位状态" data-testid="court.web.status">
       <div id="camera-name" class="camera-name"></div>
       <div id="chips" class="chips"></div>
-      <button id="challenge-open" class="hawkeye-button challenge-button" data-challenge aria-label="挑战最近一拍" data-testid="court.challenge" hidden>⚑ 挑战</button>
-      <button id="hawkeye-open" class="hawkeye-button" data-testid="court.hawkeye.toggle" hidden>界内外</button>
+      <button id="challenge-open" class="hawkeye-button challenge-button" data-challenge aria-label="挑战最近一拍" data-l10n-aria="挑战最近一拍" data-testid="court.challenge" hidden data-l10n="⚑ 挑战">⚑ 挑战</button>
+      <button id="hawkeye-open" class="hawkeye-button" data-testid="court.hawkeye.toggle" hidden data-l10n="界内外">界内外</button>
       <div id="warnings" class="warnings"></div>
     </section>
 
-    <section class="panel controls" aria-label="记录控制">
+    <section class="panel controls" aria-label="记录控制" data-l10n-aria="记录控制">
       <div class="session-line">
         <div>
           <div class="eyebrow" aria-hidden="true">SESSION</div>
-          <div id="session-title" class="session-title">未开始记录</div>
+          <div id="session-title" class="session-title" data-l10n="未开始记录">未开始记录</div>
           <div id="session-meta" class="muted small"></div>
         </div>
         <div id="elapsed" class="elapsed" data-testid="court.web.elapsed">—</div>
       </div>
       <div id="start-row" class="row">
-        <input id="title" maxlength="100" placeholder="记录标题（可选）" aria-label="记录标题">
-        <button id="start" class="primary" data-testid="court.session.start">开始记录</button>
+        <input id="title" maxlength="100" placeholder="记录标题（可选）" data-l10n-placeholder="记录标题（可选）" aria-label="记录标题" data-l10n-aria="记录标题">
+        <button id="start" class="primary" data-testid="court.session.start" data-l10n="开始记录">开始记录</button>
       </div>
       <div id="run-row" class="row" hidden>
-        <button id="pause" data-testid="court.session.pause">暂停</button>
-        <button id="marker" data-label="精彩" data-testid="court.session.marker">精彩</button>
-        <button id="marker-review" data-label="待复核" data-testid="court.session.marker.review">待复核</button>
-        <button id="finish" class="danger" data-testid="court.session.finish">结束</button>
+        <button id="pause" data-testid="court.session.pause" data-l10n="暂停">暂停</button>
+        <button id="marker" data-label="精彩" data-testid="court.session.marker" data-l10n="精彩">精彩</button>
+        <button id="marker-review" data-label="待复核" data-testid="court.session.marker.review" data-l10n="待复核">待复核</button>
+        <button id="finish" class="danger" data-testid="court.session.finish" data-l10n="结束">结束</button>
       </div>
       <p id="session-wait" class="muted small" role="status" hidden></p>
     </section>
@@ -61,105 +70,105 @@
     <div class="grid">
       <div class="column">
         <section class="panel" data-testid="court.analysis.speed">
-          <div class="row between"><div><div class="eyebrow" aria-hidden="true">BALL SPEED</div><h2>球速</h2></div>
-            <button id="board-open" data-testid="court.speedboard.open">全屏测速牌</button></div>
+          <div class="row between"><div><div class="eyebrow" aria-hidden="true">BALL SPEED</div><h2 data-l10n="球速">球速</h2></div>
+            <button id="board-open" data-testid="court.speedboard.open" data-l10n="全屏测速牌">全屏测速牌</button></div>
           <div class="metrics">
-            <div class="metric"><span class="label">最近一拍</span><span id="speed-latest" class="value">—</span><span class="unit">km/h</span></div>
-            <div class="metric"><span class="label">有效平均</span><span id="speed-average" class="value">—</span><span class="unit">km/h</span></div>
-            <div class="metric"><span class="label">最高估算</span><span id="speed-max" class="value">—</span><span class="unit">km/h</span></div>
+            <div class="metric"><span class="label" data-l10n="最近一拍">最近一拍</span><span id="speed-latest" class="value">—</span><span class="unit">km/h</span></div>
+            <div class="metric"><span class="label" data-l10n="有效平均">有效平均</span><span id="speed-average" class="value">—</span><span class="unit">km/h</span></div>
+            <div class="metric"><span class="label" data-l10n="最高估算">最高估算</span><span id="speed-max" class="value">—</span><span class="unit">km/h</span></div>
           </div>
           <p id="speed-note" class="muted small"></p>
-          <p class="notice">模型估算 · 未完成物理准确率验证。平均与最高仅统计有效值，缺失值不按 0 计算。</p>
+          <p class="notice" data-l10n="模型估算 · 未完成物理准确率验证。平均与最高仅统计有效值，缺失值不按 0 计算。">模型估算 · 未完成物理准确率验证。平均与最高仅统计有效值，缺失值不按 0 计算。</p>
         </section>
 
         <section class="panel" data-testid="court.analysis.placement">
-          <div class="eyebrow" aria-hidden="true">BOUNCE MAP</div><h2>球场落点</h2>
-          <div class="court-wrap"><svg id="court" viewBox="-1.5 -1.5 13.97 26.77" role="group" aria-label="球场落点图"></svg></div>
+          <div class="eyebrow" aria-hidden="true">BOUNCE MAP</div><h2 data-l10n="球场落点">球场落点</h2>
+          <div class="court-wrap"><svg id="court" viewBox="-1.5 -1.5 13.97 26.77" role="group" aria-label="球场落点图" data-l10n-aria="球场落点图"></svg></div>
           <div id="placement-legend" class="legend"></div>
           <p id="placement-note" class="muted small"></p>
-          <p class="notice">俯视参考图，上方为远端。仅绘制可映射的地面触地候选；未知落点不画点。界内外只在打开「界内外」后给出，也是模型估计，不是判罚。</p>
+          <p class="notice" data-l10n="俯视参考图，上方为远端。仅绘制可映射的地面触地候选；未知落点不画点。界内外只在打开「界内外」后给出，也是模型估计，不是判罚。">俯视参考图，上方为远端。仅绘制可映射的地面触地候选；未知落点不画点。界内外只在打开「界内外」后给出，也是模型估计，不是判罚。</p>
         </section>
 
         <section class="panel" data-testid="court.analysis.shots">
-          <div class="eyebrow" aria-hidden="true">SHOTS</div><h2>逐拍</h2>
+          <div class="eyebrow" aria-hidden="true">SHOTS</div><h2 data-l10n="逐拍">逐拍</h2>
           <p id="shots-count" class="muted small"></p>
           <ol id="shots" class="shots"></ol>
-          <button id="shots-more" class="more" hidden data-testid="court.shots.more">显示更早的拍次</button>
-          <p id="shots-empty" class="muted small">出现击球候选后，逐拍列在这里。</p>
+          <button id="shots-more" class="more" hidden data-testid="court.shots.more" data-l10n="显示更早的拍次">显示更早的拍次</button>
+          <p id="shots-empty" class="muted small" data-l10n="出现击球候选后，逐拍列在这里。">出现击球候选后，逐拍列在这里。</p>
         </section>
       </div>
 
       <div class="column">
         <section class="panel" data-testid="court.web.preview">
-          <div class="eyebrow" aria-hidden="true">LIVE VIEW</div><h2>实时画面</h2>
+          <div class="eyebrow" aria-hidden="true">LIVE VIEW</div><h2 data-l10n="实时画面">实时画面</h2>
           <div class="preview-box">
             <img id="preview" alt="机位低清实时画面" hidden>
-            <p id="preview-note" class="muted small">打开后显示机位的低清画面（640×360，最多每秒 5 张，有延迟）。只用于确认机位朝向与取景。</p>
+            <p id="preview-note" class="muted small" data-l10n="打开后显示机位的低清画面（640×360，最多每秒 5 张，有延迟）。只用于确认机位朝向与取景。">打开后显示机位的低清画面（640×360，最多每秒 5 张，有延迟）。只用于确认机位朝向与取景。</p>
           </div>
-          <button id="preview-toggle" data-testid="court.web.preview.toggle">打开实时画面</button>
+          <button id="preview-toggle" data-testid="court.web.preview.toggle" data-l10n="打开实时画面">打开实时画面</button>
         </section>
 
         <section class="panel" data-testid="court.web.camera">
-          <div class="eyebrow" aria-hidden="true">CAMERA</div><h2>机位设置</h2>
+          <div class="eyebrow" aria-hidden="true">CAMERA</div><h2 data-l10n="机位设置">机位设置</h2>
           <div class="row">
-            <button id="wake" data-testid="court.camera.wake">唤醒机位屏幕</button>
+            <button id="wake" data-testid="court.camera.wake" data-l10n="唤醒机位屏幕">唤醒机位屏幕</button>
           </div>
           <div class="hands">
             <label>近端持拍手
-              <select id="near" data-testid="court.handedness.near"><option value="unknown">未知</option><option value="right">右手</option><option value="left">左手</option></select>
+              <select id="near" data-testid="court.handedness.near"><option value="unknown" data-l10n="未知">未知</option><option value="right" data-l10n="右手">右手</option><option value="left" data-l10n="左手">左手</option></select>
             </label>
             <label>远端持拍手
-              <select id="far" data-testid="court.handedness.far"><option value="unknown">未知</option><option value="right">右手</option><option value="left">左手</option></select>
+              <select id="far" data-testid="court.handedness.far"><option value="unknown" data-l10n="未知">未知</option><option value="right" data-l10n="右手">右手</option><option value="left" data-l10n="左手">左手</option></select>
             </label>
           </div>
           <p id="calibration-state" class="muted small"></p>
         </section>
 
         <section class="panel" data-testid="court.analysis.strokes">
-          <div class="eyebrow" aria-hidden="true">STROKE DISTRIBUTION</div><h2>动作类别</h2>
+          <div class="eyebrow" aria-hidden="true">STROKE DISTRIBUTION</div><h2 data-l10n="动作类别">动作类别</h2>
           <div id="strokes"></div>
-          <p class="notice">来自动作模型的分类候选。落地击球尚未区分正反手时，保留原类别；待确认样本计入总数。</p>
+          <p class="notice" data-l10n="来自动作模型的分类候选。落地击球尚未区分正反手时，保留原类别；待确认样本计入总数。">来自动作模型的分类候选。落地击球尚未区分正反手时，保留原类别；待确认样本计入总数。</p>
         </section>
 
         <section class="panel" data-testid="court.history">
-          <div class="row between"><div><div class="eyebrow" aria-hidden="true">HISTORY</div><h2>历史记录</h2></div>
-            <button id="history-refresh" data-testid="court.history.refresh">刷新</button></div>
-          <p class="muted small">保存在机位上的记录。</p>
-          <ul id="history" class="history"><li class="muted small">正在读取机位上的记录…</li></ul>
+          <div class="row between"><div><div class="eyebrow" aria-hidden="true">HISTORY</div><h2 data-l10n="历史记录">历史记录</h2></div>
+            <button id="history-refresh" data-testid="court.history.refresh" data-l10n="刷新">刷新</button></div>
+          <p class="muted small" data-l10n="保存在机位上的记录。">保存在机位上的记录。</p>
+          <ul id="history" class="history"><li class="muted small" data-l10n="正在读取机位上的记录…">正在读取机位上的记录…</li></ul>
         </section>
 
-        <p class="notice">浏览器看板走明文 HTTP，同一网络里能抓包的人可以看到这些数据；需要加密时请用 App 看板。</p>
+        <p class="notice" data-l10n="浏览器看板走明文 HTTP，同一网络里能抓包的人可以看到这些数据；需要加密时请用 App 看板。">浏览器看板走明文 HTTP，同一网络里能抓包的人可以看到这些数据；需要加密时请用 App 看板。</p>
       </div>
     </div>
   </main>
 
   <dialog id="detail" class="sheet" data-testid="court.history.detail">
-    <div class="row between"><h2 id="detail-title">记录</h2><button id="detail-close">关闭</button></div>
+    <div class="row between"><h2 id="detail-title" data-l10n="记录">记录</h2><button id="detail-close" data-l10n="关闭">关闭</button></div>
     <p id="detail-meta" class="muted small"></p>
     <div id="detail-recordings" class="recordings"></div>
     <p id="detail-count" class="muted small"></p>
     <ol id="detail-shots" class="shots"></ol>
-    <button id="detail-more" class="more" hidden data-testid="court.history.more">显示更早的拍次</button>
+    <button id="detail-more" class="more" hidden data-testid="court.history.more" data-l10n="显示更早的拍次">显示更早的拍次</button>
   </dialog>
 
-  <section id="board" class="board" hidden data-testid="court.focus.speed" aria-label="测速牌">
+  <section id="board" class="board" hidden data-testid="court.focus.speed" aria-label="测速牌" data-l10n-aria="测速牌">
     <div class="board-top">
-      <div id="board-modes" class="board-modes" role="radiogroup" aria-label="测速牌显示内容" data-testid="court.speedboard.mode">
-        <button role="radio" aria-checked="true" data-mode="all" aria-label="全部球速" data-testid="court.speedboard.mode.all">球速</button>
-        <button role="radio" aria-checked="false" data-mode="serve" aria-label="发球球速" data-testid="court.speedboard.mode.serve">发球</button>
+      <div id="board-modes" class="board-modes" role="radiogroup" aria-label="测速牌显示内容" data-l10n-aria="测速牌显示内容" data-testid="court.speedboard.mode">
+        <button role="radio" aria-checked="true" data-mode="all" aria-label="全部球速" data-l10n-aria="全部球速" data-testid="court.speedboard.mode.all" data-l10n="球速">球速</button>
+        <button role="radio" aria-checked="false" data-mode="serve" aria-label="发球球速" data-l10n-aria="发球球速" data-testid="court.speedboard.mode.serve" data-l10n="发球">发球</button>
       </div>
-      <span class="board-live"><span id="board-dot" class="board-dot"></span><span id="board-live">等待数据</span></span>
-      <button id="board-challenge-go" class="hawkeye-button challenge-button" data-challenge aria-label="挑战最近一拍" data-testid="court.speedboard.challenge.go" hidden>⚑ 挑战</button>
-      <button id="board-challenge" class="hawkeye-button" aria-label="界内外回放" data-testid="court.speedboard.challenge" hidden>▶ 回放</button>
-      <button id="board-hawkeye" class="hawkeye-button" data-testid="court.speedboard.hawkeye" hidden>界内外</button>
-      <button id="board-close" class="board-close" aria-label="关闭测速牌" data-testid="court.speedboard.close">✕</button>
+      <span class="board-live"><span id="board-dot" class="board-dot"></span><span id="board-live" data-l10n="等待数据">等待数据</span></span>
+      <button id="board-challenge-go" class="hawkeye-button challenge-button" data-challenge aria-label="挑战最近一拍" data-l10n-aria="挑战最近一拍" data-testid="court.speedboard.challenge.go" hidden data-l10n="⚑ 挑战">⚑ 挑战</button>
+      <button id="board-challenge" class="hawkeye-button" aria-label="界内外回放" data-l10n-aria="界内外回放" data-testid="court.speedboard.challenge" hidden data-l10n="▶ 回放">▶ 回放</button>
+      <button id="board-hawkeye" class="hawkeye-button" data-testid="court.speedboard.hawkeye" hidden data-l10n="界内外">界内外</button>
+      <button id="board-close" class="board-close" aria-label="关闭测速牌" data-l10n-aria="关闭测速牌" data-testid="court.speedboard.close">✕</button>
     </div>
     <div id="board-all" class="board-all">
       <div class="board-readout" data-testid="court.speedboard.readout" role="status" aria-live="polite">
         <div class="board-figure"><span id="board-value" class="board-value waiting" data-testid="court.speedboard.value">--</span><span id="board-unit" class="board-unit waiting">km/h</span></div>
       </div>
-      <div class="board-bottom"><span id="board-status" data-testid="court.speedboard.status">等待有效击球</span><span>模型估算</span></div>
-      <p class="board-lock" data-testid="court.speedboard.lock">浏览器不能阻止锁屏：长时间看板请在系统设置里关闭自动锁屏。</p>
+      <div class="board-bottom"><span id="board-status" data-testid="court.speedboard.status" data-l10n="等待有效击球">等待有效击球</span><span data-l10n="模型估算">模型估算</span></div>
+      <p class="board-lock" data-testid="court.speedboard.lock" data-l10n="浏览器不能阻止锁屏：长时间看板请在系统设置里关闭自动锁屏。">浏览器不能阻止锁屏：长时间看板请在系统设置里关闭自动锁屏。</p>
     </div>
     <!-- Serve mode: the current serve speed fills the board like 「球速」. Statistics are one line and the
          trend a thin strip under it; app.js puts them side by side on a wide board and drops the strip
@@ -179,19 +188,19 @@
           </figcaption>
         </figure>
       </div>
-      <div class="board-bottom"><span id="serve-status">等待发球</span><span title="发球按模型与回合上下文判断">模型估算</span></div>
-      <p class="board-lock">浏览器不能阻止锁屏：长时间看板请在系统设置里关闭自动锁屏。</p>
+      <div class="board-bottom"><span id="serve-status" data-l10n="等待发球">等待发球</span><span title="发球按模型与回合上下文判断" data-l10n-title="发球按模型与回合上下文判断" data-l10n="模型估算">模型估算</span></div>
+      <p class="board-lock" data-l10n="浏览器不能阻止锁屏：长时间看板请在系统设置里关闭自动锁屏。">浏览器不能阻止锁屏：长时间看板请在系统设置里关闭自动锁屏。</p>
     </div>
     <!-- Challenge and line-call replay (mirrors HawkEyeChallengeView): drawn from the model's estimates.
          app.js moves it to the page or the full-screen board, whichever is showing. -->
-    <div id="challenge" class="challenge" hidden data-testid="court.hawkeye.challenge" aria-label="界内外回放">
+    <div id="challenge" class="challenge" hidden data-testid="court.hawkeye.challenge" aria-label="界内外回放" data-l10n-aria="界内外回放">
       <div class="challenge-top">
-        <strong id="challenge-heading">界内外回放</strong><span id="challenge-number" class="muted"></span>
+        <strong id="challenge-heading" data-l10n="界内外回放">界内外回放</strong><span id="challenge-number" class="muted"></span>
         <span class="spacer"></span>
-        <button id="challenge-prev" aria-label="上一个判定">‹</button>
-        <button id="challenge-next" aria-label="下一个判定">›</button>
-        <button id="challenge-again" aria-label="重播">↻</button>
-        <button id="challenge-close" aria-label="关闭界内外回放" data-testid="court.hawkeye.challenge.close">✕</button>
+        <button id="challenge-prev" aria-label="上一个判定" data-l10n-aria="上一个判定">‹</button>
+        <button id="challenge-next" aria-label="下一个判定" data-l10n-aria="下一个判定">›</button>
+        <button id="challenge-again" aria-label="重播" data-l10n-aria="重播">↻</button>
+        <button id="challenge-close" aria-label="关闭界内外回放" data-l10n-aria="关闭界内外回放" data-testid="court.hawkeye.challenge.close">✕</button>
       </div>
       <div class="challenge-stage">
         <canvas id="challenge-canvas" role="img" data-testid="court.hawkeye.replay"></canvas>
@@ -203,9 +212,9 @@
         <div id="challenge-unjudged" class="challenge-unjudged" hidden data-testid="court.hawkeye.unjudged">
           <div class="challenge-word">CHALLENGE</div><div id="challenge-unjudged-sub" class="muted"></div>
           <p class="challenge-reason"><span id="challenge-spinner" class="spinner" aria-hidden="true"></span><span id="challenge-reason"></span></p>
-          <button id="challenge-unjudged-prev" class="challenge-prev-shot" data-previous data-testid="court.hawkeye.challenge.previous" hidden>↶ 不是这一拍？挑战上一拍</button>
+          <button id="challenge-unjudged-prev" class="challenge-prev-shot" data-previous data-testid="court.hawkeye.challenge.previous" hidden data-l10n="↶ 不是这一拍？挑战上一拍">↶ 不是这一拍？挑战上一拍</button>
         </div>
-        <p id="challenge-empty" class="notice" hidden>还没有判过界内外的拍。开启界内外后，近端（或全场）有落点的拍会出现在这里。</p>
+        <p id="challenge-empty" class="notice" hidden data-l10n="还没有判过界内外的拍。开启界内外后，近端（或全场）有落点的拍会出现在这里。">还没有判过界内外的拍。开启界内外后，近端（或全场）有落点的拍会出现在这里。</p>
       </div>
       <div id="challenge-foot" class="shot challenge-foot"></div>
     </div>
@@ -214,47 +223,47 @@
   <!-- Line call of the newest judged shot (the camera judges; this page only shows it). -->
   <button id="hawkeye-call" class="hawkeye-call" hidden data-testid="court.hawkeye.call" aria-live="assertive">
     <span id="hawkeye-shout" class="hawkeye-shout">OUT</span>
-    <span class="hawkeye-text"><strong id="hawkeye-title">界内外</strong><span id="hawkeye-detail" class="muted small"></span></span>
+    <span class="hawkeye-text"><strong id="hawkeye-title" data-l10n="界内外">界内外</strong><span id="hawkeye-detail" class="muted small"></span></span>
   </button>
-  <button id="hawkeye-sound" class="hawkeye-sound" hidden data-testid="court.hawkeye.sound.unlock">🔈 点此开启 Out! 语音</button>
+  <button id="hawkeye-sound" class="hawkeye-sound" hidden data-testid="court.hawkeye.sound.unlock" data-l10n="🔈 点此开启 Out! 语音">🔈 点此开启 Out! 语音</button>
 
   <dialog id="challenge-ask" class="sheet narrow" data-testid="court.challenge.ask">
-    <h2>挑战：按单打还是双打边线判？</h2>
-    <p class="muted small">机位重新判最近一拍，所有屏幕一起播放回放。本场只问一次。</p>
+    <h2 data-l10n="挑战：按单打还是双打边线判？">挑战：按单打还是双打边线判？</h2>
+    <p class="muted small" data-l10n="机位重新判最近一拍，所有屏幕一起播放回放。本场只问一次。">机位重新判最近一拍，所有屏幕一起播放回放。本场只问一次。</p>
     <div class="row">
-      <button class="primary" data-challenge-format="singles" data-testid="court.challenge.format.singles">单打</button>
-      <button class="primary" data-challenge-format="doubles" data-testid="court.challenge.format.doubles">双打</button>
-      <button id="challenge-ask-cancel">取消</button>
+      <button class="primary" data-challenge-format="singles" data-testid="court.challenge.format.singles" data-l10n="单打">单打</button>
+      <button class="primary" data-challenge-format="doubles" data-testid="court.challenge.format.doubles" data-l10n="双打">双打</button>
+      <button id="challenge-ask-cancel" data-l10n="取消">取消</button>
     </div>
   </dialog>
 
   <dialog id="hawkeye-ask" class="sheet narrow" data-testid="court.hawkeye.ask">
-    <h2>开启界内外：本场是单打还是双打？</h2>
-    <p class="muted small">单打和双打的边线不同。默认只判近端半场（远端看得斜，误差大），可在界内外设置里打开远端。</p>
+    <h2 data-l10n="开启界内外：本场是单打还是双打？">开启界内外：本场是单打还是双打？</h2>
+    <p class="muted small" data-l10n="单打和双打的边线不同。默认只判近端半场（远端看得斜，误差大），可在界内外设置里打开远端。">单打和双打的边线不同。默认只判近端半场（远端看得斜，误差大），可在界内外设置里打开远端。</p>
     <div class="row">
-      <button class="primary" data-format="singles" data-testid="court.hawkeye.format.singles">单打</button>
-      <button class="primary" data-format="doubles" data-testid="court.hawkeye.format.doubles">双打</button>
-      <button id="hawkeye-ask-cancel">取消</button>
+      <button class="primary" data-format="singles" data-testid="court.hawkeye.format.singles" data-l10n="单打">单打</button>
+      <button class="primary" data-format="doubles" data-testid="court.hawkeye.format.doubles" data-l10n="双打">双打</button>
+      <button id="hawkeye-ask-cancel" data-l10n="取消">取消</button>
     </div>
   </dialog>
 
   <dialog id="hawkeye-settings" class="sheet narrow" data-testid="court.hawkeye.settings">
-    <div class="row between"><h2>界内外</h2><button id="hawkeye-settings-close">完成</button></div>
-    <div class="board-modes" role="radiogroup" aria-label="单打或双打">
-      <button role="radio" data-set-format="singles">单打</button>
-      <button role="radio" data-set-format="doubles">双打</button>
+    <div class="row between"><h2 data-l10n="界内外">界内外</h2><button id="hawkeye-settings-close" data-l10n="完成">完成</button></div>
+    <div class="board-modes" role="radiogroup" aria-label="单打或双打" data-l10n-aria="单打或双打">
+      <button role="radio" data-set-format="singles" data-l10n="单打">单打</button>
+      <button role="radio" data-set-format="doubles" data-l10n="双打">双打</button>
     </div>
-    <label class="check"><input type="checkbox" id="hawkeye-far" data-testid="court.hawkeye.far"> 也判远端半场</label>
+    <label class="check"><input type="checkbox" id="hawkeye-far" data-testid="court.hawkeye.far" data-l10n="也判远端半场"> 也判远端半场</label>
     <p id="hawkeye-far-note" class="muted small"></p>
-    <label class="check"><input type="checkbox" id="hawkeye-voice" data-testid="court.hawkeye.sound"> 出界时语音播报 Out!</label>
+    <label class="check"><input type="checkbox" id="hawkeye-voice" data-testid="court.hawkeye.sound" data-l10n="出界时语音播报 Out!"> 出界时语音播报 Out!</label>
     <div class="row voice-pick">
-      <select id="hawkeye-voice-name" aria-label="语音" data-testid="court.hawkeye.voice"></select>
-      <button id="hawkeye-voice-preview" data-testid="court.hawkeye.preview">▶ 试听</button>
+      <select id="hawkeye-voice-name" aria-label="语音" data-l10n-aria="语音" data-testid="court.hawkeye.voice"></select>
+      <button id="hawkeye-voice-preview" data-testid="court.hawkeye.preview" data-l10n="▶ 试听">▶ 试听</button>
     </div>
-    <p class="muted small">只在明确出界、挑战回放给出结论时播报。语音由 AI 合成（OpenAI），不是真人录音。</p>
-    <p id="hawkeye-pending" class="muted small" hidden>等待机位确认…</p>
-    <p class="notice">界内外是单机位模型估计，不是判罚。落点离线不到误差范围时显示「压线附近」，不报出界；只有明确出界才播报 Out!。</p>
-    <div class="row"><button id="hawkeye-off" class="danger" data-testid="court.hawkeye.off">关闭界内外</button></div>
+    <p class="muted small" data-l10n="只在明确出界、挑战回放给出结论时播报。语音由 AI 合成（OpenAI），不是真人录音。">只在明确出界、挑战回放给出结论时播报。语音由 AI 合成（OpenAI），不是真人录音。</p>
+    <p id="hawkeye-pending" class="muted small" hidden data-l10n="等待机位确认…">等待机位确认…</p>
+    <p class="notice" data-l10n="界内外是单机位模型估计，不是判罚。落点离线不到误差范围时显示「压线附近」，不报出界；只有明确出界才播报 Out!。">界内外是单机位模型估计，不是判罚。落点离线不到误差范围时显示「压线附近」，不报出界；只有明确出界才播报 Out!。</p>
+    <div class="row"><button id="hawkeye-off" class="danger" data-testid="court.hawkeye.off" data-l10n="关闭界内外">关闭界内外</button></div>
   </dialog>
 
   <div id="toast" class="toast" role="alert" hidden></div>

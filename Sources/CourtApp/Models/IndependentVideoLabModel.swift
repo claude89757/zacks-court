@@ -76,7 +76,7 @@ enum IndependentVideoLabServices {
         try await background {
             do { _ = try IndependentBallModelAssets.bundled(in: bundle) }
             catch is CancellationError { throw CancellationError() }
-            catch { throw IndependentVideoLabError(message: "当前安装包未包含可用的独立模型。") }
+            catch { throw IndependentVideoLabError(message: courtText("当前安装包未包含可用的独立模型。")) }
         }
     }
     static func run(_ request: IndependentLocalVideoRequest,
@@ -85,15 +85,15 @@ enum IndependentVideoLabServices {
             let assets: IndependentBallModelAssets
             do { assets = try IndependentBallModelAssets.bundled(in: bundle) }
             catch is CancellationError { throw CancellationError() }
-            catch { throw IndependentVideoLabError(message: "当前安装包未包含可用的独立模型。") }
+            catch { throw IndependentVideoLabError(message: courtText("当前安装包未包含可用的独立模型。")) }
             return try await IndependentLocalVideoAnalyzer.run(request: request, assets: assets, progress: progress)
         }
     }
     private static func fingerprint(_ url: URL) throws -> IndependentVideoLabFileIdentity {
-        guard url.isFileURL else { throw IndependentVideoLabError(message: "请选择本机视频。") }
+        guard url.isFileURL else { throw IndependentVideoLabError(message: courtText("请选择本机视频。")) }
         var value = stat()
         let code = url.withUnsafeFileSystemRepresentation { pointer in pointer.map { lstat($0, &value) } ?? -1 }
-        guard code == 0, value.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG) else { throw IndependentVideoLabError(message: "无法访问原视频，请重新选择。") }
+        guard code == 0, value.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG) else { throw IndependentVideoLabError(message: courtText("无法访问原视频，请重新选择。")) }
         return .init(device: Int64(value.st_dev), inode: UInt64(value.st_ino), size: Int64(value.st_size),
                      modifiedSeconds: Int64(value.st_mtimespec.tv_sec), modifiedNanoseconds: Int64(value.st_mtimespec.tv_nsec),
                      changedSeconds: Int64(value.st_ctimespec.tv_sec), changedNanoseconds: Int64(value.st_ctimespec.tv_nsec))
@@ -105,12 +105,12 @@ enum IndependentVideoLabServices {
         try await background {
             let before = try fingerprint(url)
             let tracks = try await AVURLAsset(url: url).loadTracks(withMediaType: .video)
-            guard tracks.count == 1, let track = tracks.first else { throw IndependentVideoLabError(message: "暂只支持含一路画面的视频。") }
+            guard tracks.count == 1, let track = tracks.first else { throw IndependentVideoLabError(message: courtText("暂只支持含一路画面的视频。")) }
             guard try fingerprint(url) == before else { throw sourceChanged() }
             return .init(identity: before, trackID: track.trackID)
         }
     }
-    static func sourceChanged() -> IndependentVideoLabError { .init(message: "原视频已变化，请重新选择并分析。") }
+    static func sourceChanged() -> IndependentVideoLabError { .init(message: courtText("原视频已变化，请重新选择并分析。")) }
     private final class ImageGenerator: @unchecked Sendable {
         // cancelAllCGImageGeneration is the generator's explicit cancellation API.
         let value: AVAssetImageGenerator
@@ -125,7 +125,7 @@ enum IndependentVideoLabServices {
             let asset = AVURLAsset(url: url)
             let tracks = try await asset.loadTracks(withMediaType: .video)
             guard tracks.count == 1, tracks.first?.trackID == trackID else {
-                throw IndependentVideoLabError(message: "画面轨道与分析不一致，请重新分析。")
+                throw IndependentVideoLabError(message: courtText("画面轨道与分析不一致，请重新分析。"))
             }
             let generator = ImageGenerator(asset)
             let image = try await withTaskCancellationHandler(operation: { try await generator.value.image(at: time) },
@@ -136,7 +136,7 @@ enum IndependentVideoLabServices {
     }
     static func persist(_ result: IndependentLocalVideoResult, metadata: IndependentVideoLabRunMetadata, directory: URL) async throws -> URL {
         try await background {
-            guard !metadata.filename.isEmpty, !metadata.filename.contains("/") else { throw IndependentVideoLabError(message: "报告文件名无效。") }
+            guard !metadata.filename.isEmpty, !metadata.filename.contains("/") else { throw IndependentVideoLabError(message: courtText("报告文件名无效。")) }
             let fm = FileManager.default
             try fm.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let final = directory.appendingPathComponent(metadata.runID.uuidString, isDirectory: true)
@@ -152,7 +152,7 @@ enum IndependentVideoLabServices {
             }
             try Task.checkCancellation()
             let code = stage.path.withCString { from in final.path.withCString { to in renamex_np(from, to, UInt32(RENAME_EXCL)) } }
-            guard code == 0 else { throw IndependentVideoLabError(message: "报告未保存，目录可能已存在。可以重试。") }
+            guard code == 0 else { throw IndependentVideoLabError(message: courtText("报告未保存，目录可能已存在。可以重试。")) }
             return final
         }
     }
@@ -169,7 +169,7 @@ enum IndependentVideoLabServices {
     public private(set) var filename: String?
     public private(set) var phase: Phase = .idle
     public private(set) var progressFraction = 0.0
-    public private(set) var progressText = "选择本机视频后开始。"
+    public private(set) var progressText = courtText("选择本机视频后开始。")
     public private(set) var error: String?
     public private(set) var saveError: String?
     public private(set) var savedDirectory: URL?
@@ -195,7 +195,7 @@ enum IndependentVideoLabServices {
     public private(set) var isBusy = false
     public var canStart: Bool { modelAvailability == .available && filename != nil && !isBusy && !closed }
     public var speedText: String { "—" }
-    public var speedReason: String { "缺少触拍/触地事件与可信相机，暂不估算球速。" }
+    public var speedReason: String { courtText("缺少触拍/触地事件与可信相机，暂不估算球速。") }
     public var selectedFrame: IndependentLocalVideoFrameResult? {
         guard let result, result.frames.indices.contains(selectedFrameIndex) else { return nil }
         return result.frames[selectedFrameIndex]
@@ -231,20 +231,20 @@ enum IndependentVideoLabServices {
         guard !isBusy, !closed else { return }
         cancelPreviews(); selectedURL = url; filename = url.lastPathComponent
         result = nil; runMetadata = nil; originalIdentity = nil; savedDirectory = nil
-        error = nil; saveError = nil; phase = .idle; progressFraction = 0; progressText = "已选视频，可以开始分析。"
+        error = nil; saveError = nil; phase = .idle; progressFraction = 0; progressText = courtText("已选视频，可以开始分析。")
     }
     public func clearError() { error = nil }
     public func reportImportFailure(_ message: String) { if !closed { error = message } }
     public func start() {
         guard canStart, let url = selectedURL else { return }
         guard startSeconds.isFinite, startSeconds >= 0, durationSeconds.isFinite, durationSeconds > 0, durationSeconds <= 120 else {
-            error = "起始位置须不小于0，时长须大于0且不超过120秒。"; return
+            error = courtText("起始位置须不小于0，时长须大于0且不超过120秒。"); return
         }
         let start = CMTime(seconds: startSeconds, preferredTimescale: 1_000_000_000)
         let duration = CMTime(seconds: durationSeconds, preferredTimescale: 1_000_000_000)
-        guard start.isNumeric, duration.isNumeric else { error = "起始位置或时长无效。"; return }
+        guard start.isNumeric, duration.isNumeric else { error = courtText("起始位置或时长无效。"); return }
         cancelPreviews(); result = nil; savedDirectory = nil; runMetadata = nil; originalIdentity = nil
-        error = nil; saveError = nil; cancelled = false; phase = .analyzing; progressFraction = 0; progressText = "正在准备独立分析…"
+        error = nil; saveError = nil; cancelled = false; phase = .analyzing; progressFraction = 0; progressText = courtText("正在准备独立分析…")
         let id = UUID(); runID = id; isBusy = true
         let startedAt = Date(), requestedStart = startSeconds, requestedDuration = durationSeconds
         let dependencies = self.dependencies
@@ -263,9 +263,9 @@ enum IndependentVideoLabServices {
                         guard let self, self.runID == id, !self.cancelled, !self.closed, self.phase == .analyzing else { return }
                         self.progressFraction = progress.fraction
                         switch progress.phase {
-                        case "verifying_source": self.progressText = "正在核对视频…"
-                        case "loading_independent_model": self.progressText = "正在载入独立模型…"
-                        default: self.progressText = "已读取\(progress.decodedFrames)帧 · 已分析\(progress.inferredFrames)帧"
+                        case "verifying_source": self.progressText = courtText("正在核对视频…")
+                        case "loading_independent_model": self.progressText = courtText("正在载入独立模型…")
+                        default: self.progressText = courtFormat("已读取%1$@帧 · 已分析%2$@帧", "\(progress.decodedFrames)", "\(progress.inferredFrames)")
                         }
                     }
                 }
@@ -277,31 +277,31 @@ enum IndependentVideoLabServices {
                 let metadata = IndependentVideoLabRunMetadata(runID: id, filename: url.lastPathComponent, startedAt: startedAt, completedAt: Date(),
                     requestedStartSeconds: requestedStart, requestedDurationSeconds: requestedDuration, sourceSHA256: output.sourceSHA256,
                     modelID: output.modelID, modelManifestSHA256: output.modelManifestSHA256, backendID: output.backendID)
-                runMetadata = metadata; phase = .saving; progressText = "分析完成，正在保存报告…"
+                runMetadata = metadata; phase = .saving; progressText = courtText("分析完成，正在保存报告…")
                 do {
                     let saved = try await dependencies.persist(output, metadata, reportsDirectory)
                     recordCommittedDirectory(saved, run: id)
                     try Task.checkCancellation()
                     guard runID == id, !closed, !cancelled else { throw CancellationError() }
                 } catch is CancellationError { throw CancellationError() }
-                catch { saveError = "报告未保存，结果仍在本页。可以重试。" }
+                catch { saveError = courtText("报告未保存，结果仍在本页。可以重试。") }
                 guard !closed, !cancelled else { throw CancellationError() }
-                phase = .completed; progressFraction = 1; progressText = "分析完成。"
+                phase = .completed; progressFraction = 1; progressText = courtText("分析完成。")
                 selectFrame(index: 0)
             } catch is CancellationError {
                 if !closed, runID == id {
                     phase = result == nil ? .cancelled : .completed
-                    progressText = savedDirectory == nil ? "已取消。" : "分析完成，报告已保存。"
-                    if result != nil, savedDirectory == nil { saveError = "报告未保存，可以重试。" }
+                    progressText = savedDirectory == nil ? courtText("已取消。") : courtText("分析完成，报告已保存。")
+                    if result != nil, savedDirectory == nil { saveError = courtText("报告未保存，可以重试。") }
                 }
             } catch {
-                if !closed, runID == id { self.error = Self.message(error); phase = .failed; progressText = "分析未完成。" }
+                if !closed, runID == id { self.error = Self.message(error); phase = .failed; progressText = courtText("分析未完成。") }
             }
         }
     }
     public func cancel() {
         guard isBusy else { return }
-        cancelled = true; phase = .cancelling; progressText = "正在取消，请稍候…"
+        cancelled = true; phase = .cancelling; progressText = courtText("正在取消，请稍候…")
         analysisTask?.cancel(); saveTask?.cancel()
     }
     public func close() {
@@ -329,8 +329,8 @@ enum IndependentVideoLabServices {
                 phase = .completed
             } catch {
                 if !closed, runID == id {
-                    if savedDirectory == nil { saveError = "报告未保存，结果仍在本页。可以重试。" }
-                    else { saveError = nil; progressText = "分析完成，报告已保存。" }
+                    if savedDirectory == nil { saveError = courtText("报告未保存，结果仍在本页。可以重试。") }
+                    else { saveError = nil; progressText = courtText("分析完成，报告已保存。") }
                     phase = .completed
                 }
             }
@@ -348,11 +348,11 @@ enum IndependentVideoLabServices {
     }
     static func sourceTime(_ frame: IndependentLocalVideoFrameResult) throws -> CMTime {
         let t = frame.time
-        guard t.timeBaseNumerator > 0, t.timeBaseDenominator > 0 else { throw IndependentVideoLabError(message: "原始帧时间无效。") }
+        guard t.timeBaseNumerator > 0, t.timeBaseDenominator > 0 else { throw IndependentVideoLabError(message: courtText("原始帧时间无效。")) }
         let rational = CMTimeMultiply(CMTime(value: t.sourcePTS, timescale: t.timeBaseDenominator), multiplier: t.timeBaseNumerator)
         let raw = frame.presentationTime.mediaTime
         guard rational.isNumeric, !rational.flags.contains(.hasBeenRounded), raw.isNumeric, raw.epoch == 0, CMTimeCompare(rational,raw) == 0 else {
-            throw IndependentVideoLabError(message: "原始帧时间不一致，无法精确显示。")
+            throw IndependentVideoLabError(message: courtText("原始帧时间不一致，无法精确显示。"))
         }
         return raw
     }
@@ -377,7 +377,7 @@ enum IndependentVideoLabServices {
                 guard sample.actualTime.isNumeric, CMTimeCompare(sample.actualTime,time) == 0,
                       sample.image.width == result.metadata.naturalWidth, sample.image.height == result.metadata.naturalHeight,
                       frame.transform.originalWidth == sample.image.width, frame.transform.originalHeight == sample.image.height else {
-                    throw IndependentVideoLabError(message: "无法精确取出原始这一帧，暂不显示画面或球点。")
+                    throw IndependentVideoLabError(message: courtText("无法精确取出原始这一帧，暂不显示画面或球点。"))
                 }
                 guard previewID == id, runID == sourceRun, !closed else { return }
                 displayedImage = sample.image
@@ -393,17 +393,17 @@ enum IndependentVideoLabServices {
         if let error = error as? IndependentVideoLabError { return error.message }
         if let error = error as? IndependentLocalVideoError {
             if case .invalid(let reason) = error, reason.contains("requires nominal 60 fps") {
-                return "当前实验需要60fps视频，请重新选择。"
+                return courtText("当前实验需要60fps视频，请重新选择。")
             }
-            return "视频未能完成独立分析，请检查格式和所选时间段后重试。"
+            return courtText("视频未能完成独立分析，请检查格式和所选时间段后重试。")
         }
         if let error = error as? IndependentVideoReaderError {
             switch error {
-            case .unsupportedTransform: return "暂不支持带旋转信息的视频。"
-            case .invalidTimeRange: return "所选时间段超出视频范围，请调整起始位置或时长。"
-            default: return "视频未能完成读取，请检查文件后重试。"
+            case .unsupportedTransform: return courtText("暂不支持带旋转信息的视频。")
+            case .invalidTimeRange: return courtText("所选时间段超出视频范围，请调整起始位置或时长。")
+            default: return courtText("视频未能完成读取，请检查文件后重试。")
             }
         }
-        return "视频未能完成独立分析，请检查格式和所选时间段后重试。"
+        return courtText("视频未能完成独立分析，请检查格式和所选时间段后重试。")
     }
 }

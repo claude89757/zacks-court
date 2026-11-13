@@ -16,7 +16,7 @@ extension WorkspaceModel {
     }
     /// Why recordings cannot be cleared at all right now (the camera is sending one).
     var recordingCleanupBlocker: String? {
-        controller?.isReadingRecordings == true ? "机位正在发送录像或剪片段，完成后再清理录像。" : nil
+        controller?.isReadingRecordings == true ? courtText("机位正在发送录像或剪片段，完成后再清理录像。") : nil
     }
     /// Leftovers are only judged when no file can be running ahead of its record.
     var canJudgeLeftovers: Bool {
@@ -48,28 +48,28 @@ extension WorkspaceModel {
         if let reason = recordingCleanupBlocker { error = reason; return 0 }
         do {
             let freed = try cleanup.clearRecordings(plan)
-            let what = "\(plan.filenames.count) 段录像，释放 \(courtBytes(freed))"
-            notice = automatic ? "已按「录像保留 \(recordingRetentionDays) 天」自动清理 \(what)。逐拍数据和标记保留。"
-                               : "已清理 \(what)。逐拍数据和标记保留。"
+            let what = courtFormat("%1$@ 段录像，释放 %2$@", "\(plan.filenames.count)", "\(courtBytes(freed))")
+            notice = automatic ? courtFormat("已按「录像保留 %1$@ 天」自动清理 %2$@。逐拍数据和标记保留。", "\(recordingRetentionDays)", "\(what)")
+                               : courtFormat("已清理 %1$@。逐拍数据和标记保留。", "\(what)")
             reloadHistory(); refreshStorage()
             return freed
         } catch {
-            self.error = "清理录像失败：\(error.localizedDescription)"
+            self.error = courtFormat("清理录像失败：%1$@", "\(error.localizedDescription)")
             reloadHistory(); refreshStorage()
             return 0
         }
     }
 
-    func clearClips() { clean("单拍片段") { try $0.clearClips(inUse: self.storageInUse) } }
-    func clearLogs() { clean("诊断日志") { try $0.clearLogs(inUse: self.storageInUse) } }
+    func clearClips() { clean(courtText("单拍片段")) { try $0.clearClips(inUse: self.storageInUse) } }
+    func clearLogs() { clean(courtText("诊断日志")) { try $0.clearLogs(inUse: self.storageInUse) } }
     func clearLeftovers() {
-        guard canJudgeLeftovers else { error = "正在记录、保存或传输文件，完成后再清理残留文件。"; return }
-        clean("残留文件") { try $0.clearLeftovers(sessions: self.history) }
+        guard canJudgeLeftovers else { error = courtText("正在记录、保存或传输文件，完成后再清理残留文件。"); return }
+        clean(courtText("残留文件")) { try $0.clearLeftovers(sessions: self.history) }
     }
     private func clean(_ what: String, _ action: (StorageCleanup) throws -> Int64) {
         guard let cleanup = storageCleanup else { return }
-        do { notice = "已清理\(what)，释放 \(courtBytes(try action(cleanup)))。" }
-        catch { self.error = "清理\(what)失败：\(error.localizedDescription)" }
+        do { notice = courtFormat("已清理%1$@，释放 %2$@。", "\(what)", "\(courtBytes(try action(cleanup)))") }
+        catch { self.error = courtFormat("清理%1$@失败：%2$@", "\(what)", "\(error.localizedDescription)") }
         refreshStorage()
     }
 

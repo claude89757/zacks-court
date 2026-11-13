@@ -8,11 +8,11 @@ public struct CourtLiveVideoWindow: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("实时画面", systemImage: "video").font(.headline)
+                Label(courtText("实时画面"), systemImage: "video").font(.headline)
                 Spacer()
-                CourtStatus(text: model.isLive ? "正在接收" : model.connected ? "等待机位开始采集" : "等待机位连接", tone: model.isLive ? .live : .idle)
+                CourtStatus(text: model.isLive ? courtText("正在接收") : model.connected ? courtText("等待机位开始采集") : courtText("等待机位连接"), tone: model.isLive ? .live : .idle)
                 #if os(iOS)
-                CourtTextButton("完成") { dismiss() }
+                CourtTextButton(courtText("完成")) { dismiss() }
                 #endif
             }
             ServerVideo(model: model).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -20,9 +20,9 @@ public struct CourtLiveVideoWindow: View {
                 Text(model.deviceName).lineLimit(2)
                 Spacer()
                 if model.isLive {
-                    Text(String(format: "低清预览 · 有延迟 · %.0f fps", model.linkStats.previewFPS)).monospacedDigit()
+                    Text(courtPrintf("低清预览 · 有延迟 · %.0f fps", model.linkStats.previewFPS)).monospacedDigit()
                 }
-                Button { model.wakeCameraScreen() } label: { Label("唤醒机位屏幕", systemImage: "sun.max") }
+                Button { model.wakeCameraScreen() } label: { Label(courtText("唤醒机位屏幕"), systemImage: "sun.max") }
                     .buttonStyle(CourtButton()).disabled(!model.connected)
             }.font(.caption).foregroundStyle(CourtStyle.muted)
         }.padding(18).background(CourtStyle.background).foregroundStyle(.white).tint(CourtStyle.green)

@@ -14,7 +14,7 @@ public enum ReferenceChain {
 
     public static var isAvailable: Bool { factory != nil }
     /// Shown when a reference lane is requested from a build without it.
-    public static let unavailableReason = "这个构建不含 S家参照链（只在本地带 S家资料的构建里有）"
+    public static let unavailableReason = courtText("这个构建不含 S家参照链（只在本地带 S家资料的构建里有）")
 
     public static func makeEngine(configuration: TennisAnalysisConfiguration) throws -> ReferenceAnalysisEngine {
         try laneEngine(configuration)

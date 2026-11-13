@@ -208,7 +208,7 @@ public extension StreamPacket {
         return StreamPacket(header: StreamHeader(kind: kind.rawValue), payload: try encoder.encode(body))
     }
     func decode<T: Decodable>(_ type: T.Type) throws -> T {
-        guard !payload.isEmpty else { throw CourtError.message("消息内容为空：\(header.kind)") }
+        guard !payload.isEmpty else { throw CourtError.message(courtFormat("消息内容为空：%1$@", "\(header.kind)")) }
         return try JSONDecoder().decode(type, from: payload)
     }
     var wireKind: WireKind? { WireKind(rawValue: header.kind) }

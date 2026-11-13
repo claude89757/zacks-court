@@ -26,7 +26,7 @@ struct CourtShotListSheet: View {
                                                   bottom: CourtStyle.Space.xs, trailing: CourtStyle.Space.l))
                     }
                 } header: {
-                    Text(events.isEmpty ? "还没有击球候选。" : "\(events.count) 个击球候选，最新的在最上面。点一拍看详情。")
+                    Text(events.isEmpty ? courtText("还没有击球候选。") : courtFormat("%1$@ 个击球候选，最新的在最上面。点一拍看详情。", "\(events.count)"))
                         .font(.caption).foregroundStyle(CourtStyle.muted).textCase(nil)
                         .accessibilityIdentifier("court.shots.count")
                 }
@@ -35,8 +35,8 @@ struct CourtShotListSheet: View {
             .scrollContentBackground(.hidden)
             .environment(\.courtCompactShotReplay, true)
             .background(CourtStyle.background)
-            .navigationTitle("全部击球")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { CourtTextButton("完成") { dismiss() } } }
+            .navigationTitle(courtText("全部击球"))
+            .toolbar { ToolbarItem(placement: .confirmationAction) { CourtTextButton(courtText("完成")) { dismiss() } } }
             .accessibilityIdentifier("court.shots.list")
         }
         .tint(CourtStyle.green).preferredColorScheme(.dark)

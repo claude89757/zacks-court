@@ -323,13 +323,13 @@ public enum DiagnosticBundle {
         var out: [String] = []
         let dateFormatter = DateFormatter(); dateFormatter.locale = Locale(identifier: "zh_CN"); dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         let start = logs.flatMap(\.lines).first { $0.kind == .start }
-        out.append("Zacks Court 诊断包")
-        let state = switch session.state { case .active: "记录中"; case .paused: "已暂停"; case .completed: "已结束"; case .interrupted: "中断" }
-        out.append("记录：\(session.title) · \(dateFormatter.string(from: session.startedAt)) 开始 · \(state)")
-        if let device = session.capturedOn { out.append("机位：\(device)") }
+        out.append(courtText("Zacks Court 诊断包"))
+        let state = switch session.state { case .active: courtText("记录中"); case .paused: courtText("已暂停"); case .completed: courtText("已结束"); case .interrupted: courtText("中断") }
+        out.append(courtFormat("记录：%1$@ · %2$@ 开始 · %3$@", "\(session.title)", "\(dateFormatter.string(from: session.startedAt))", "\(state)"))
+        if let device = session.capturedOn { out.append(courtFormat("机位：%1$@", "\(device)")) }
         if let app = start?.app { out.append("App：\(app)") }
-        if let hardware = start?.hardware { out.append("型号：\(hardware)\(start?.system.map { " · \($0)" } ?? "")") }
-        if let model = session.tennisModelVersion { out.append("分析模型：\(model)") }
+        if let hardware = start?.hardware { out.append(courtFormat("型号：%1$@%2$@", "\(hardware)", "\(start?.system.map { " · \($0)" } ?? "")")) }
+        if let model = session.tennisModelVersion { out.append(courtFormat("分析模型：%1$@", "\(model)")) }
         out.append("")
 
         // shots
@@ -338,56 +338,56 @@ public enum DiagnosticBundle {
         let calls = events.compactMap { $0.bounce?.hawkEye }
         let near = calls.filter { !$0.farHalf }
         func count(_ list: [HawkEyeJudgement], _ call: HawkEyeCall) -> Int { list.filter { $0.call == call }.count }
-        out.append("逐拍")
-        out.append("- 击球 \(events.count) 拍，有球速 \(events.filter { $0.speedKPH != nil }.count) 拍，有落点 \(events.filter { $0.bounce?.xMeters != nil }.count) 拍")
-        out.append("- 发球 \(serves.count) 拍，有球速 \(serves.filter { $0.speedKPH != nil }.count) 拍")
-        out.append("- 界内外：近端 \(near.count) 个（界内 \(count(near, .in))、出界 \(count(near, .out))、压线附近 \(count(near, .close))），远端 \(calls.count - near.count) 个")
+        out.append(courtText("逐拍"))
+        out.append(courtFormat("- 击球 %1$@ 拍，有球速 %2$@ 拍，有落点 %3$@ 拍", "\(events.count)", "\(events.filter { $0.speedKPH != nil }.count)", "\(events.filter { $0.bounce?.xMeters != nil }.count)"))
+        out.append(courtFormat("- 发球 %1$@ 拍，有球速 %2$@ 拍", "\(serves.count)", "\(serves.filter { $0.speedKPH != nil }.count)"))
+        out.append(courtFormat("- 界内外：近端 %1$@ 个（界内 %2$@、出界 %3$@、压线附近 %4$@），远端 %5$@ 个", "\(near.count)", "\(count(near, .in))", "\(count(near, .out))", "\(count(near, .close))", "\(calls.count - near.count)"))
         let challenges = events.filter { $0.challenge != nil }.count
-        if challenges > 0 { out.append("- 挑战 \(challenges) 次") }
+        if challenges > 0 { out.append(courtFormat("- 挑战 %1$@ 次", "\(challenges)")) }
         out.append("")
 
         // court
-        out.append("球场识别")
+        out.append(courtText("球场识别"))
         if logs.isEmpty {
-            out.append("- 没有机位采集日志（这台设备不是这次记录的机位，或机位用的是还不写采集日志的旧版本）。")
+            out.append(courtText("- 没有机位采集日志（这台设备不是这次记录的机位，或机位用的是还不写采集日志的旧版本）。"))
         }
         for log in logs {
             let lines = log.lines.filter { $0.kind == .status }
             guard let first = log.start else { continue }
             let span = (log.end ?? first) - first
-            var text = "- 采集 \(dateFormatter.string(from: Date(timeIntervalSince1970: first)))，共 \(Int(span.rounded())) 秒"
+            var text = courtFormat("- 采集 %1$@，共 %2$@ 秒", "\(dateFormatter.string(from: Date(timeIntervalSince1970: first)))", "\(Int(span.rounded()))")
             if let foundAt = lines.first(where: { $0.court?.state == .found })?.t {
                 // lines come once a second: the lock is known to the second
                 let seconds = foundAt - first
-                text += seconds < 1 ? "：开始后 1 秒内认出球场" : "：开始后约 \(Int(seconds.rounded())) 秒认出球场"
+                text += seconds < 1 ? courtText("：开始后 1 秒内认出球场") : courtFormat("：开始后约 %1$@ 秒认出球场", "\(Int(seconds.rounded()))")
             } else if lines.contains(where: { $0.court != nil }) {
-                text += "：一直没认出球场"
+                text += courtText("：一直没认出球场")
             } else {
-                text += "：没有球场识别数据（没有自研分析）"
+                text += courtText("：没有球场识别数据（没有自研分析）")
             }
             out.append(text)
             let reasons = Dictionary(grouping: lines.compactMap { $0.court?.state == .searching ? $0.courtText : nil }, by: { $0 })
                 .map { ($0.key, $0.value.count) }.sorted { $0.1 > $1.1 }.prefix(3)
-            for (reason, seconds) in reasons { out.append("  · 「\(reason)」\(seconds) 秒") }
+            for (reason, seconds) in reasons { out.append(courtFormat("  · 「%1$@」%2$@ 秒", "\(reason)", "\(seconds)")) }
         }
         let inSession = logs.flatMap(\.lines).filter { $0.kind == .status && $0.session == session.id && $0.sessionState == .active }
         if !inSession.isEmpty {
             let withCourt = inSession.filter { $0.court?.state == .found || $0.court?.state == .fixed }.count
-            out.append("- 记录中 \(inSession.count) 秒，有球场 \(withCourt) 秒（\(percent(withCourt, inSession.count))）")
+            out.append(courtFormat("- 记录中 %1$@ 秒，有球场 %2$@ 秒（%3$@）", "\(inSession.count)", "\(withCourt)", "\(percent(withCourt, inSession.count))"))
             let moving = inSession.compactMap(\.court?.motion)
             if !moving.isEmpty {
                 let drift = moving.filter { $0 == .drifting }.count, shake = moving.filter { $0 == .shaking }.count
-                out.append("- 画面：静止 \(percent(moving.count - drift - shake, moving.count))，漂移 \(percent(drift, moving.count))，晃动 \(percent(shake, moving.count))")
+                out.append(courtFormat("- 画面：静止 %1$@，漂移 %2$@，晃动 %3$@", "\(percent(moving.count - drift - shake, moving.count))", "\(percent(drift, moving.count))", "\(percent(shake, moving.count))"))
             }
             let courts = inSession.compactMap(\.court)
             if let last = courts.last {
-                out.append("- 丢失球场 \(max(0, last.lost - (courts.first?.lost ?? 0))) 次")
+                out.append(courtFormat("- 丢失球场 %1$@ 次", "\(max(0, last.lost - (courts.first?.lost ?? 0)))"))
             }
             if let last = courts.last, last.solves > 0 {
-                out.append(String(format: "- 求解和跟踪 %d 次，平均 %.2f 秒，最长 %.2f 秒（本次采集起，在这台设备上）", last.solves, last.solveSeconds / Double(last.solves), last.maxSolveSeconds))
+                out.append(courtPrintf("- 求解和跟踪 %d 次，平均 %.2f 秒，最长 %.2f 秒（本次采集起，在这台设备上）", last.solves, last.solveSeconds / Double(last.solves), last.maxSolveSeconds))
             }
             if let c = courts.last(where: { $0.state == .found }), let h = c.heightMeters, let b = c.behindBaselineMeters {
-                out.append(String(format: "- 机高约 %.1f 米，在近端底线后约 %.1f 米，焦距 %.0f 像素，%d 条线，对齐误差 %.2f 像素",
+                out.append(courtPrintf("- 机高约 %.1f 米，在近端底线后约 %.1f 米，焦距 %.0f 像素，%d 条线，对齐误差 %.2f 像素",
                                   h, b, c.focalPixels ?? 0, c.lines ?? 0, c.rmsPixels ?? 0))
             }
         }
@@ -396,31 +396,31 @@ public enum DiagnosticBundle {
         // phone
         let status = logs.flatMap(\.lines).filter { $0.kind == .status }
         if !status.isEmpty {
-            out.append("手机")
+            out.append(courtText("手机"))
             let order = ["nominal", "fair", "serious", "critical"]
             let hottest = status.compactMap(\.thermal).max { (order.firstIndex(of: $0) ?? 0) < (order.firstIndex(of: $1) ?? 0) }
-            if let hottest { out.append("- 最高温度状态：\(hottest)") }
+            if let hottest { out.append(courtFormat("- 最高温度状态：%1$@", "\(hottest)")) }
             if let shed = status.compactMap(\.shed).max(), shed > 0 {
                 // Why it shed, in the order first seen: heat and analysis lag need different fixes.
                 var causes: [String] = []
                 for line in status where (line.shed ?? 0) > 0 {
-                    let name = line.shedCause.map { ["heat": "发热", "pressure": "相机负载", "lowPower": "低电量模式", "lag": "分析落后"][$0] ?? $0 }
+                    let name = line.shedCause.map { ["heat": courtText("发热"), "pressure": courtText("相机负载"), "lowPower": courtText("低电量模式"), "lag": courtText("分析落后")][$0] ?? $0 }
                     if let name, !causes.contains(name) { causes.append(name) }
                 }
                 let seconds = status.filter { ($0.shed ?? 0) > 0 }.count
-                out.append("- 最高降载等级：L\(shed)，降载 \(seconds) 秒" + (causes.isEmpty ? "" : "（原因：\(causes.joined(separator: "、"))）"))
+                out.append(courtFormat("- 最高降载等级：L%1$@，降载 %2$@ 秒", "\(shed)", "\(seconds)") + (causes.isEmpty ? "" : courtFormat("（原因：%1$@）", "\(causes.joined(separator: "、"))")))
             }
             let delays = status.compactMap(\.analysisDelay).sorted()
-            if !delays.isEmpty { out.append(String(format: "- 分析落后：中位 %.2f 秒，最多 %.2f 秒", delays[delays.count / 2], delays.last!)) }
+            if !delays.isEmpty { out.append(courtPrintf("- 分析落后：中位 %.2f 秒，最多 %.2f 秒", delays[delays.count / 2], delays.last!)) }
             let drops = status.compactMap(\.captureDrops)
-            if let lastDrop = drops.last, let firstDrop = drops.first { out.append("- 采集丢帧 \(lastDrop >= firstDrop ? lastDrop - firstDrop : lastDrop) 帧") }
+            if let lastDrop = drops.last, let firstDrop = drops.first { out.append(courtFormat("- 采集丢帧 %1$@ 帧", "\(lastDrop >= firstDrop ? lastDrop - firstDrop : lastDrop)")) }
             let batteries = status.compactMap(\.battery)
-            if let a = batteries.first, let b = batteries.last { out.append(String(format: "- 电量 %.0f%% → %.0f%%", a * 100, b * 100)) }
+            if let a = batteries.first, let b = batteries.last { out.append(courtPrintf("- 电量 %.0f%% → %.0f%%", a * 100, b * 100)) }
             if let poses = poseReport(inSession) { out.append(poses) }
             if let exposure = exposureReport(inSession) { out.append(exposure) }
         }
         out.append("")
-        out.append("文件：<记录ID>.json 是记录本身；capture-*.jsonl 是机位每秒的状态（球场识别、温度、负载、发球人姿态读了几次、曝光）；-analysis.jsonl 是辅助检测；-status.jsonl 是看板收到的机位状态。不含录像和配对密钥。")
+        out.append(courtText("文件：<记录ID>.json 是记录本身；capture-*.jsonl 是机位每秒的状态（球场识别、温度、负载、发球人姿态读了几次、曝光）；-analysis.jsonl 是辅助检测；-status.jsonl 是看板收到的机位状态。不含录像和配对密钥。"))
         return out.joined(separator: "\n") + "\n"
     }
 
@@ -444,11 +444,11 @@ public enum DiagnosticBundle {
             requests += pb.requests - pa.requests; spent += max(0, pb.seconds - pa.seconds)
         }
         guard counted > 0, seconds > 0 else { return nil }
-        var text = String(format: "- 发球人姿态（发球识别和发球球速要每秒 %.0f 次以上）：记录中有球场的 %d 秒里平均每秒读 %.1f 次，不到 %.0f 次的 %d 秒（%@）",
+        var text = courtPrintf("- 发球人姿态（发球识别和发球球速要每秒 %.0f 次以上）：记录中有球场的 %d 秒里平均每秒读 %.1f 次，不到 %.0f 次的 %d 秒（%@）",
                           need, Int(seconds.rounded()), Double(frames) / seconds, need, sparse, percent(sparse, counted))
-        if shed > 0 { text += "，其中降载 \(shed) 秒不读" }
-        if skipped > 0 { text += "；分析落后时跳过 \(skipped) 次" }
-        if requests > 0 { text += String(format: "；每次请求约 %.0f 毫秒", spent / Double(requests) * 1000) }
+        if shed > 0 { text += courtFormat("，其中降载 %1$@ 秒不读", "\(shed)") }
+        if skipped > 0 { text += courtFormat("；分析落后时跳过 %1$@ 次", "\(skipped)") }
+        if requests > 0 { text += courtPrintf("；每次请求约 %.0f 毫秒", spent / Double(requests) * 1000) }
         return text
     }
 
@@ -457,9 +457,9 @@ public enum DiagnosticBundle {
     static func exposureReport(_ lines: [CameraLogLine]) -> String? {
         let ms = lines.compactMap(\.exposureMs).filter(\.isFinite).sorted(), iso = lines.compactMap(\.iso).filter(\.isFinite).sorted()
         guard let longest = ms.last else { return nil }
-        var text = String(format: "- 曝光：记录中中位 %.1f 毫秒，最长 %.1f 毫秒", ms[ms.count / 2], longest)
-        if !iso.isEmpty { text += String(format: "，ISO 中位 %.0f", iso[iso.count / 2]) }
-        return text + "（曝光越长，快球在画面里拖得越长）"
+        var text = courtPrintf("- 曝光：记录中中位 %.1f 毫秒，最长 %.1f 毫秒", ms[ms.count / 2], longest)
+        if !iso.isEmpty { text += courtPrintf("，ISO 中位 %.0f", iso[iso.count / 2]) }
+        return text + courtText("（曝光越长，快球在画面里拖得越长）")
     }
 
     private static func percent(_ part: Int, _ whole: Int) -> String {

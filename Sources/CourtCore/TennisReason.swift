@@ -33,17 +33,17 @@ public enum TennisReason: String, CaseIterable, Sendable {
     /// Short wording for shot rows and the recognition panel. Same text on the App and in the browser.
     public var text: String {
         switch self {
-        case .pending: return "还在分析"
-        case .ballNotSeen: return "没看清球"
-        case .speedUnreliable: return "球速不可靠，未计入"
-        case .noBounceSeen: return "没看到球落地"
-        case .hitNet: return "球先碰网"
-        case .notOnCourt: return "落点不在已识别的球场上"
-        case .estimate: return "模型估计的落点"
-        case .cameraCooling: return "机位负载高，这拍未定位落点"
-        case .cameraBusy: return "机位忙不过来，这拍未定位落点"
-        case .failed: return "落点定位出错"
-        case .other: return "暂时无法给出"
+        case .pending: return courtText("还在分析")
+        case .ballNotSeen: return courtText("没看清球")
+        case .speedUnreliable: return courtText("球速不可靠，未计入")
+        case .noBounceSeen: return courtText("没看到球落地")
+        case .hitNet: return courtText("球先碰网")
+        case .notOnCourt: return courtText("落点不在已识别的球场上")
+        case .estimate: return courtText("模型估计的落点")
+        case .cameraCooling: return courtText("机位负载高，这拍未定位落点")
+        case .cameraBusy: return courtText("机位忙不过来，这拍未定位落点")
+        case .failed: return courtText("落点定位出错")
+        case .other: return courtText("暂时无法给出")
         }
     }
 
@@ -61,10 +61,10 @@ public enum TennisReason: String, CaseIterable, Sendable {
 
     static let table: [String: TennisReason] = [
         // Waiting (reference chain)
-        "等待首弹地及连续三维轨迹": .pending,
+        courtText("等待首弹地及连续三维轨迹"): .pending,
         "等待独立队列触地定位": .pending,
         // Speed (reference chain)
-        "缺少击球轨迹样本": .ballNotSeen,
+        courtText("缺少击球轨迹样本"): .ballNotSeen,
         "需要至少四个连续击球轨迹样本": .ballNotSeen,
         "速度拟合时间跨度不足": .ballNotSeen,
         "弹地三维模型位置不可用": .ballNotSeen,
@@ -76,14 +76,14 @@ public enum TennisReason: String, CaseIterable, Sendable {
         "端点与轨迹方向不一致": .speedUnreliable,
         "水平运动方向不一致": .speedUnreliable,
         // Flight ended without a first bounce (engine)
-        "下一段击球前没有可靠首弹地证据": .noBounceSeen,
+        courtText("下一段击球前没有可靠首弹地证据"): .noBounceSeen,
         "会话结束前没有可靠首弹地证据": .noBounceSeen,
         "超过已支持的飞行时间，未确认首弹地": .noBounceSeen,
         "首弹地前出现其他事件": .noBounceSeen,
         "无触地候选": .noBounceSeen,
         "首弹地前检测到触网候选": .hitNet,
         // Landing (engine and CameraSideAnalyzer)
-        "Focus球位置缺失、低分或存在竞争目标": .ballNotSeen,
+        courtText("Focus球位置缺失、低分或存在竞争目标"): .ballNotSeen,
         "触地候选缺少受支持的球场映射": .notOnCourt,
         "模型弹地候选，未验证物理触地或判线精度": .estimate,
         "设备降载期间未做触地定位": .cameraCooling,

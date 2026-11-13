@@ -17,8 +17,13 @@ final class WorkspaceUITests: XCTestCase {
         if name.contains("testCameraZoomPresets") || name.contains("testScreenTourForReview") { app.launchEnvironment["COURT_UI_ZOOM_DEMO"] = "1" }
         // The display shows the seeded demo record (titled 演示数据) as just finished.
         if name.contains("testChallengeReplayDemo") || name.contains("testStorePreviewFlow") { app.launchEnvironment["COURT_UI_REPLAY_DEMO"] = "1" }
+        // Existing tests look up Simplified Chinese labels. A capture run sets COURT_LANGUAGE.
+        let language = ProcessInfo.processInfo.environment["COURT_LANGUAGE"]
+            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_COURT_LANGUAGE"] ?? "zh-Hans"
+        app.launchEnvironment["COURT_LANGUAGE"] = language
         app.launch()
-        XCTAssertTrue(app.buttons["历史记录"].firstMatch.waitForExistence(timeout: 10))
+        let history = language == "zh-Hans" ? app.buttons["历史记录"].firstMatch : app.buttons["court.history.open"].firstMatch
+        XCTAssertTrue(history.waitForExistence(timeout: 10))
     }
 
     override func tearDownWithError() throws {
@@ -1041,16 +1046,23 @@ final class WorkspaceUITests: XCTestCase {
             XCTAssertNoThrow(try XCUIScreen.main.screenshot().pngRepresentation.write(to: url))
         }
         save("00-home")
-        tapReachable(app.buttons["历史记录"].firstMatch)
+        let language = ProcessInfo.processInfo.environment["COURT_LANGUAGE"]
+            ?? ProcessInfo.processInfo.environment["TEST_RUNNER_COURT_LANGUAGE"] ?? "zh-Hans"
+        let history = language == "zh-Hans" ? app.buttons["历史记录"].firstMatch : app.buttons["court.history.open"].firstMatch
+        tapReachable(history)
         XCTAssertTrue(app.collectionViews["court.history.list"].firstMatch.waitForExistence(timeout: 5))
-        let record = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "示例记录")).firstMatch
+        let record = language == "zh-Hans"
+            ? app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "示例记录")).firstMatch
+            : app.buttons["court.history.row"].firstMatch
         XCTAssertTrue(makeSheetReachable(record), "Seed the demo record with court-probe demo-session first")
         save("01-history")
-        XCTAssertTrue(makeSheetReachable(app.buttons["球速与落点查询"].firstMatch, towardTop: true)); app.buttons["球速与落点查询"].firstMatch.tap()
+        let shotsMode = language == "zh-Hans" ? app.buttons["球速与落点查询"].firstMatch : app.buttons["court.history.mode.shots"].firstMatch
+        XCTAssertTrue(makeSheetReachable(shotsMode, towardTop: true)); shotsMode.tap()
         save("02-query")
         let query = app.scrollViews.firstMatch
         for page in 1...3 { query.swipeUp(velocity: .slow); save("02-query-\(page)") }
-        XCTAssertTrue(makeSheetReachable(app.buttons["按记录查看"].firstMatch, towardTop: true)); app.buttons["按记录查看"].firstMatch.tap()
+        let sessionsMode = language == "zh-Hans" ? app.buttons["按记录查看"].firstMatch : app.buttons["court.history.mode.sessions"].firstMatch
+        XCTAssertTrue(makeSheetReachable(sessionsMode, towardTop: true)); sessionsMode.tap()
         XCTAssertTrue(makeSheetReachable(record)); record.tap()
         let detail = app.scrollViews["court.history.detail.scroll"].firstMatch
         XCTAssertTrue(detail.waitForExistence(timeout: 5))
@@ -1087,12 +1099,12 @@ final class WorkspaceUITests: XCTestCase {
         for step in 0..<18 { save("replay-a-\(step)"); Thread.sleep(forTimeInterval: 0.4) }
         // The same three replays as the store preview.
         for pass in ["b", "c"] {
-            let previous = app.buttons["上一个"].firstMatch
+            let previous = app.buttons["court.replay.previous"].firstMatch
             guard previous.isEnabled else { break }
             previous.tap()
             for step in 0..<18 { save("replay-\(pass)-\(step)"); Thread.sleep(forTimeInterval: 0.4) }
         }
-        app.buttons["关闭"].firstMatch.tap()
+        app.buttons["court.replay.close"].firstMatch.tap()
         XCUIDevice.shared.orientation = .portrait
     }
 
@@ -1126,7 +1138,7 @@ final class WorkspaceUITests: XCTestCase {
         // A replay runs 5.8 s; the extra 1.6 s keeps its verdict and dimension bar on screen long enough to read.
         Thread.sleep(forTimeInterval: 7.4)
         for index in 2...3 {
-            let previous = app.buttons["上一个"].firstMatch
+            let previous = app.buttons["court.replay.previous"].firstMatch
             guard previous.isEnabled else { break }
             previous.tap()
             mark("replay\(index)")
@@ -1134,7 +1146,7 @@ final class WorkspaceUITests: XCTestCase {
         }
         mark("end")
         try marks.write(to: URL(fileURLWithPath: folder).appendingPathComponent("marks.txt"), atomically: true, encoding: .utf8)
-        app.buttons["关闭"].firstMatch.tap()
+        app.buttons["court.replay.close"].firstMatch.tap()
         XCUIDevice.shared.orientation = .portrait
     }
 

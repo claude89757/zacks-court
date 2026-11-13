@@ -1,17 +1,20 @@
 // Zacks Court browser display (docs/web-display.md). A thin client: the camera owns the session,
 // recordings and shot rows; this page shows them and sends requests the camera answers.
 import { hmacSHA256Hex, uuid } from "./hmac.js";
+import { t, fmt, loadCatalog, dateTag } from "./l10n.js";
+
+await loadCatalog();
 
 const $ = (id) => document.getElementById(id);
 const PROTOCOL = 2;
 const STROKES = {
-  groundstroke: "落地击球", forehand: "正手", backhand: "反手", serve: "发球",
-  volley: "截击", overhead: "高压", feed: "喂球", unknown: "待确认",
+  groundstroke: t("落地击球"), forehand: t("正手"), backhand: t("反手"), serve: t("发球"),
+  volley: t("截击"), overhead: t("高压"), feed: t("喂球"), unknown: t("待确认"),
 };
 const STROKE_ORDER = Object.keys(STROKES);
 // Same words as the App (SessionState.courtTitle, CameraStatusPanel.thermalTitle).
-const SESSION_STATES = { active: "进行中", paused: "已暂停", completed: "已完成", interrupted: "意外中断" };
-const THERMAL = { nominal: "正常", fair: "偏暖", serious: "偏高", critical: "过热" };
+const SESSION_STATES = { active: t("进行中"), paused: t("已暂停"), completed: t("已完成"), interrupted: t("意外中断") };
+const THERMAL = { nominal: t("正常"), fair: t("偏暖"), serious: t("偏高"), critical: t("过热") };
 const BACKOFF = [0.5, 1, 2, 4, 8];
 const TOKEN_KEY = `court.web.token.${location.host}`;
 /// Shot lists grow page by page: an hour of play is thousands of rows, and each row may hold a player.
@@ -60,13 +63,24 @@ function duration(seconds) {
 }
 function dateText(ms) {
   if (!ms) return "—";
-  return new Date(ms).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return new Date(ms).toLocaleString(dateTag(), { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 const hasPlacement = (shot) => Number.isFinite(shot?.bounce?.xMeters) && Number.isFinite(shot?.bounce?.yMeters);
 /// The camera sends the App's plain wording (TennisReason); an older camera sends only its engine
 /// wording, which is shown as a last resort rather than nothing.
-const speedReason = (shot) => shot?.speedReasonText || (shot?.speedReason?.startsWith("等待") ? "还在分析" : shot?.speedReason) || "暂时无法给出";
-const placementReason = (shot) => shot?.placementReasonText || (shot?.bounce?.reason?.startsWith("等待") ? "还在分析" : shot?.bounce?.reason) || "没看到球落地";
+// Codes travel with the row. The browser translates them in its own language. speedReasonText is
+// the camera's wording, used only when an older camera sent no code.
+const REASON_TEXT = {
+  pending: "还在分析", ballNotSeen: "没看清球", speedUnreliable: "球速不可靠，未计入",
+  noBounceSeen: "没看到球落地", hitNet: "球先碰网", notOnCourt: "落点不在已识别的球场上",
+  estimate: "模型估计的落点", cameraCooling: "机位负载高，这拍未定位落点",
+  cameraBusy: "机位忙不过来，这拍未定位落点", failed: "落点定位出错", other: "暂时无法给出",
+};
+const reasonFromCode = (code) => (code && REASON_TEXT[code] ? t(REASON_TEXT[code]) : "");
+const speedReason = (shot) => reasonFromCode(shot?.speedReasonCode)
+  || shot?.speedReasonText || (shot?.speedReason?.startsWith("等待") ? t("还在分析") : shot?.speedReason) || t("暂时无法给出");
+const placementReason = (shot) => reasonFromCode(shot?.bounce?.reasonCode)
+  || shot?.placementReasonText || (shot?.bounce?.reason?.startsWith("等待") ? t("还在分析") : shot?.bounce?.reason) || t("没看到球落地");
 const strokeTag = (kind) => `<span class="tag" style="--c:${strokeColor(kind)}">${STROKES[kind] || "待确认"}</span>`;
 /// The stroke's mark on the court map, the same shapes as the App (TennisStrokeKind.courtMarkPath):
 /// circle, square, triangle, diamond, pentagon, cross, plus and star, so colour is never the only cue.
@@ -101,15 +115,15 @@ const markIcon = (kind) => `<svg class="mark" viewBox="-1.5 -1.5 3 3" aria-hidde
 /// Half and area of the court from the near baseline (y = 0), as the App says it (courtZone).
 function courtZone(x, y) {
   const W = 10.97, L = 23.77, net = L / 2;
-  if (!(x >= 0 && x <= W && y >= 0 && y <= L)) return "场外";
+  if (!(x >= 0 && x <= W && y >= 0 && y <= L)) return t("场外");
   const singles = x >= 1.37 && x <= W - 1.37;
-  return (y < net ? "近端半场" : "远端半场") + (!singles ? "双打边线区" : Math.abs(y - net) <= 6.4 ? "发球区" : "后场");
+  return (y < net ? t("近端半场") : t("远端半场")) + (!singles ? t("双打边线区") : Math.abs(y - net) <= 6.4 ? t("发球区") : t("后场"));
 }
 /// What a screen reader says for one bounce: shot number, stroke, speed when known, rough placement.
 function bounceLabel(shot, number) {
   const x = shot.bounce.xMeters, y = shot.bounce.yMeters;
-  return [`第 ${number} 拍`, STROKES[shot.stroke] || "待确认", validSpeed(shot.speedKPH) ? `约 ${speedText(shot.speedKPH)} 千米每小时` : "暂无球速",
-    courtZone(x, y), `约横 ${x.toFixed(1)} 米、纵 ${y.toFixed(1)} 米`].join("，");
+  return [fmt("第 %1$@ 拍", number), STROKES[shot.stroke] || t("待确认"), validSpeed(shot.speedKPH) ? fmt("约 %1$@ 千米每小时", speedText(shot.speedKPH)) : t("暂无球速"),
+    courtZone(x, y), fmt("约横 %1$@ 米、纵 %2$@ 米", x.toFixed(1), y.toFixed(1))].join("，");
 }
 const isOpen = (session) => session && (session.state === "active" || session.state === "paused");
 /// Open, or interrupted (the camera restarted mid-session) and waiting to be resumed or finished.
@@ -145,7 +159,7 @@ function setLink(text, kind) {
 
 function connect() {
   clearTimeout(state.retry);
-  setLink(state.attempt ? `重连中（第 ${state.attempt} 次）…` : "连接中…", "bad");
+  setLink(state.attempt ? fmt("重连中（第 %1$@ 次）…", state.attempt) : t("连接中…"), "bad");
   const socket = new WebSocket(`ws://${location.host}/ws`);
   socket.binaryType = "arraybuffer";
   state.socket = socket;
@@ -159,13 +173,13 @@ function connect() {
     const was = state.connected;
     // The access key stays: a loading clip may still use it for a minute.
     state.connected = false;
-    for (const [, waiter] of state.waiters) waiter.resolve({ ok: false, message: "连接已断开，命令可能没有送达，请看机位状态后再试。" });
+    for (const [, waiter] of state.waiters) waiter.resolve({ ok: false, message: t("连接已断开，命令可能没有送达，请看机位状态后再试。") });
     state.waiters.clear();
     if (state.closedByUs) return;
-    if (!state.token) { setLink("等待配对", "bad"); return; } // reconnect only with something to log in with
+    if (!state.token) { setLink(t("等待配对"), "bad"); return; } // reconnect only with something to log in with
     state.attempt += 1;
     const delay = BACKOFF[Math.min(state.attempt - 1, BACKOFF.length - 1)];
-    setLink(was ? "已断开，正在重连" : "无法连接机位，正在重试", "bad");
+    setLink(was ? t("已断开，正在重连") : t("无法连接机位，正在重试"), "bad");
     state.retry = setTimeout(connect, delay * 1000);
     render();
   };
@@ -204,11 +218,11 @@ function receive(message) {
 function auth(body) {
   if (body.nonce) {
     if (body.version !== PROTOCOL) {
-      showLogin(`机位运行协议 v${body.version}，本页面是 v${PROTOCOL}，请刷新页面。`);
+      showLogin(fmt("机位运行协议 v%1$@，本页面是 v%2$@，请刷新页面。", body.version, PROTOCOL));
       state.closedByUs = true; state.socket.close(); return;
     }
     state.nonce = body.nonce;
-    $("camera-name").textContent = body.camera ? `机位：${body.camera}` : "";
+    $("camera-name").textContent = body.camera ? fmt("机位：%1$@", body.camera) : "";
     if (state.token) { state.sentMac = true; send("auth", { mac: hmacSHA256Hex(state.token, body.nonce) }); }
     else if (state.pendingPIN) { send("auth", { pin: state.pendingPIN }); state.pendingPIN = null; }
     else showLogin();
@@ -219,7 +233,7 @@ function auth(body) {
     if (body.token) { state.token = body.token; save(TOKEN_KEY, body.token); }
     state.access = body.access; state.connected = true; state.attempt = 0;
     $("login").hidden = true; $("app").hidden = false;
-    setLink("已连接机位", "ok");
+    setLink(t("已连接机位"), "ok");
     send("hello", { role: "display", device: deviceName(), hardware: "browser", app: "web", capabilities: ["web"] });
     if (state.previewOn) send("preview", { enabled: true });
     // History is read from disk on the camera: load it once when the page opens, then on 「刷新」.
@@ -233,28 +247,28 @@ function auth(body) {
     return;
   }
   showLogin();
-  $("login-error").textContent = body.message || "配对失败。";
+  $("login-error").textContent = body.message || t("配对失败。");
 }
 
 function showLogin(reason) {
   $("app").hidden = true; $("login").hidden = false;
-  setLink("等待配对", "bad");
+  setLink(t("等待配对"), "bad");
   if (reason) $("login-reason").textContent = reason;
   $("pin").focus();
 }
 
 function deviceName() {
   const agent = navigator.userAgent;
-  if (/iPad/.test(agent)) return "iPad 浏览器";
-  if (/Android/.test(agent)) return /Mobile/.test(agent) ? "安卓手机浏览器" : "安卓平板浏览器";
-  if (/iPhone/.test(agent)) return "iPhone 浏览器";
-  return "浏览器";
+  if (/iPad/.test(agent)) return t("iPad 浏览器");
+  if (/Android/.test(agent)) return /Mobile/.test(agent) ? t("安卓手机浏览器") : t("安卓平板浏览器");
+  if (/iPhone/.test(agent)) return t("iPhone 浏览器");
+  return t("浏览器");
 }
 
 $("pin-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const pin = $("pin").value.trim();
-  if (!/^\d{6}$/.test(pin)) { $("login-error").textContent = "配对码是 6 位数字。"; return; }
+  if (!/^\d{6}$/.test(pin)) { $("login-error").textContent = t("配对码是 6 位数字。"); return; }
   $("login-error").textContent = "";
   if (state.socket?.readyState === WebSocket.OPEN && state.nonce) send("auth", { pin });
   else { state.pendingPIN = pin; state.attempt = 0; connect(); }
@@ -304,7 +318,7 @@ async function repairSession(id) {
     state.sessionRows = new Map(rows.map((row) => [row.id, row]));
   } catch { /* the next disagreement retries after the back-off */ }
   state.repairing = false;
-  if (state.repairs >= 5) toast("页面与机位的记录状态仍不一致，请以机位为准，或刷新页面。");
+  if (state.repairs >= 5) toast(t("页面与机位的记录状态仍不一致，请以机位为准，或刷新页面。"));
   scheduleRender();
 }
 
@@ -336,12 +350,12 @@ function sessionElapsed(session) {
 
 function command(name, fields = {}, timeout = 15000) {
   return new Promise((resolve) => {
-    if (!state.connected) { resolve({ ok: false, message: "未连接机位：等页面重新连上机位后再试。" }); return; }
+    if (!state.connected) { resolve({ ok: false, message: t("未连接机位：等页面重新连上机位后再试。") }); return; }
     const id = uuid();
     state.waiters.set(id, { resolve });
     send("control", { id, command: name, ...fields });
     setTimeout(() => {
-      if (state.waiters.delete(id)) resolve({ ok: false, message: "机位没有回应，请看机位状态后再试。" });
+      if (state.waiters.delete(id)) resolve({ ok: false, message: t("机位没有回应，请看机位状态后再试。") });
     }, timeout);
   });
 }
@@ -349,7 +363,7 @@ async function run(button, name, fields, timeout) {
   button.disabled = true;
   const reply = await command(name, fields, timeout);
   button.disabled = false;
-  if (reply.ok === false) toast(reply.message || "机位没有执行这条命令。");
+  if (reply.ok === false) toast(reply.message || t("机位没有执行这条命令。"));
   render();
   return reply;
 }
@@ -360,19 +374,19 @@ async function runSession(name, fields, timeout) {
   state.pending = name; render();
   const reply = await command(name, fields, timeout);
   state.pending = null;
-  if (reply.ok === false) toast(reply.message || "机位没有执行这条命令。");
+  if (reply.ok === false) toast(reply.message || t("机位没有执行这条命令。"));
   render();
   return reply;
 }
 
-$("start").addEventListener("click", () => runSession("start", { label: $("title").value.trim() || "球场分析" }));
+$("start").addEventListener("click", () => runSession("start", { label: $("title").value.trim() || t("球场分析") }));
 $("pause").addEventListener("click", () => {
   const session = state.session; if (!session) return;
   runSession(session.state === "active" ? "pause" : "resume", { sessionID: session.id }, 30000);
 });
 $("finish").addEventListener("click", () => {
   const session = state.session; if (!session) return;
-  if (!confirm(`结束记录「${session.title}」？结束后机位停止录像。`)) return;
+  if (!confirm(fmt("结束记录「%1$@」？结束后机位停止录像。", session.title))) return;
   runSession("finish", { sessionID: session.id }, 60000);
 });
 // The same two markers as the App: 精彩 and 待复核.
@@ -381,17 +395,17 @@ for (const id of ["marker", "marker-review"]) {
     const session = state.session; if (!session) return;
     const label = $(id).dataset.label;
     const reply = await run($(id), "marker", { sessionID: session.id, label, date: Date.now() + state.clockOffset });
-    if (reply.ok !== false) { toast(`已标记「${label}」`, true); navigator.vibrate?.(30); }
+    if (reply.ok !== false) { toast(fmt("已标记「%1$@」", label), true); navigator.vibrate?.(30); }
   });
 }
 $("wake").addEventListener("click", async () => {
   const reply = await run($("wake"), "wake");
-  if (reply.ok !== false) toast("已请求点亮机位屏幕", true);
+  if (reply.ok !== false) toast(t("已请求点亮机位屏幕"), true);
 });
 for (const id of ["near", "far"]) {
   $(id).addEventListener("change", async () => {
     const reply = await run($(id), "handedness", { near: $("near").value, far: $("far").value });
-    if (reply.ok !== false) toast("持拍手已保存，影响之后的击球", true);
+    if (reply.ok !== false) toast(t("持拍手已保存，影响之后的击球"), true);
   });
 }
 
@@ -432,21 +446,21 @@ function receiveBinary(buffer) {
 
 $("history-refresh").addEventListener("click", refreshHistory);
 async function api(path) {
-  if (!state.access) throw new Error("未连接机位");
+  if (!state.access) throw new Error(t("未连接机位"));
   const response = await fetch(`${path}${path.includes("?") ? "&" : "?"}k=${encodeURIComponent(state.access)}`, { cache: "no-store" });
-  if (!response.ok) throw new Error((await response.text()) || `机位返回 ${response.status}`);
+  if (!response.ok) throw new Error((await response.text()) || fmt("机位返回 %1$@", response.status));
   return response.json();
 }
 async function refreshHistory() {
   try { state.history = await api("/api/sessions"); renderHistory(); }
-  catch (error) { $("history").innerHTML = `<li class="error small">读取历史记录失败：${esc(error.message)}。确认已连接机位后点「刷新」。</li>`; }
+  catch (error) { $("history").innerHTML = fmt("<li class=\"error small\">读取历史记录失败：%1$@。确认已连接机位后点「刷新」。</li>", esc(error.message)); }
 }
 function renderHistory() {
   const items = state.history.slice(0, 30).map((row) => {
     const status = SESSION_STATES[row.state] || row.state;
-    return `<li><button data-session="${esc(row.id)}">${esc(row.title)}<br><span class="muted small">${dateText(row.startedAt)} · ${duration(row.elapsed)} · ${status} · ${row.shots} 拍（球速 ${row.speeds} · 落点 ${row.landings}）</span></button></li>`;
+    return fmt("<li><button data-session=\"%1$@\">%2$@<br><span class=\"muted small\">%3$@ · %4$@ · %5$@ · %6$@ 拍（球速 %7$@ · 落点 %8$@）</span></button></li>", esc(row.id), esc(row.title), dateText(row.startedAt), duration(row.elapsed), status, row.shots, row.speeds, row.landings);
   });
-  $("history").innerHTML = items.join("") || `<li class="muted small">机位上还没有记录。</li>`;
+  $("history").innerHTML = items.join("") || fmt("<li class=\"muted small\">机位上还没有记录。</li>", );
 }
 $("history").addEventListener("click", async (event) => {
   const id = event.target.closest("button")?.dataset.session;
@@ -461,16 +475,16 @@ function showDetail({ session, elapsed, available }) {
   const rows = (session.tennisEvents || []).slice().sort((a, b) => a.sourcePTS - b.sourcePTS);
   $("detail-title").textContent = session.title;
   const speeds = rows.map((r) => r.speedKPH).filter(validSpeed);
-  $("detail-meta").textContent = `${dateText(session.startedAt)} · ${duration(elapsed)} · ${rows.length} 拍 · 有效平均 ${speeds.length ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : "—"} km/h · 模型 ${session.tennisModelVersion || "—"}`;
+  $("detail-meta").textContent = fmt("%1$@ · %2$@ · %3$@ 拍 · 有效平均 %4$@ km/h · 模型 %5$@", dateText(session.startedAt), duration(elapsed), rows.length, speeds.length ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : "—", session.tennisModelVersion || "—");
   const recordings = session.recordings || [];
   // `available` lists recordings still on the camera (older cameras omit it: offer them all).
   const onCamera = (r) => !Array.isArray(available) || available.includes(r.filename);
   $("detail-recordings").innerHTML = recordings.length
     ? recordings.map((r) => onCamera(r)
-      ? `<a href="/api/recording?session=${session.id}&file=${encodeURIComponent(r.filename)}&k=${encodeURIComponent(state.access)}" download="${esc(r.filename)}" data-testid="court.history.download">下载录像 ${esc(r.filename)}（${duration(r.duration)}，约 ${Math.max(1, Math.round(r.duration))} MB）</a>`
-      : `<p class="muted small" data-testid="court.history.cleared">${esc(r.filename)}：机位上的录像已清理，逐拍数据保留。</p>`).join("")
-      + `<p class="muted small">整段录像约每分钟 60 MB；机位记录中不能下载。</p>`
-    : `<p class="muted small">这次记录没有录像。</p>`;
+      ? fmt("<a href=\"/api/recording?session=%1$@&file=%2$@&k=%3$@\" download=\"%4$@\" data-testid=\"court.history.download\">下载录像 %5$@（%6$@，约 %7$@ MB）</a>", session.id, encodeURIComponent(r.filename), encodeURIComponent(state.access), esc(r.filename), esc(r.filename), duration(r.duration), Math.max(1, Math.round(r.duration)))
+      : fmt("<p class=\"muted small\" data-testid=\"court.history.cleared\">%1$@：机位上的录像已清理，逐拍数据保留。</p>", esc(r.filename))).join("")
+      + fmt("<p class=\"muted small\">整段录像约每分钟 60 MB；机位记录中不能下载。</p>", )
+    : fmt("<p class=\"muted small\">这次记录没有录像。</p>", );
   state.detail = { rows, sessionID: session.id, limit: PAGE };
   $("detail-shots").innerHTML = "";
   renderDetailShots();
@@ -483,29 +497,29 @@ function renderDetailShots() {
   const shown = list.querySelectorAll(".shot").length;
   const page = rows.slice().reverse().slice(shown, limit);
   list.insertAdjacentHTML("beforeend", page.map((shot) => shotItem(shot, sessionID, rows[0]?.sourcePTS)).join(""));
-  if (!rows.length) list.innerHTML = `<li class="muted small">本次记录没有可用的击球候选。</li>`;
+  if (!rows.length) list.innerHTML = fmt("<li class=\"muted small\">本次记录没有可用的击球候选。</li>", );
   pager($("detail-more"), $("detail-count"), rows.length, Math.min(limit, rows.length));
 }
 $("detail-more").addEventListener("click", () => { state.detail.limit += PAGE; renderDetailShots(); });
 function pager(button, count, total, shown) {
-  count.textContent = total > 0 ? (shown < total ? `共 ${total} 拍 · 显示最近 ${shown} 拍` : `共 ${total} 拍`) : "";
+  count.textContent = total > 0 ? (shown < total ? fmt("共 %1$@ 拍 · 显示最近 %2$@ 拍", total, shown) : fmt("共 %1$@ 拍", total)) : "";
   button.hidden = shown >= total;
-  button.textContent = `显示更早的 ${Math.min(PAGE, total - shown)} 拍`;
+  button.textContent = fmt("显示更早的 %1$@ 拍", Math.min(PAGE, total - shown));
 }
 
 // MARK: Clips (shared by the live list and history)
 
 function shotItem(shot, sessionID, firstPTS) {
   const speed = validSpeed(shot.speedKPH)
-    ? `<span class="shot-speed">${Math.round(shot.speedKPH)}</span> <span class="muted small">km/h 估计</span>`
+    ? fmt("<span class=\"shot-speed\">%1$@</span> <span class=\"muted small\">km/h 估计</span>", Math.round(shot.speedKPH))
     : `<span class="shot-speed">—</span>`;
   const why = [];
-  if (!validSpeed(shot.speedKPH)) why.push(`球速：${speedReason(shot)}`);
-  if (hasPlacement(shot)) why.push(`落点：约横 ${shot.bounce.xMeters.toFixed(1)} m，纵 ${shot.bounce.yMeters.toFixed(1)} m`);
-  else why.push(`落点：${placementReason(shot)}`);
-  if (shot.origin === "offline") why.push("离线补算");
+  if (!validSpeed(shot.speedKPH)) why.push(fmt("球速：%1$@", speedReason(shot)));
+  if (hasPlacement(shot)) why.push(fmt("落点：约横 %1$@ m，纵 %2$@ m", shot.bounce.xMeters.toFixed(1), shot.bounce.yMeters.toFixed(1)));
+  else why.push(fmt("落点：%1$@", placementReason(shot)));
+  if (shot.origin === "offline") why.push(t("离线补算"));
   const time = Number.isFinite(firstPTS) ? `+${duration(shot.sourcePTS - firstPTS)}` : "";
-  const clip = sessionID ? `<div class="shot-actions"><button data-clip="${esc(shot.id)}" data-session="${esc(sessionID)}">播放这一拍</button></div>` : "";
+  const clip = sessionID ? fmt("<div class=\"shot-actions\"><button data-clip=\"%1$@\" data-session=\"%2$@\">播放这一拍</button></div>", esc(shot.id), esc(sessionID)) : "";
   return `<li class="shot" data-shot="${esc(shot.id)}"><div class="shot-head"><span>${strokeTag(shot.stroke)} <span class="muted small">${time}</span></span><span>${speed}</span></div><div class="shot-why">${esc(why.join(" · "))}</div>${clip}</li>`;
 }
 
@@ -514,7 +528,7 @@ function clipName(shotID) {
   const rows = state.detail?.rows?.some((r) => r.id === shotID) ? state.detail.rows : dashboardRows();
   const index = rows.findIndex((r) => r.id === shotID), shot = rows[index];
   const parts = ["ZacksCourt"];
-  if (index >= 0) parts.push(`第${index + 1}拍`);
+  if (index >= 0) parts.push(fmt("第%1$@拍", index + 1));
   if (shot) parts.push(STROKES[shot.stroke] || STROKES.unknown);
   if (shot && validSpeed(shot.speedKPH)) parts.push(`${Math.round(shot.speedKPH)}kmh`);
   return parts.join("-") + ".mp4";
@@ -526,11 +540,11 @@ async function playClip(button) {
   item.querySelector(".clip-error")?.remove();
   item.querySelector(".clip-download")?.remove();
   const url = `/api/clip?session=${button.dataset.session}&shot=${button.dataset.clip}&k=${encodeURIComponent(state.access || "")}`;
-  button.disabled = true; button.textContent = "机位正在剪片段…";
+  button.disabled = true; button.textContent = t("机位正在剪片段…");
   try {
     // HEAD first: a refused clip comes back with the camera's reason instead of a broken player.
     const check = await fetch(url, { method: "HEAD", cache: "no-store" });
-    if (!check.ok) throw new Error((await fetch(url, { cache: "no-store" }).then((r) => r.text())) || `机位返回 ${check.status}`);
+    if (!check.ok) throw new Error((await fetch(url, { cache: "no-store" }).then((r) => r.text())) || fmt("机位返回 %1$@", check.status));
     const video = document.createElement("video");
     video.controls = true; video.playsInline = true; video.muted = true; video.preload = "auto";
     video.src = url;
@@ -539,12 +553,12 @@ async function playClip(button) {
     // The camera keeps the cut clip for a while, so the download asks for the same file again.
     const link = document.createElement("a");
     link.className = "clip-download"; link.href = url; link.download = clipName(button.dataset.clip);
-    link.textContent = "下载这一拍"; link.dataset.testid = "court.shot.download";
+    link.textContent = t("下载这一拍"); link.dataset.testid = "court.shot.download";
     item.querySelector(".shot-actions")?.appendChild(link);
   } catch (error) {
     item.insertAdjacentHTML("beforeend", `<p class="clip-error shot-why">${esc(error.message)}</p>`);
   }
-  button.disabled = false; button.textContent = "重新播放这一拍";
+  button.disabled = false; button.textContent = t("重新播放这一拍");
 }
 for (const list of ["shots", "detail-shots"]) {
   $(list).addEventListener("click", (event) => {
@@ -558,12 +572,12 @@ $("shots-more").addEventListener("click", () => { state.liveLimit += PAGE; rende
 // MARK: Hawk-Eye line calls (the camera judges with the settings a display sent; this page shows them)
 
 const CALLS = {
-  out: { shout: "OUT", text: "出界", color: "var(--recording)" },
-  in: { shout: "IN", text: "界内", color: "var(--green)" },
-  close: { shout: "CLOSE", text: "压线附近", color: "var(--warning)" },
+  out: { shout: "OUT", text: t("出界"), color: "var(--recording)" },
+  in: { shout: "IN", text: t("界内"), color: "var(--green)" },
+  close: { shout: "CLOSE", text: t("压线附近"), color: "var(--warning)" },
 };
-const LINES = { sideline: "边线", baseline: "底线", serviceLine: "发球线", centreLine: "中线" };
-const FORMATS = { singles: "单打", doubles: "双打" };
+const LINES = { sideline: t("边线"), baseline: t("底线"), serviceLine: t("发球线"), centreLine: t("中线") };
+const FORMATS = { singles: t("单打"), doubles: t("双打") };
 const VOICE_KEY = "court.web.hawkeye.voice";
 const VOICE_NAME_KEY = "court.web.hawkeye.voiceName";
 /// Line-call voices; mirrors CourtCore/LineCallVoice.swift (a test checks the two lists agree and every
@@ -573,7 +587,7 @@ const VOICES = [
   { id: "verse", name: "Verse", gender: "male" }, { id: "coral", name: "Coral", gender: "female" },
 ];
 const DEFAULT_VOICE = "ash";
-const GENDERS = { male: "男声", female: "女声" };
+const GENDERS = { male: t("男声"), female: t("女声") };
 const voiceById = (id) => VOICES.find((v) => v.id === id) || VOICES.find((v) => v.id === DEFAULT_VOICE);
 /// Calls this old (row time against the newest row of the message) are not announced: a page that
 /// reconnects must not shout past calls. Same as the app (HawkEyeAlerts).
@@ -595,10 +609,10 @@ function visibleGap(j) {
   return null;
 }
 function hawkDetail(j) {
-  const cm = Math.round((visibleGap(j) || 0) * 100), line = LINES[j.line] || "线";
-  if (j.call === "out") return `出界约 ${cm} 厘米 · ${line}`;
-  if (j.call === "in") return cm === 0 ? `界内 · 球印压在${line}上` : `界内 · 距${line}约 ${cm} 厘米`;
-  return `离${line}不到 ${Math.round(j.marginM * 100)} 厘米，无法判定`;
+  const cm = Math.round((visibleGap(j) || 0) * 100), line = LINES[j.line] || t("线");
+  if (j.call === "out") return fmt("出界约 %1$@ 厘米 · %2$@", cm, line);
+  if (j.call === "in") return cm === 0 ? fmt("界内 · 球印压在%1$@上", line) : fmt("界内 · 距%1$@约 %2$@ 厘米", line, cm);
+  return fmt("离%1$@不到 %2$@ 厘米，无法判定", line, Math.round(j.marginM * 100));
 }
 
 function hawkStatus(status) {
@@ -637,9 +651,9 @@ function showCall(alert, fresh) {
   element.style.setProperty("--call", look.color);
   element.className = `hawkeye-call ${j.call}`;
   $("hawkeye-shout").textContent = look.shout;
-  $("hawkeye-title").textContent = `界内外 · ${look.text}${j.serve ? " · 发球" : ""}`;
+  $("hawkeye-title").textContent = fmt("界内外 · %1$@%2$@", look.text, j.serve ? " · 发球" : "");
   $("hawkeye-detail").textContent = hawkDetail(j);
-  element.setAttribute("aria-label", `界内外：${look.text}，${hawkDetail(j)}。轻点关闭`);
+  element.setAttribute("aria-label", fmt("界内外：%1$@，%2$@。轻点关闭", look.text, hawkDetail(j)));
   element.hidden = false;
   if (fresh) {
     clearTimeout(state.hawkEye.timer);
@@ -737,13 +751,13 @@ async function setHawk(settings) {
   state.hawkEye.pending = settings;
   renderHawkEye();
   const reply = await command("hawkEye", { hawkEye: settings });
-  if (reply.ok === false) { state.hawkEye.pending = null; toast(reply.message || "机位没有保存界内外设置。"); }
+  if (reply.ok === false) { state.hawkEye.pending = null; toast(reply.message || t("机位没有保存界内外设置。")); }
   if (!settings.enabled) showCall(null);
   render();
 }
 function openHawkEye() {
   unlockVoice();
-  if (!hawkSupported()) { toast(state.connected ? "机位的 App 版本不支持界内外判定，请更新机位。" : "连接机位后才能开启界内外。"); return; }
+  if (!hawkSupported()) { toast(state.connected ? t("机位的 App 版本不支持界内外判定，请更新机位。") : t("连接机位后才能开启界内外。")); return; }
   if (hawkSettings().enabled) { renderHawkEye(); $("hawkeye-settings").showModal(); } else $("hawkeye-ask").showModal();
 }
 for (const id of ["hawkeye-open", "board-hawkeye"]) $(id).addEventListener("click", openHawkEye);
@@ -770,14 +784,14 @@ function renderHawkEye() {
     const button = $(id);
     button.hidden = !supported;
     button.classList.toggle("on", settings.enabled);
-    button.textContent = settings.enabled ? `◉ 界内外 · ${FORMATS[settings.format] || "单打"}` : "◎ 界内外";
-    button.setAttribute("aria-label", settings.enabled ? `界内外已开启，${FORMATS[settings.format]}，${settings.farHalf ? "全场" : "仅近端半场"}` : "开启界内外");
+    button.textContent = settings.enabled ? fmt("◉ 界内外 · %1$@", FORMATS[settings.format] || "单打") : t("◎ 界内外");
+    button.setAttribute("aria-label", settings.enabled ? fmt("界内外已开启，%1$@，%2$@", FORMATS[settings.format], settings.farHalf ? "全场" : "仅近端半场") : t("开启界内外"));
   }
   for (const button of document.querySelectorAll("#hawkeye-settings [data-set-format]")) {
     button.setAttribute("aria-checked", String(button.dataset.setFormat === settings.format));
   }
   $("hawkeye-far").checked = Boolean(settings.farHalf);
-  $("hawkeye-far-note").textContent = settings.farHalf ? "远端落点看得斜，误差是近端的几倍，远端的判定更常显示「压线附近」。" : "只判近端半场：远端的落点误差大，默认不判。";
+  $("hawkeye-far-note").textContent = settings.farHalf ? t("远端落点看得斜，误差是近端的几倍，远端的判定更常显示「压线附近」。") : t("只判近端半场：远端的落点误差大，默认不判。");
   $("hawkeye-voice").checked = state.hawkEye.voice;
   $("hawkeye-voice-name").value = state.hawkEye.voiceName;
   $("hawkeye-pending").hidden = !state.hawkEye.pending;
@@ -1141,10 +1155,10 @@ function paintMeasure(g, cam, scene, m) {
     g.lineWidth = 2; g.lineCap = "round"; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]);
     for (const q of [a, b]) { g.moveTo(q[0] - nx, q[1] - ny); g.lineTo(q[0] + nx, q[1] + ny); }
     g.stroke();
-    label(`约 ${Math.round(scene.measure.metres * 100)} 厘米`, Math.min(a[0], bFull[0]) - 12, (a[1] + bFull[1]) / 2, 20);
+    label(fmt("约 %1$@ 厘米", Math.round(scene.measure.metres * 100)), Math.min(a[0], bFull[0]) - 12, (a[1] + bFull[1]) / 2, 20);
   } else {
     const p = cam.project(v3.add(scene.bounce, side));
-    if (p) label(j.call === "close" ? `误差 ±${Math.round(j.marginM * 100)} 厘米` : "球印压线", p[0] - 6, p[1] - 30, 17);
+    if (p) label(j.call === "close" ? fmt("误差 ±%1$@ 厘米", Math.round(j.marginM * 100)) : t("球印压线"), p[0] - 6, p[1] - 30, 17);
   }
 }
 
@@ -1165,13 +1179,13 @@ function showChallenge(keepIndex) {
   const shot = current?.shot, challenged = Boolean(shot?.challenge);
   const scene = current && replayScene(shot);
   const unjudged = Boolean(current && !scene && challenged);
-  $("challenge-heading").textContent = challenged ? "挑战" : "界内外回放";
+  $("challenge-heading").textContent = challenged ? t("挑战") : t("界内外回放");
   $("challenge-empty").hidden = Boolean(current);
   $("challenge-unjudged").hidden = !unjudged;
   $("challenge-canvas").hidden = !scene;
   $("challenge-prev").disabled = challenge.index <= 0;
   $("challenge-next").disabled = challenge.index >= challenge.shots.length - 1;
-  $("challenge-number").textContent = current ? `第 ${current.number} 拍` : "";
+  $("challenge-number").textContent = current ? fmt("第 %1$@ 拍", current.number) : "";
   const foot = $("challenge-foot");
   foot.innerHTML = "";
   challenge.scene = scene;
@@ -1180,9 +1194,9 @@ function showChallenge(keepIndex) {
     $("challenge-title").hidden = true; $("challenge-verdict").hidden = true;
     if (unjudged) {
       const pending = shot.challenge.pending === true;
-      $("challenge-unjudged-sub").textContent = `挑战 · 第 ${current.number} 拍`;
+      $("challenge-unjudged-sub").textContent = fmt("挑战 · 第 %1$@ 拍", current.number);
       $("challenge-spinner").hidden = !pending;
-      $("challenge-reason").textContent = shot.challenge.reason || "这一拍没找到落点，无法判定界内外";
+      $("challenge-reason").textContent = shot.challenge.reason || t("这一拍没找到落点，无法判定界内外");
       $("challenge-unjudged-prev").hidden = pending || !previousBounced(shot);
       foot.innerHTML = clipButton(shot);
     }
@@ -1190,16 +1204,16 @@ function showChallenge(keepIndex) {
   }
   const j = scene.j, look = CALLS[j.call] || CALLS.close;
   $("challenge-word").textContent = challenged ? "CHALLENGE" : "REPLAY";
-  $("challenge-sub").textContent = `${challenged ? "挑战" : "界内外回放"} · 第 ${current.number} 拍`;
+  $("challenge-sub").textContent = fmt("%1$@ · 第 %2$@ 拍", challenged ? "挑战" : "界内外回放", current.number);
   const verdict = $("challenge-verdict");
   verdict.className = `challenge-verdict ${j.call}`; verdict.style.setProperty("--call", look.color);
   $("challenge-shout").textContent = look.shout;
-  $("challenge-call").textContent = (j.call === "close" ? `${look.text} · ` : "") + hawkDetail(j) + (j.serve ? " · 发球" : "") + (challenged ? ` · ${FORMATS[j.format] || "单打"}边线` : "");
-  $("challenge-margin").textContent = `${j.farHalf ? "远端半场，误差较大 · " : ""}模型估计，不是判罚 · 误差范围 ±${Math.round(j.marginM * 100)} 厘米`;
-  $("challenge-canvas").setAttribute("aria-label", `第 ${current.number} 拍${challenged ? "挑战" : "界内外回放"}：${look.text}，${hawkDetail(j)}`);
+  $("challenge-call").textContent = (j.call === "close" ? `${look.text} · ` : "") + hawkDetail(j) + (j.serve ? t(" · 发球") : "") + (challenged ? fmt(" · %1$@边线", FORMATS[j.format] || "单打") : "");
+  $("challenge-margin").textContent = fmt("%1$@模型估计，不是判罚 · 误差范围 ±%2$@ 厘米", j.farHalf ? "远端半场，误差较大 · " : "", Math.round(j.marginM * 100));
+  $("challenge-canvas").setAttribute("aria-label", fmt("第 %1$@ 拍%2$@：%3$@，%4$@", current.number, challenged ? "挑战" : "界内外回放", look.text, hawkDetail(j)));
   const previous = challenged && previousBounced(shot);
   foot.innerHTML = clipButton(shot)
-    + (previous ? `<button data-previous data-testid="court.hawkeye.challenge.previous">↶ 不是这一拍？挑战上一拍</button>` : "")
+    + (previous ? fmt("<button data-previous data-testid=\"court.hawkeye.challenge.previous\">↶ 不是这一拍？挑战上一拍</button>", ) : "")
     + `<span class="muted small">${shot.hit ? "轨迹按击球点和落点估算" : "这条链没有击球点，只回放落点"}</span>`;
   challenge.started = performance.now();
   const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -1214,7 +1228,7 @@ function showChallenge(keepIndex) {
 }
 function clipButton(shot) {
   const session = isOpen(state.session) ? state.session.id : null;
-  return session ? `<button data-clip="${esc(shot.id)}" data-session="${esc(session)}">看这一拍的视频</button>` : "";
+  return session ? fmt("<button data-clip=\"%1$@\" data-session=\"%2$@\">看这一拍的视频</button>", esc(shot.id), esc(session)) : "";
 }
 function closeChallenge() {
   $("challenge").hidden = true; challenge.focus = null;
@@ -1242,7 +1256,7 @@ function previousBounced(shot) {
 }
 function askChallenge(shot) {
   unlockVoice();
-  if (!challengeSupported()) { toast(state.connected ? "机位的 App 版本不支持挑战，请更新机位。" : "连接机位后才能挑战。"); return; }
+  if (!challengeSupported()) { toast(state.connected ? t("机位的 App 版本不支持挑战，请更新机位。") : t("连接机位后才能挑战。")); return; }
   state.challenges.shot = shot || null;
   const format = challengeFormat();
   if (format) sendChallenge(format); else $("challenge-ask").showModal();
@@ -1252,7 +1266,7 @@ async function sendChallenge(format) {
   if (state.challenges.shot) fields.shot = state.challenges.shot;
   state.challenges.shot = null;
   const reply = await command("challenge", fields);
-  if (reply.ok === false) toast(reply.message || "机位没有受理这次挑战。");
+  if (reply.ok === false) toast(reply.message || t("机位没有受理这次挑战。"));
 }
 for (const button of document.querySelectorAll("[data-challenge]")) button.addEventListener("click", () => askChallenge(null));
 for (const button of document.querySelectorAll("#challenge-ask [data-challenge-format]")) {
@@ -1399,7 +1413,7 @@ function renderBoard() {
   const hasData = serve ? Boolean(summary.latest) : Boolean(latest);
   const live = state.connected && state.status?.capturing === true;
   $("board-dot").className = live ? "board-dot live" : "board-dot";
-  $("board-live").textContent = !state.connected ? "未连接" : live ? "实时" : hasData ? "已停止" : "等待";
+  $("board-live").textContent = !state.connected ? t("未连接") : live ? t("实时") : hasData ? t("已停止") : t("等待");
   for (const button of document.querySelectorAll("#board-modes [data-mode]")) {
     button.setAttribute("aria-checked", String(button.dataset.mode === state.boardMode));
   }
@@ -1412,9 +1426,9 @@ function renderBoard() {
   $("board-unit").className = latest ? "board-unit" : "board-unit waiting";
   // The shot's position in the rows shown, like the serve number in 「发球」.
   const number = latestIndex + 1;
-  $("board-status").textContent = !latest ? "等待有效击球"
-    : !validSpeed(rows[rows.length - 1]?.speedKPH) ? `#${number} · 本拍暂无球速 · 保留上一有效值`
-      : `#${number} · 最近有效球速 · ${STROKES[latest.stroke] || "待确认"}`;
+  $("board-status").textContent = !latest ? t("等待有效击球")
+    : !validSpeed(rows[rows.length - 1]?.speedKPH) ? fmt("#%1$@ · 本拍暂无球速 · 保留上一有效值", number)
+      : fmt("#%1$@ · 最近有效球速 · %2$@", number, STROKES[latest.stroke] || "待确认");
 }
 
 function renderServeBoard(summary) {
@@ -1434,18 +1448,18 @@ function renderServeBoard(summary) {
   $("serve-unit").className = summary.latest ? "board-unit" : "board-unit waiting";
   // Short on the board (serve number), full sentence for screen readers.
   const n = summary.latest?.number;
-  $("serve-status").textContent = !summary.latest ? (summary.count === 0 ? "等待发球" : "无有效球速")
-    : summary.holding ? `#${n} · 本发无速` : `#${n}`;
-  const counts = `本场 ${summary.count} 个发球，${summary.points.length} 个有球速`;
+  $("serve-status").textContent = !summary.latest ? (summary.count === 0 ? t("等待发球") : t("无有效球速"))
+    : summary.holding ? fmt("#%1$@ · 本发无速", n) : `#${n}`;
+  const counts = fmt("本场 %1$@ 个发球，%2$@ 个有球速", summary.count, summary.points.length);
   $("serve-status").setAttribute("aria-label", !summary.latest
-    ? (summary.count === 0 ? "等待有效发球" : `已识别 ${summary.count} 个发球，暂无有效球速`)
-    : `${Math.round(summary.latest.speed)} 千米每小时，${summary.holding ? `最新一发暂无球速，保留第 ${n} 个发球的有效值` : `第 ${n} 个发球`}，${counts}`);
+    ? (summary.count === 0 ? t("等待有效发球") : fmt("已识别 %1$@ 个发球，暂无有效球速", summary.count))
+    : fmt("%1$@ 千米每小时，%2$@，%3$@", Math.round(summary.latest.speed), summary.holding ? `最新一发暂无球速，保留第 ${n} 个发球的有效值` : `第 ${n} 个发球`, counts));
   // MAX / AVG / MIN on one line; unknown stays 「—」, never 0.
-  const stats = [["MAX", "最高", summary.max], ["AVG", "平均", summary.average], ["MIN", "最低", summary.min]];
+  const stats = [["MAX", t("最高"), summary.max], ["AVG", t("平均"), summary.average], ["MIN", t("最低"), summary.min]];
   $("serve-stats-line").innerHTML = stats.map(([title, , number]) =>
     `<span>${title}</span><b class="${validSpeed(number) ? "" : "none"}">${esc(speedText(number))}</b>`).join("");
   $("serve-stats-line").setAttribute("aria-label", stats.map(([, spoken, number]) =>
-    `发球${spoken} ${validSpeed(number) ? `${speedText(number)} 千米每小时` : "暂无"}`).join("，"));
+    fmt("发球%1$@ %2$@", spoken, validSpeed(number) ? `${speedText(number)} 千米每小时` : "暂无")).join("，"));
   if (showsChart) renderServeChart(summary);
 }
 
@@ -1462,7 +1476,7 @@ function renderServeChart(summary) {
   const width = plot.clientWidth, height = plot.clientHeight;
   if (!shown.length) {
     plot.innerHTML = '<div class="empty"></div>';
-    plot.setAttribute("aria-label", "暂无有效发球球速");
+    plot.setAttribute("aria-label", t("暂无有效发球球速"));
     return;
   }
   if (width < 40 || height < 20) { plot.innerHTML = ""; return; }
@@ -1473,7 +1487,7 @@ function renderServeChart(summary) {
   const pad = 5;
   const x = (n) => ((n - x0) / (x1 - x0)) * width;
   const y = (v) => pad + (1 - (v - low) / (high - low)) * (height - 2 * pad);
-  const parts = [`<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="发球球速趋势，最近 ${shown.length} 个有效发球：${shown.slice(-5).map((p) => Math.round(p.speed)).join("、")} 千米每小时">`];
+  const parts = [fmt("<svg viewBox=\"0 0 %1$@ %2$@\" role=\"img\" aria-label=\"发球球速趋势，最近 %3$@ 个有效发球：%4$@ 千米每小时\">", width, height, shown.length, shown.slice(-5).map((p) => Math.round(p.speed)).join("、"))];
   if (summary.average !== null) {
     parts.push(`<line x1="0" x2="${width}" y1="${y(summary.average)}" y2="${y(summary.average)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>`);
   }
@@ -1511,57 +1525,57 @@ function render() {
   const connected = state.connected;
   // Status chips
   const chips = [];
-  if (!connected) chips.push(`<span class="chip warn">数据可能不是最新</span>`);
+  if (!connected) chips.push(fmt("<span class=\"chip warn\">数据可能不是最新</span>", ));
   if (status) {
-    chips.push(status.recording ? `<span class="chip rec">● 录像 ${duration(status.recordingSeconds ?? 0)}</span>` : `<span class="chip">${status.capturing ? "采集中 · 未录像" : "未采集"}</span>`);
+    chips.push(status.recording ? fmt("<span class=\"chip rec\">● 录像 %1$@</span>", duration(status.recordingSeconds ?? 0)) : `<span class="chip">${status.capturing ? "采集中 · 未录像" : "未采集"}</span>`);
     const analysis = status.analysis || {};
-    chips.push(analysis.available ? `<span class="chip good">分析正常</span>` : `<span class="chip warn">分析：${esc(analysis.reason || "不可用")}</span>`);
+    chips.push(analysis.available ? fmt("<span class=\"chip good\">分析正常</span>", ) : fmt("<span class=\"chip warn\">分析：%1$@</span>", esc(analysis.reason || "不可用")));
     const lag = Number.isFinite(analysis.latestPTS) && Number.isFinite(analysis.analyzedPTS) ? analysis.latestPTS - analysis.analyzedPTS : null;
-    if (lag !== null && lag > 1) chips.push(`<span class="chip warn">分析落后 ${lag.toFixed(1)} 秒</span>`);
+    if (lag !== null && lag > 1) chips.push(fmt("<span class=\"chip warn\">分析落后 %1$@ 秒</span>", lag.toFixed(1)));
     const device = status.device || {};
-    if (typeof device.battery === "number") chips.push(`<span class="chip ${device.battery < 0.15 && !device.charging ? "warn" : ""}">电量 ${Math.round(device.battery * 100)}%${device.charging ? " · 充电" : ""}</span>`);
-    else chips.push(`<span class="chip">电量 —</span>`);
+    if (typeof device.battery === "number") chips.push(fmt("<span class=\"chip %1$@\">电量 %2$@%%3$@</span>", device.battery < 0.15 && !device.charging ? "warn" : "", Math.round(device.battery * 100), device.charging ? " · 充电" : ""));
+    else chips.push(fmt("<span class=\"chip\">电量 —</span>", ));
     const thermal = THERMAL[device.thermal] || "—";
-    chips.push(`<span class="chip ${device.thermal === "nominal" ? "" : "warn"}">温度 ${esc(thermal)}</span>`);
+    chips.push(fmt("<span class=\"chip %1$@\">温度 %2$@</span>", device.thermal === "nominal" ? "" : "warn", esc(thermal)));
     // Camera zoom (0.5× ultra-wide … 3×); only shown when it is not 1×.
-    if (Number.isFinite(status.zoom) && Math.abs(status.zoom - 1) > 0.001) chips.push(`<span class="chip">倍率 ${zoomTitle(status.zoom)}</span>`);
-    if (status.shed > 0) chips.push(`<span class="chip warn" title="${esc(status.shedReason || "")}">机位负载保护 L${status.shed}</span>`);
-    if (device.screen === "standby") chips.push(`<span class="chip">机位屏幕值守中</span>`);
-  } else chips.push(`<span class="chip">等待机位状态</span>`);
+    if (Number.isFinite(status.zoom) && Math.abs(status.zoom - 1) > 0.001) chips.push(fmt("<span class=\"chip\">倍率 %1$@</span>", zoomTitle(status.zoom)));
+    if (status.shed > 0) chips.push(fmt("<span class=\"chip warn\" title=\"%1$@\">机位负载保护 L%2$@</span>", esc(status.shedReason || ""), status.shed));
+    if (device.screen === "standby") chips.push(fmt("<span class=\"chip\">机位屏幕值守中</span>", ));
+  } else chips.push(fmt("<span class=\"chip\">等待机位状态</span>", ));
   $("chips").innerHTML = chips.join("");
   $("warnings").textContent = [status?.shed > 0 ? status.shedReason : null, ...(status?.warnings || [])].filter(Boolean).join(" ");
 
   // Session controls
-  $("session-title").textContent = session ? session.title : "未开始记录";
+  $("session-title").textContent = session ? session.title : t("未开始记录");
   const stateText = SESSION_STATES[session?.state] || "";
-  $("session-meta").textContent = session ? `${stateText} · 开始于 ${dateText(session.startedAt)}${session.capturedOn ? ` · ${session.capturedOn}` : ""}` : "开始后机位录像并把逐拍结果归入本次记录。";
+  $("session-meta").textContent = session ? fmt("%1$@ · 开始于 %2$@%3$@", stateText, dateText(session.startedAt), session.capturedOn ? ` · ${session.capturedOn}` : "") : t("开始后机位录像并把逐拍结果归入本次记录。");
   $("elapsed").textContent = session ? duration(sessionElapsed(session)) : "—";
   const controllable = isControllable(session);
   $("start-row").hidden = controllable; $("run-row").hidden = !controllable;
   // Session buttons wait while a command is in flight or the camera is pausing or finishing.
-  const waiting = state.pending ? "已发送到机位，等待机位确认…" : connected && status?.busy ? "机位正在保存录像与分析…" : "";
+  const waiting = state.pending ? t("已发送到机位，等待机位确认…") : connected && status?.busy ? t("机位正在保存录像与分析…") : "";
   for (const id of ["wake", "near", "far", "preview-toggle"]) $(id).disabled = !connected;
   for (const id of ["start", "pause", "finish"]) $(id).disabled = !connected || !!waiting;
-  $("pause").textContent = session?.state === "active" ? "暂停" : "继续";
+  $("pause").textContent = session?.state === "active" ? t("暂停") : t("继续");
   for (const id of ["marker", "marker-review"]) $(id).disabled = !connected || session?.state !== "active" || !!waiting;
   $("session-wait").textContent = session?.state === "interrupted" && !waiting
-    ? "机位上的这次记录意外中断（机位曾重启）。点「继续」恢复录像，或点「结束」保存。"
-      : session?.state === "paused" && !waiting ? "暂停中不能标记；点「继续」后可以标记精彩或待复核。" : waiting;
+    ? t("机位上的这次记录意外中断（机位曾重启）。点「继续」恢复录像，或点「结束」保存。")
+      : session?.state === "paused" && !waiting ? t("暂停中不能标记；点「继续」后可以标记精彩或待复核。") : waiting;
   $("session-wait").hidden = !$("session-wait").textContent;
   if (status && document.activeElement !== $("near")) $("near").value = status.near || "right";
   if (status && document.activeElement !== $("far")) $("far").value = status.far || "right";
 
   const calibrationState = status?.analysis?.calibration || (open ? session?.tennisCalibration : state.recentCalibration);
   $("calibration-state").textContent = calibrationState?.isAvailable
-      ? `球场映射：自动，${calibrationState.landmarkCount} 个场地参考点${Number.isFinite(calibrationState.validationErrorMeters) ? `，残差 ${calibrationState.validationErrorMeters.toFixed(2)} m` : ""}。`
-      : `还没识别出球场（${calibrationState?.reason || "等待场地地标"}）。识别出来前不画落点、不判界内外。`;
+      ? fmt("球场映射：自动，%1$@ 个场地参考点%2$@。", calibrationState.landmarkCount, Number.isFinite(calibrationState.validationErrorMeters) ? `，残差 ${calibrationState.validationErrorMeters.toFixed(2)} m` : "")
+      : fmt("还没识别出球场（%1$@）。识别出来前不画落点、不判界内外。", calibrationState?.reason || "等待场地地标");
 
   // Preview
-  $("preview-toggle").textContent = state.previewOn ? "关闭实时画面" : "打开实时画面";
+  $("preview-toggle").textContent = state.previewOn ? t("关闭实时画面") : t("打开实时画面");
   if (state.previewOn) {
     const stale = Date.now() - state.lastFrameAt > 3000;
-    $("preview-note").textContent = status?.shed >= 2 ? "画面暂停：机位负载高（数据照常）" : stale ? "等待画面…（机位未采集时没有画面）" : "低清 · 有延迟";
-  } else $("preview-note").textContent = "打开后显示机位的低清画面（640×360，最多每秒 5 张，有延迟）。只用于确认机位朝向与取景。";
+    $("preview-note").textContent = status?.shed >= 2 ? t("画面暂停：机位负载高（数据照常）") : stale ? t("等待画面…（机位未采集时没有画面）") : t("低清 · 有延迟");
+  } else $("preview-note").textContent = t("打开后显示机位的低清画面（640×360，最多每秒 5 张，有延迟）。只用于确认机位朝向与取景。");
 
   renderAnalysis(open, calibrationState);
   renderBoard();
@@ -1575,8 +1589,8 @@ function renderAnalysis(open, calibrationState) {
   $("speed-average").textContent = speeds.length ? speedText(speeds.reduce((a, b) => a + b, 0) / speeds.length) : "—";
   $("speed-max").textContent = speeds.length ? speedText(Math.max(...speeds)) : "—";
   $("speed-note").textContent = rows.length === 0
-    ? (state.status?.analysis?.available ? "出现击球后显示球速。" : `机位分析还没准备好：${state.status?.analysis?.reason || "请看机位状态"}`)
-    : `${open ? "本次记录" : "未开始记录 · 最近几拍"} · ${speeds.length} 拍有球速 · ${rows.length - speeds.length} 拍暂无球速${latest && !validSpeed(latest.speedKPH) ? ` · 最近一拍：${speedReason(latest)}` : ""}`;
+    ? (state.status?.analysis?.available ? t("出现击球后显示球速。") : fmt("机位分析还没准备好：%1$@", state.status?.analysis?.reason || "请看机位状态"))
+    : fmt("%1$@ · %2$@ 拍有球速 · %3$@ 拍暂无球速%4$@", open ? "本次记录" : "未开始记录 · 最近几拍", speeds.length, rows.length - speeds.length, latest && !validSpeed(latest.speedKPH) ? ` · 最近一拍：${speedReason(latest)}` : "");
 
   // Court map: x 0…10.97 m left→right, y 0 at the near baseline; far end at the top.
   const W = 10.97, L = 23.77, flip = (y) => L - y;
@@ -1593,16 +1607,16 @@ function renderAnalysis(open, calibrationState) {
     return `<path d="${markPath(shot.stroke, shot.bounce.xMeters, flip(shot.bounce.yMeters), last ? 0.5 : 0.36)}" fill="${strokeColor(shot.stroke)}" stroke="${last ? "#fff" : "rgba(0,0,0,0.45)"}" stroke-width="${last ? 0.1 : 0.04}" role="img" aria-label="${label}"><title>${label}</title></path>`;
   }).join("");
   const court = $("court");
-  court.setAttribute("aria-label", `球场落点图，${placed.length} 拍有落点`);
-  court.innerHTML = `<rect x="-1.5" y="-1.5" width="13.97" height="26.77" fill="#0e2921" rx="0.5"/>${lines}${net}${dots}<text x="${W / 2}" y="-0.4" font-size="0.6" fill="rgba(255,255,255,0.6)" text-anchor="middle" aria-hidden="true">远端</text><text x="${W / 2}" y="${L + 1}" font-size="0.6" fill="rgba(255,255,255,0.6)" text-anchor="middle" aria-hidden="true">近端（机位侧）</text>`;
+  court.setAttribute("aria-label", fmt("球场落点图，%1$@ 拍有落点", placed.length));
+  court.innerHTML = fmt("<rect x=\"-1.5\" y=\"-1.5\" width=\"13.97\" height=\"26.77\" fill=\"#0e2921\" rx=\"0.5\"/>%1$@%2$@%3$@<text x=\"%4$@\" y=\"-0.4\" font-size=\"0.6\" fill=\"rgba(255,255,255,0.6)\" text-anchor=\"middle\" aria-hidden=\"true\">远端</text><text x=\"%5$@\" y=\"%6$@\" font-size=\"0.6\" fill=\"rgba(255,255,255,0.6)\" text-anchor=\"middle\" aria-hidden=\"true\">近端（机位侧）</text>", lines, net, dots, W / 2, W / 2, L + 1);
   const kinds = STROKE_ORDER.filter((k) => placed.some(({ shot }) => shot.stroke === k));
   $("placement-legend").innerHTML = kinds.map((k) => `<span>${markIcon(k)}${STROKES[k]}</span>`).join("");
-  $("placement-note").textContent = rows.length === 0 ? "出现击球后，落点会画在球场图上。"
-    : placed.length === 0 ? (calibrationState && !calibrationState.isAvailable ? "还没识别出球场，暂不画落点。" : `最近一拍：${placementReason(latest)}`)
-      : `${placed.length} 拍有落点 · ${rows.length - placed.length} 拍暂无落点`;
+  $("placement-note").textContent = rows.length === 0 ? t("出现击球后，落点会画在球场图上。")
+    : placed.length === 0 ? (calibrationState && !calibrationState.isAvailable ? t("还没识别出球场，暂不画落点。") : fmt("最近一拍：%1$@", placementReason(latest)))
+      : fmt("%1$@ 拍有落点 · %2$@ 拍暂无落点", placed.length, rows.length - placed.length);
 
   // Strokes
-  $("strokes").innerHTML = rows.length === 0 ? `<p class="muted small">出现击球候选后，按动作类别统计拍数。</p>`
+  $("strokes").innerHTML = rows.length === 0 ? fmt("<p class=\"muted small\">出现击球候选后，按动作类别统计拍数。</p>", )
     : `<div class="bars">${STROKE_ORDER.map((kind) => {
       const count = rows.filter((r) => r.stroke === kind).length;
       if (!count) return "";

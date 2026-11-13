@@ -10,7 +10,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: '5.0'
-    MARKETING_VERSION: '1.3'
+    MARKETING_VERSION: '1.4'
     CURRENT_PROJECT_VERSION: '1'
     CODE_SIGN_STYLE: Automatic
 targets:
@@ -22,6 +22,12 @@ targets:
       - path: ZacksCourt/Assets.xcassets
       - path: ZacksCourt/PrivacyInfo.xcprivacy
         buildPhase: resources
+      - path: ZacksCourt/zh-Hans.lproj
+      - path: ZacksCourt/zh-Hant.lproj
+      - path: ZacksCourt/en.lproj
+      - path: ZacksCourt/ja.lproj
+      - path: ZacksCourt/de.lproj
+      - path: ZacksCourt/fr.lproj
       # A folder reference preserves compiled CoreML directories byte-for-byte.
       # scripts/generate-ios.sh prepares and verifies this ignored local asset set.
       - path: ../../.local/AnalysisModels
@@ -51,6 +57,7 @@ targets:
         NSCameraUsageDescription: 在机位模式录像并分析球场画面，或扫描看板端配对码。
         NSPhotoLibraryAddUsageDescription: 把录像或某一拍的视频片段存到相册。只添加，不读取相册里的照片。
         NSLocalNetworkUsageDescription: 在局域网、个人热点或点对点 Wi-Fi 中，连接另一台运行 Zacks Court 的设备，或让同一网络里的浏览器打开看板，传输逐拍分析数据、低清预览与录像片段。
+        CFBundleLocalizations: [zh-Hans, zh-Hant, en, ja, de, fr]
         NSBonjourServices: [_zackscourt._tcp]
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true

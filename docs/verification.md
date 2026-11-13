@@ -6346,3 +6346,24 @@ B 段没给速的 12 拍全是近端发球，超差的 12 拍里 9 拍是近端�
 
 
 **手动 CI**（PR #64，run 43209763743，提交 `d787333`，GitHub `macos-15`，不带模型）：`swift build`、`court-check` 3 项 PASS、`swift test` 350 项、跳过 23 项（需要显式启用的）、0 失败，用时约 15 分钟。v35 与曝光两处的新测试 `testIncomingLandingAtTheLastObservation`、`testSummaryReportsTheExposure` 都通过。CI 只编 macOS，`CameraEngine.exposure` 的 iOS 分支仍没编译过。
+
+## 2026-11-13 六种界面语言与商店素材流程（未编译 iOS，未录屏）
+
+环境：云端 Linux，没有 Xcode，没有 iOS 模拟器。基于 main `fef6439082e604dfb7ac82ba0f11fd9ac064b656` 开分支，没有改那台未推送的 Mac mini 工程，没有调用 App Store Connect，没有上传。
+
+**做了什么**：
+
+- 界面文案以简体中文为键。`courtText` 在简体中文下原样返回，所以现有中文句子和依赖这些句子的测试在不调用 `activate()` 时不变。App 启动时才按系统语言或 `COURT_LANGUAGE` 切换。不支持的语言回到简体中文。
+- 词表覆盖简体中文、繁体中文、英语、日语、德语、法语。en-US 与 en-GB 共用 `en`。浏览器看板读同一份 `Web/l10n.json`，用 `?lang=` 或浏览器语言。
+- 权限用途文字写成六份 `InfoPlist.strings`。司线语音文件没换，仍是 Out! / In.。
+- 发球流程里用来比较的「发球」等内部记号没有包进翻译，避免非中文环境下不再认出发球。
+- 商店截图脚本在缺少该语言的真实模拟器截图时直接退出，不再把简体中文界面填进其他语言。创意素材不再画假的 149 km/h 和 OUT 卡片。
+- 营销版本号在工程里改为 1.4 (1)，只作下一版建议。1.3 的元数据文件没有改。
+
+**跑了什么**：
+
+- `python3 scripts/l10n-check.py --self-test`
+- `python3 scripts/l10n-check.py`（词表与未包裹的中文）
+- `node --check` 检查 `app.js` 与 `l10n.js`
+
+**没有验证**：`swift build`、`swift test`、`court-check`、iOS 编译、模拟器截图、预览视频、任何精度。数字格式的德文逗号只写在 `CourtCopyTests` 里，这台机器跑不了。

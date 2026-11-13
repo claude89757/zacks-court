@@ -31,7 +31,7 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
         AVCaptureDevice.requestAccess(for: .video) { [weak self] allowed in
             guard let self else { return }
             if allowed { self.queue.async { self.configure() } }
-            else { DispatchQueue.main.async { if !self.completed { self.onError?("需要相机权限才能扫码。请在系统设置中允许相机访问。") } } }
+            else { DispatchQueue.main.async { if !self.completed { self.onError?(courtText("需要相机权限才能扫码。请在系统设置中允许相机访问。")) } } }
         }
     }
     override func viewDidLayoutSubviews() {
@@ -62,14 +62,14 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
         guard !stopped else { return }
         do {
             guard let camera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-                throw NSError(domain: "Camera", code: 1, userInfo: [NSLocalizedDescriptionKey: "没有可用摄像头。"])
+                throw NSError(domain: "Camera", code: 1, userInfo: [NSLocalizedDescriptionKey: courtText("没有可用摄像头。")])
             }
             let input = try AVCaptureDeviceInput(device: camera)
             let output = AVCaptureMetadataOutput()
             session.beginConfiguration()
             guard session.canAddInput(input), session.canAddOutput(output) else {
                 session.commitConfiguration()
-                throw NSError(domain: "Camera", code: 2, userInfo: [NSLocalizedDescriptionKey: "无法配置扫码相机。"])
+                throw NSError(domain: "Camera", code: 2, userInfo: [NSLocalizedDescriptionKey: courtText("无法配置扫码相机。")])
             }
             session.addInput(input); session.addOutput(output)
             output.setMetadataObjectsDelegate(self, queue: .main); output.metadataObjectTypes = [.qr]
@@ -78,7 +78,7 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
         } catch {
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.completed else { return }
-                self.onError?("无法打开扫码相机：\(error.localizedDescription)")
+                self.onError?(courtFormat("无法打开扫码相机：%1$@", "\(error.localizedDescription)"))
             }
         }
     }

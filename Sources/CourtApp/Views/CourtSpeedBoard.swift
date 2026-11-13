@@ -11,8 +11,8 @@ import AppKit
 enum CourtSpeedBoardMode: String, CaseIterable, Identifiable {
     case all, serve
     var id: String { rawValue }
-    var title: String { self == .all ? "球速" : "发球" }
-    var spokenTitle: String { self == .all ? "全部球速" : "发球球速" }
+    var title: String { self == .all ? courtText("球速") : courtText("发球") }
+    var spokenTitle: String { self == .all ? courtText("全部球速") : courtText("发球球速") }
 }
 
 /// A courtside readout: the last usable measurement stays visible until another
@@ -100,7 +100,7 @@ struct CourtSpeedBoard: View {
             }
         }.buttonStyle(.plain)
     }
-    private var liveText: String { isLive ? "实时" : hasData ? "已停止" : "等待" }
+    private var liveText: String { isLive ? courtText("实时") : hasData ? courtText("已停止") : "等待" }
     private var liveStatus: some View {
         HStack(spacing: 8) {
             Circle().fill(isLive ? CourtStyle.green : CourtStyle.muted).frame(width: 7, height: 7)
@@ -118,13 +118,13 @@ struct CourtSpeedBoard: View {
             if model.canChallenge { ChallengeButton(model: model).fixedSize() }
             if events.contains(where: { $0.lineCall != nil || $0.challenge != nil }) {
                 Button { model.dismissHawkEyeAlert(); challenge = true } label: {
-                    Label("回放", systemImage: "play.rectangle.on.rectangle")
+                    Label(courtText("回放"), systemImage: "play.rectangle.on.rectangle")
                         .font(.callout.weight(.semibold)).lineLimit(1)
                         .padding(.horizontal, 14).frame(minHeight: 44)
                         .background(CourtStyle.raised, in: Capsule()).contentShape(Capsule())
                 }
                 .buttonStyle(.plain).fixedSize()
-                .accessibilityLabel("界内外回放")
+                .accessibilityLabel(courtText("界内外回放"))
                 .accessibilityIdentifier("court.speedboard.challenge")
             }
         }
@@ -139,7 +139,7 @@ struct CourtSpeedBoard: View {
         Button { dismiss() } label: {
             Image(systemName: "xmark").frame(width: 44, height: 44)
                 .background(CourtStyle.raised, in: Circle()).contentShape(Circle())
-        }.accessibilityLabel("关闭测速牌")
+        }.accessibilityLabel(courtText("关闭测速牌"))
         #endif
     }
     /// Two 44-point segments; a system segmented control is shorter than the touch minimum.
@@ -149,7 +149,7 @@ struct CourtSpeedBoard: View {
                      title: \.title, spokenTitle: \.spokenTitle,
                      identifier: { "court.speedboard.mode.\($0.rawValue)" })
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("测速牌显示内容")
+            .accessibilityLabel(courtText("测速牌显示内容"))
             .accessibilityIdentifier("court.speedboard.mode")
     }
 }
@@ -162,14 +162,14 @@ private struct AllSpeedReadout: View {
     /// The shot's position in the rows shown, like the serve number in 「发球」.
     private var shotNumber: Int? { latestIndex.map { $0 + 1 } }
     private var measurementStatus: String {
-        guard let latest, let shotNumber else { return "等待有效击球" }
-        if events.last?.validSpeedKPH == nil { return "#\(shotNumber) · 本拍暂无球速 · 保留上一有效值" }
-        return "#\(shotNumber) · 最近有效球速 · " + latest.stroke.courtTitle
+        guard let latest, let shotNumber else { return courtText("等待有效击球") }
+        if events.last?.validSpeedKPH == nil { return courtFormat("#%1$@ · 本拍暂无球速 · 保留上一有效值", "\(shotNumber)") }
+        return courtFormat("#%1$@ · 最近有效球速 · ", "\(shotNumber)") + latest.stroke.courtTitle
     }
     var body: some View {
         VStack(spacing: 6) {
-            SpeedHero(speed: latest?.validSpeedKPH, shot: latest?.id, label: "最近有效球速",
-                      value: latest?.validSpeedKPH.map { courtSpeed($0) + " 千米每小时，第 \(shotNumber ?? 0) 拍" } ?? "等待有效击球")
+            SpeedHero(speed: latest?.validSpeedKPH, shot: latest?.id, label: courtText("最近有效球速"),
+                      value: latest?.validSpeedKPH.map { courtSpeed($0) + courtFormat(" 千米每小时，第 %1$@ 拍", "\(shotNumber ?? 0)") } ?? courtText("等待有效击球"))
             SpeedBoardFooter(status: measurementStatus)
         }
     }
@@ -320,8 +320,8 @@ private struct SpeedBoardFooter: View {
                 .accessibilityLabel(spoken ?? status)
                 .accessibilityIdentifier("court.speedboard.status")
             Spacer(minLength: 8)
-            Text("模型估算").fixedSize()
-                .accessibilityLabel("模型估算，不是测量")
+            Text(courtText("模型估算")).fixedSize()
+                .accessibilityLabel(courtText("模型估算，不是测量"))
         }.font(.footnote).foregroundStyle(CourtStyle.muted)
     }
 }
@@ -336,17 +336,17 @@ private struct ServeSpeedReadout: View {
 
     /// Short on-board label: the serve number, plus a marker while an older value is held.
     private var status: String {
-        guard let latest = summary.latest else { return summary.serveCount == 0 ? "等待发球" : "无有效球速" }
-        return summary.isHoldingPreviousValue ? "#\(latest.serveNumber) · 本发无速" : "#\(latest.serveNumber)"
+        guard let latest = summary.latest else { return summary.serveCount == 0 ? courtText("等待发球") : courtText("无有效球速") }
+        return summary.isHoldingPreviousValue ? courtFormat("#%1$@ · 本发无速", "\(latest.serveNumber)") : "#\(latest.serveNumber)"
     }
     /// Full sentence for VoiceOver; the board itself stays mostly numbers.
     private var spokenStatus: String {
         guard let latest = summary.latest else {
-            return summary.serveCount == 0 ? "等待有效发球" : "已识别 \(summary.serveCount) 个发球，暂无有效球速"
+            return summary.serveCount == 0 ? courtText("等待有效发球") : courtFormat("已识别 %1$@ 个发球，暂无有效球速", "\(summary.serveCount)")
         }
-        let count = "本场 \(summary.serveCount) 个发球，\(summary.points.count) 个有球速"
-        if summary.isHoldingPreviousValue { return "最新一发暂无球速，保留第 \(latest.serveNumber) 个发球的有效值，" + count }
-        return "第 \(latest.serveNumber) 个发球，" + count
+        let count = courtFormat("本场 %1$@ 个发球，%2$@ 个有球速", "\(summary.serveCount)", "\(summary.points.count)")
+        if summary.isHoldingPreviousValue { return courtFormat("最新一发暂无球速，保留第 %1$@ 个发球的有效值，", "\(latest.serveNumber)") + count }
+        return courtFormat("第 %1$@ 个发球，", "\(latest.serveNumber)") + count
     }
 
     var body: some View {
@@ -375,14 +375,14 @@ private struct ServeSpeedReadout: View {
     }
 
     private var hero: some View {
-        SpeedHero(speed: summary.latest?.speedKPH, shot: summary.latest?.id, label: "当前发球球速",
-                  value: summary.latest.map { courtSpeed($0.speedKPH) + " 千米每小时，" + spokenStatus } ?? spokenStatus)
+        SpeedHero(speed: summary.latest?.speedKPH, shot: summary.latest?.id, label: courtText("当前发球球速"),
+                  value: summary.latest.map { courtSpeed($0.speedKPH) + courtText(" 千米每小时，") + spokenStatus } ?? spokenStatus)
     }
 
     /// MAX / AVG / MIN on one line: labels muted, values in body ink. Unknown stays 「—」, never 0.
     private func stats(size: CGFloat) -> some View {
         let items: [(title: String, spoken: String, value: Double?)] = [
-            ("MAX", "最高", summary.maximumSpeed), ("AVG", "平均", summary.averageSpeed), ("MIN", "最低", summary.minimumSpeed)
+            ("MAX", courtText("最高"), summary.maximumSpeed), ("AVG", courtText("平均"), summary.averageSpeed), ("MIN", courtText("最低"), summary.minimumSpeed)
         ]
         return HStack(alignment: .firstTextBaseline, spacing: size * 0.9) {
             ForEach(items, id: \.title) { (item: (title: String, spoken: String, value: Double?)) in
@@ -397,7 +397,7 @@ private struct ServeSpeedReadout: View {
         .lineLimit(1).minimumScaleFactor(0.6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(items.map { (item: (title: String, spoken: String, value: Double?)) -> String in
-            "发球\(item.spoken) " + (item.value.map { courtSpeed($0) + " 千米每小时" } ?? "暂无")
+            courtFormat("发球%1$@ ", "\(item.spoken)") + (item.value.map { courtSpeed($0) + courtText(" 千米每小时") } ?? courtText("暂无"))
         }.joined(separator: "，"))
         .accessibilityIdentifier("court.speedboard.serve.stats")
     }
@@ -441,8 +441,8 @@ struct ServeTrendChart: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("发球球速趋势")
-        .accessibilityValue(shown.isEmpty ? "暂无有效发球球速" : "最近 \(shown.count) 个有效发球，" + shown.suffix(5).map { courtSpeed($0.speedKPH) }.joined(separator: "、") + " 千米每小时")
+        .accessibilityLabel(courtText("发球球速趋势"))
+        .accessibilityValue(shown.isEmpty ? courtText("暂无有效发球球速") : courtFormat("最近 %1$@ 个有效发球，", "\(shown.count)") + shown.suffix(5).map { courtSpeed($0.speedKPH) }.joined(separator: "、") + courtText(" 千米每小时"))
         .accessibilityIdentifier("court.speedboard.serve.chart")
     }
 
@@ -469,16 +469,16 @@ struct ServeTrendChart: View {
         let lastID = shown.last?.id
         return Chart {
             if let average {
-                RuleMark(y: .value("平均", average))
+                RuleMark(y: .value(courtText("平均"), average))
                     .foregroundStyle(CourtStyle.muted)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
             }
             ForEach(shown) { (point: TennisServeSummary.Point) in
-                LineMark(x: .value("发球序号", point.serveNumber), y: .value("km/h", point.speedKPH))
+                LineMark(x: .value(courtText("发球序号"), point.serveNumber), y: .value("km/h", point.speedKPH))
                     .foregroundStyle(Color.white.opacity(0.5))
                     .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .interpolationMethod(.linear)
-                PointMark(x: .value("发球序号", point.serveNumber), y: .value("km/h", point.speedKPH))
+                PointMark(x: .value(courtText("发球序号"), point.serveNumber), y: .value("km/h", point.speedKPH))
                     .foregroundStyle(point.id == lastID ? CourtStyle.green : Color.white.opacity(0.6))
                     .symbolSize(point.id == lastID ? 70 : 14)
             }
@@ -504,8 +504,8 @@ private struct SpeedBoardFullScreenButton: NSViewRepresentable {
         button.title = ""
         button.target = button
         button.action = #selector(ToggleButton.toggle)
-        button.toolTip = "切换全屏测速牌"
-        button.setAccessibilityLabel("切换全屏")
+        button.toolTip = courtText("切换全屏测速牌")
+        button.setAccessibilityLabel(courtText("切换全屏"))
         return button
     }
     func updateNSView(_ view: ToggleButton, context: Context) {}
