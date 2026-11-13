@@ -33,17 +33,17 @@ public enum TennisReason: String, CaseIterable, Sendable {
     /// Short wording for shot rows and the recognition panel. Same text on the App and in the browser.
     public var text: String {
         switch self {
-        case .pending: return "还在分析"
-        case .ballNotSeen: return "没看清球"
-        case .speedUnreliable: return "球速不可靠，未计入"
-        case .noBounceSeen: return "没看到球落地"
-        case .hitNet: return "球先碰网"
-        case .notOnCourt: return "落点不在已识别的球场上"
-        case .estimate: return "模型估计的落点"
-        case .cameraCooling: return "机位负载高，这拍未定位落点"
-        case .cameraBusy: return "机位忙不过来，这拍未定位落点"
-        case .failed: return "落点定位出错"
-        case .other: return "暂时无法给出"
+        case .pending: return courtText("还在分析")
+        case .ballNotSeen: return courtText("没看清球")
+        case .speedUnreliable: return courtText("球速不可靠，未计入")
+        case .noBounceSeen: return courtText("没看到球落地")
+        case .hitNet: return courtText("球先碰网")
+        case .notOnCourt: return courtText("落点不在已识别的球场上")
+        case .estimate: return courtText("模型估计的落点")
+        case .cameraCooling: return courtText("机位负载高，这拍未定位落点")
+        case .cameraBusy: return courtText("机位忙不过来，这拍未定位落点")
+        case .failed: return courtText("落点定位出错")
+        case .other: return courtText("暂时无法给出")
         }
     }
 
@@ -59,6 +59,9 @@ public enum TennisReason: String, CaseIterable, Sendable {
         return .other
     }
 
+    /// Keys are the engine's Simplified Chinese wording. They are matched, not shown.
+    /// `text` is what the user reads. Translating a key makes `classify` miss it whenever
+    /// the app language is not Simplified Chinese, and the shot is then stored as `.other`.
     static let table: [String: TennisReason] = [
         // Waiting (reference chain)
         "等待首弹地及连续三维轨迹": .pending,

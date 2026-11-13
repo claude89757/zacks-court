@@ -28,9 +28,9 @@ struct LinkStats {
     public private(set) var role: WorkspaceRole?
     let camera = CameraModel()
     let preview = PreviewPipeline()
-    var serverStatus = "等待开启看板"
+    var serverStatus = courtText("等待开启看板")
     var connected = false
-    var deviceName = "尚未连接机位"
+    var deviceName = courtText("尚未连接机位")
     var pairingURL = ""
     var addresses: [String] = []
     var selectedAddress = ""
@@ -169,7 +169,7 @@ struct LinkStats {
             if Self.replayDemo {
                 displayFinishedID = history.filter { $0.state == .completed && $0.title.contains("演示数据") }.max { $0.startedAt < $1.startedAt }?.id
             }
-        } catch { self.error = "读取历史记录失败：\(error.localizedDescription)。检查存储空间后重新打开 App。" }
+        } catch { self.error = courtFormat("读取历史记录失败：%1$@。检查存储空间后重新打开 App。", "\(error.localizedDescription)") }
         // Retention runs once the app has settled, never while a record is open.
         Task { [weak self] in try? await Task.sleep(for: .seconds(3)); self?.applyRecordingRetention() }
         ticker = Task { [weak self] in
@@ -250,9 +250,9 @@ struct LinkStats {
     }
     /// Why the session buttons wait, for a caption under them.
     var sessionWaitReason: String? {
-        if let controller { return controller.isBusy ? "正在保存录像与分析…" : nil }
-        if pendingCommand != nil { return "已发送到机位，等待机位确认…" }
-        if cameraBusy { return "机位正在保存录像与分析…" }
+        if let controller { return controller.isBusy ? courtText("正在保存录像与分析…") : nil }
+        if pendingCommand != nil { return courtText("已发送到机位，等待机位确认…") }
+        if cameraBusy { return courtText("机位正在保存录像与分析…") }
         return nil
     }
     /// Whether live analysis has models here. The S家 locator is nil by design in the in-house build, so
@@ -268,30 +268,30 @@ struct LinkStats {
     var tennisAnalysisStatus: String {
         if let tennisAnalysisError { return tennisAnalysisError }
         if role == .server {
-            guard connected else { return "等待机位连接。机位实时分析球速、落点与动作，结果逐拍发到这里。" }
-            if let reason = cameraStatus?.analysis.reason { return "机位：\(reason)" }
-            guard isLive else { return "机位已连接，等待机位开始采集。" }
-            guard tennisAnalysis != nil else { return "机位正在积累连续画面…" }
-            return "机位正在分析 · 逐拍结果实时同步"
+            guard connected else { return courtText("等待机位连接。机位实时分析球速、落点与动作，结果逐拍发到这里。") }
+            if let reason = cameraStatus?.analysis.reason { return courtFormat("机位：%1$@", "\(reason)") }
+            guard isLive else { return courtText("机位已连接，等待机位开始采集。") }
+            guard tennisAnalysis != nil else { return courtText("机位正在积累连续画面…") }
+            return courtText("机位正在分析 · 逐拍结果实时同步")
         }
         if analysisBackend == .independent && role != .server {
-            guard isLive else { return "自研模型：开始采集后，在本机实时分析球速、落点与动作，并自动识别球场。" }
-            guard let analysis = tennisAnalysis else { return "自研模型：正在加载并校验模型…" }
+            guard isLive else { return courtText("自研模型：开始采集后，在本机实时分析球速、落点与动作，并自动识别球场。") }
+            guard let analysis = tennisAnalysis else { return courtText("自研模型：正在加载并校验模型…") }
             guard analysis.calibration.isAvailable else {
-                return "自研模型：" + (analysis.calibration.reason ?? "正在识别球场") + "。识别出球场后补算之前的击球（最多 30 秒）。"
+                return courtText("自研模型：") + (analysis.calibration.reason ?? courtText("正在识别球场")) + courtText("。识别出球场后补算之前的击球（最多 30 秒）。")
             }
-            return "自研模型：正在分析 · 逐拍结果随后续画面更新"
+            return courtText("自研模型：正在分析 · 逐拍结果随后续画面更新")
         }
-        guard analysisModelsAvailable else { return "分析模型未安装，请使用包含模型的开发构建。" }
-        guard isLive else { return "开始采集后，在本机实时分析球速、落点与动作。" }
-        guard tennisAnalysis != nil else { return "正在加载模型并积累连续画面…" }
-        return "正在分析 · 逐拍结果随后续画面更新"
+        guard analysisModelsAvailable else { return courtText("分析模型未安装，请使用包含模型的开发构建。") }
+        guard isLive else { return courtText("开始采集后，在本机实时分析球速、落点与动作。") }
+        guard tennisAnalysis != nil else { return courtText("正在加载模型并积累连续画面…") }
+        return courtText("正在分析 · 逐拍结果随后续画面更新")
     }
     var backupStatus: String {
-        guard let status = cameraStatus, connected else { return "录像与分析保存在机位上，看板保存逐拍数据的副本。" }
-        if status.saving { return "机位正在保存录像…" }
-        if status.recording { return "机位正在录像" + (status.recordingSeconds.map { " · " + courtDuration($0) } ?? "") }
-        return "机位未在录像"
+        guard let status = cameraStatus, connected else { return courtText("录像与分析保存在机位上，看板保存逐拍数据的副本。") }
+        if status.saving { return courtText("机位正在保存录像…") }
+        if status.recording { return courtText("机位正在录像") + (status.recordingSeconds.map { " · " + courtDuration($0) } ?? "") }
+        return courtText("机位未在录像")
     }
 
     // MARK: End of record and notices
@@ -327,10 +327,10 @@ struct LinkStats {
 
     /// Says where the shown shots come from, for the full-screen boards' status line.
     var shownEventsStatus: (text: String, tone: CourtStatus.Tone) {
-        if let finished = finishedRecordShots { return ("上一次记录「\(finished.title)」", .idle) }
-        if isLive { return ("实时数据", .live) }
-        if !dashboardEvents.isEmpty { return ("画面已停止 · 保留最近结果", .idle) }
-        return (connected ? "已连接 · 等待采集" : "未连接机位", .idle)
+        if let finished = finishedRecordShots { return (courtFormat("上一次记录「%1$@」", "\(CourtCopy.stored(finished.title))"), .idle) }
+        if isLive { return (courtText("实时数据"), .live) }
+        if !dashboardEvents.isEmpty { return (courtText("画面已停止 · 保留最近结果"), .idle) }
+        return (connected ? courtText("已连接 · 等待采集") : courtText("未连接机位"), .idle)
     }
 
     func dismissFinishedRecord() {
@@ -411,7 +411,7 @@ struct LinkStats {
         }
         isBusy = true
         #if os(iOS)
-        let background = UIApplication.shared.beginBackgroundTask(withName: "保存球场记录")
+        let background = UIApplication.shared.beginBackgroundTask(withName: courtText("保存球场记录"))
         #endif
         if role == .camera {
             await camera.suspendForBackground()
@@ -420,7 +420,7 @@ struct LinkStats {
             if session?.state == .active, !cameraOwnsSession { session?.pause(); persistSession() }
             if mirrorDirty { persistSession() }
             await stopServer()
-            serverStatus = cameraOwnsSession ? "应用已进入后台 · 机位继续录像，回到前台后自动补齐数据" : "应用已进入后台，记录已暂停"
+            serverStatus = cameraOwnsSession ? courtText("应用已进入后台 · 机位继续录像，回到前台后自动补齐数据") : courtText("应用已进入后台，记录已暂停")
         }
         isBusy = false
         #if os(iOS)
@@ -442,7 +442,7 @@ struct LinkStats {
         do { _ = try PairingTicket.parse(url.absoluteString) }
         catch { self.error = error.localizedDescription; return }
         guard role == nil || role == .camera else {
-            error = "请先返回首页，选择机位，再打开配对链接。"; return
+            error = courtText("请先返回首页，选择机位，再打开配对链接。"); return
         }
         if role == nil { selectRole(.camera) }
         camera.pair(url.absoluteString)
@@ -450,7 +450,7 @@ struct LinkStats {
 
     func refreshPairing() {
         guard !hasActiveSession, !isSaving, !isBusy else {
-            error = "请先结束当前记录，再刷新配对。"; return
+            error = courtText("请先结束当前记录，再刷新配对。"); return
         }
         pairingURL = ""; ticket = nil; listeningPort = nil
         Task { await stopServer(); if role == .server { startServer() } }
@@ -460,7 +460,7 @@ struct LinkStats {
     /// scan the new code to use the changed connection options.
     func setPeerToPeer(_ enabled: Bool) {
         guard enabled != peerToPeerEnabled else { return }
-        guard !connected, !hasActiveSession, !isBusy else { error = "请先结束记录并断开机位，再更改连接方式。"; return }
+        guard !connected, !hasActiveSession, !isBusy else { error = courtText("请先结束记录并断开机位，再更改连接方式。"); return }
         peerToPeerEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: "court.display.peerToPeer")
         ticket?.peerToPeer = enabled
@@ -483,7 +483,7 @@ struct LinkStats {
     var canUseHawkEye: Bool { controller != nil || (connected && cameraCapabilities.contains(WireHello.hawkEye)) }
     var hawkEyeUnavailableReason: String? {
         if canUseHawkEye { return nil }
-        return connected ? "机位的 App 版本不支持界内外判定，请更新机位。" : "连接机位后才能开启界内外。"
+        return connected ? courtText("机位的 App 版本不支持界内外判定，请更新机位。") : courtText("连接机位后才能开启界内外。")
     }
 
     func setHawkEye(_ settings: HawkEyeSettings) {
@@ -505,7 +505,7 @@ struct LinkStats {
     var canChallenge: Bool { controller != nil || (connected && cameraCapabilities.contains(WireHello.challenge)) }
     var challengeUnavailableReason: String? {
         if canChallenge { return nil }
-        return connected ? "机位的 App 版本不支持挑战，请更新机位。" : "连接机位后才能挑战。"
+        return connected ? courtText("机位的 App 版本不支持挑战，请更新机位。") : courtText("连接机位后才能挑战。")
     }
     /// Lines a challenge uses: the line-call format when 界内外 is on, else the one picked for this record.
     var challengeFormat: HawkEyeFormat? {
@@ -591,7 +591,7 @@ struct LinkStats {
     func setHandedness(near: TennisHandedness, far: TennisHandedness) {
         if let controller { controller.setHandedness(near: near, far: far); return }
         var control = WireControl(.handedness); control.near = near; control.far = far
-        guard connected else { error = "机位未连接，持拍手设置需要在机位连接后保存。"; return }
+        guard connected else { error = courtText("机位未连接，持拍手设置需要在机位连接后保存。"); return }
         sendControl(control)
         displaySnapshot = nil
     }
@@ -601,10 +601,10 @@ struct LinkStats {
     func startSession() {
         if let controller { controller.startSession(title: sessionTitle); return }
         guard role == .server, !hasActiveSession, !sessionCommandsLocked, !isSaving else { return }
-        guard store != nil else { error = "记录目录不可用：检查存储空间后重新打开 App。"; return }
+        guard store != nil else { error = courtText("记录目录不可用：检查存储空间后重新打开 App。"); return }
         if !persisted { persistSession(); guard persisted else { return } }
         let title = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let created = CourtSession(title: title.isEmpty ? "球场分析" : String(title.prefix(100)))
+        let created = CourtSession(title: title.isEmpty ? "球场分析" : String(title.prefix(100))) // l10n:keep
         if connected {
             // The camera is the authority: the session exists once the camera adopts it and echoes
             // it back. A refusal (camera busy, or its own session open) leaves nothing behind here.
@@ -649,7 +649,7 @@ struct LinkStats {
         defer { pendingCommand = nil; updateIdleTimer() }
         let reply = await request(control, timeout: timeout)
         if reply == nil {
-            error = connected ? "机位没有回应，请看机位上的状态后再试。" : "机位连接中断，命令可能没有送达，请重新连接后查看机位状态。"
+            error = connected ? courtText("机位没有回应，请看机位上的状态后再试。") : courtText("机位连接中断，命令可能没有送达，请重新连接后查看机位状态。")
         }
         // A refusal's reason was already shown when the reply arrived.
         return reply
@@ -699,7 +699,7 @@ struct LinkStats {
     }
     func cancelTransfer() {
         if connected { sendControl(WireControl(.cancelTransfer)) }
-        transferReceiver.cancel("已取消，已传部分会保留，可继续回传。")
+        transferReceiver.cancel(courtText("已取消，已传部分会保留，可继续回传。"))
     }
     private func transferProgressed(_ progress: TransferReceiver.Progress) {
         transfer = progress
@@ -743,14 +743,14 @@ struct LinkStats {
                 // The camera may wait up to 4 s for the end of the window before it replies.
                 let reply = await self?.request(request, timeout: 12)
                 guard let self, self.clipRequest == request.id else { return }
-                if reply == nil { self.clipReceiver.cancel("机位没有回应片段请求，请稍后再试。") }
+                if reply == nil { self.clipReceiver.cancel(courtText("机位没有回应片段请求，请稍后再试。")) }
             }
         }
     }
     func cancelClip() {
         guard let clip, !clip.progress.done, clip.progress.error == nil else { return }
         if connected { sendControl(WireControl(.cancelTransfer)) }
-        clipReceiver.cancel("已取消。")
+        clipReceiver.cancel(courtText("已取消。"))
     }
     private func clipProgressed(_ progress: TransferReceiver.Progress) {
         guard let shot = clip?.shot else { return }
@@ -764,7 +764,7 @@ struct LinkStats {
     /// Re-analyses the local recording inside each analysis gap of a finished session.
     func backfillGaps(_ session: CourtSession) {
         guard backfill == nil, !(controller?.session?.id == session.id && hasActiveSession) else { return }
-        guard let models = AnalysisModelLocator.directory else { error = "这台设备没有分析模型，无法离线补算。"; return }
+        guard let models = AnalysisModelLocator.directory else { error = courtText("这台设备没有分析模型，无法离线补算。"); return }
         #if targetEnvironment(simulator)
         let configuration = TennisAnalysisConfiguration(modelDirectory: models, computeUnits: .cpuOnly)
         #else
@@ -791,10 +791,10 @@ struct LinkStats {
                     latest.markAnalysisGapsBackfilled(filled.filledGaps)
                     try store.save(latest)
                     if self.session?.id == id { self.session = latest }
-                    self.notice = "离线补算完成：\(filled.filledGaps.count) 段，新增 \(filled.events.count) 个击球候选（标注「离线补算」）。"
+                    self.notice = courtFormat("离线补算完成：%1$@ 段，新增 %2$@ 个击球候选（标注「离线补算」）。", "\(filled.filledGaps.count)", "\(filled.events.count)")
                     self.reloadHistory()
-                } catch { self.error = "保存补算结果失败：\(error.localizedDescription)" }
-            case .failure(let error): self.error = "离线补算失败：\(error.localizedDescription)"
+                } catch { self.error = courtFormat("保存补算结果失败：%1$@", "\(error.localizedDescription)") }
+            case .failure(let error): self.error = courtFormat("离线补算失败：%1$@", "\(error.localizedDescription)")
             }
         }
     }
@@ -804,12 +804,12 @@ struct LinkStats {
         let id = session.id
         if session.state == .active || session.state == .paused
             || (hasActiveSession && (self.session?.id == id || controller?.session?.id == id)) {
-            return "记录进行中，结束后才能删除。"
+            return courtText("记录进行中，结束后才能删除。")
         }
-        if backfill?.session == id { return "正在离线补算这次记录，完成后才能删除。" }
-        if let transfer, transfer.sessionID == id, !transfer.done, transfer.error == nil { return "录像正在回传，完成或取消后才能删除。" }
-        if let clip, clip.progress.sessionID == id, !clip.progress.done, clip.progress.error == nil { return "正在取单拍片段，完成后才能删除。" }
-        if let controller, controller.session?.id == id, controller.isBusy || controller.counters.saving { return "机位正在保存录像，稍后再删除。" }
+        if backfill?.session == id { return courtText("正在离线补算这次记录，完成后才能删除。") }
+        if let transfer, transfer.sessionID == id, !transfer.done, transfer.error == nil { return courtText("录像正在回传，完成或取消后才能删除。") }
+        if let clip, clip.progress.sessionID == id, !clip.progress.done, clip.progress.error == nil { return courtText("正在取单拍片段，完成后才能删除。") }
+        if let controller, controller.session?.id == id, controller.isBusy || controller.counters.saving { return courtText("机位正在保存录像，稍后再删除。") }
         return nil
     }
 
@@ -818,16 +818,16 @@ struct LinkStats {
     /// camera's own copy of a mirrored session is untouched.
     @discardableResult func deleteSession(_ session: CourtSession) -> Bool {
         if let reason = deletionBlocker(session) { error = reason; return false }
-        guard let store else { error = "无法访问本机记录目录。"; return false }
+        guard let store else { error = courtText("无法访问本机记录目录。"); return false }
         let id = session.id
-        if let controller, !controller.forgetFinishedSession(id) { error = "机位正在保存录像，稍后再删除。"; return false }
+        if let controller, !controller.forgetFinishedSession(id) { error = courtText("机位正在保存录像，稍后再删除。"); return false }
         do { try store.delete(session) }
-        catch { self.error = "删除记录失败：\(error.localizedDescription)"; reloadHistory(); return false }
+        catch { self.error = courtFormat("删除记录失败：%1$@", "\(error.localizedDescription)"); reloadHistory(); return false }
         deletedSessions.insert(id)
         if self.session?.id == id { self.session = nil; dashboardEvents = []; mirrorDirty = false }
         if transfer?.sessionID == id { transfer = nil }
         history.removeAll { $0.id == id }
-        notice = "已删除「\(session.title)」的录像、逐拍数据和标记（仅本机）。"
+        notice = courtFormat("已删除「%1$@」的录像、逐拍数据和标记（仅本机）。", "\(session.title)")
         reloadHistory()
         return true
     }
@@ -843,17 +843,17 @@ struct LinkStats {
     /// What deleting this session removes, for the confirmation dialog.
     func deletionMessage(_ session: CourtSession) -> String {
         let bytes = localRecordingBytes([session])
-        let recordings = bytes > 0 ? "本机录像（约 \(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))）" : "录像信息"
-        var text = "将从这台设备删除「\(session.title)」的\(recordings)、逐拍数据和辅助标记，删除后无法恢复。"
-        if session.capturedOn != nil, session.capturedOn != VideoImport.device, role != .camera { text += "机位上的原始记录不受影响。" }
-        else { text += "只影响这台设备。" }
+        let recordings = bytes > 0 ? courtFormat("本机录像（约 %1$@）", "\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file))") : courtText("录像信息")
+        var text = courtFormat("将从这台设备删除「%1$@」的%2$@、逐拍数据和辅助标记，删除后无法恢复。", "\(session.title)", "\(recordings)")
+        if session.capturedOn != nil, session.capturedOn != VideoImport.device, role != .camera { text += courtText("机位上的原始记录不受影响。") }
+        else { text += courtText("只影响这台设备。") }
         return text
     }
 
     func reloadHistory() {
         guard let store else { return }
         do { history = try store.loadAll(recoverUnfinished: false) }
-        catch { self.error = "读取历史记录失败：\(error.localizedDescription)" }
+        catch { self.error = courtFormat("读取历史记录失败：%1$@", "\(error.localizedDescription)") }
         clearedRecordings = StorageCleanup(store: store).clearedRecordings()
     }
 
@@ -914,7 +914,7 @@ struct LinkStats {
             do { ticket = try PairingTicket(name: name, peerToPeer: peerToPeerEnabled) } catch { self.error = error.localizedDescription; self.server = nil; return }
             listeningPort = nil
         }
-        serverStatus = "正在开启看板…"; analysisError = nil; tennisAnalysisError = nil
+        serverStatus = courtText("正在开启看板…"); analysisError = nil; tennisAnalysisError = nil
         let assembler = H264SampleAssembler(), preview = preview, traffic = traffic, receiver = transferReceiver, clips = clipReceiver
         receiver.onProgress = { [weak self] progress in Task { @MainActor in self?.transferProgressed(progress) } }
         clips.onProgress = { [weak self] progress in Task { @MainActor in self?.clipProgressed(progress) } }
@@ -933,14 +933,14 @@ struct LinkStats {
                 self.selectedAddress = ticket.host ?? ""
                 do { self.pairingURL = try ticket.url() }
                 catch { self.error = error.localizedDescription }
-                self.serverStatus = self.connected ? "机位已连接" : "等待机位扫码连接"
+                self.serverStatus = self.connected ? courtText("机位已连接") : courtText("等待机位扫码连接")
             }
         }
         server.onConnected = { [weak self] in
             assembler.reset()
             Task { @MainActor in
                 guard let self, self.serviceGeneration == generation else { return }
-                self.connected = true; self.serverStatus = "正在确认机位…"
+                self.connected = true; self.serverStatus = courtText("正在确认机位…")
                 self.sendHello()
             }
         }
@@ -980,13 +980,13 @@ struct LinkStats {
         guard let server else { return }
         self.server = nil; serviceGeneration = UUID()
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in server.stop { continuation.resume() } }
-        cameraLost("看板已停止监听")
+        cameraLost(courtText("看板已停止监听"))
         pairingURL = ""; addresses = []; selectedAddress = ""
     }
 
     private func cameraLost(_ reason: String) {
         // The link layer is role-agnostic; on the display the other end is always the camera.
-        let reason = reason == CourtConnection.peerClosed ? "机位已断开" : reason
+        let reason = reason == CourtConnection.peerClosed ? courtText("机位已断开") : reason
         let wasConnected = connected
         if wasConnected, role == .server, cameraOwnsSession, hasActiveSession, let id = session?.id {
             statusLog.append(["t": Date().timeIntervalSince1970, "connected": false, "reason": reason], session: id, directory: storageDirectory)
@@ -995,13 +995,13 @@ struct LinkStats {
         displaySnapshot = nil
         preview.clear()
         for (id, _) in replyWaiters { resolveReply(id, nil) }
-        if transferReceiver.isActive { transferReceiver.cancel("机位连接中断，已传部分会保留，重新连接后点「继续回传」。") }
-        if clipReceiver.isActive { clipReceiver.cancel("机位连接中断，片段未取完。") }
+        if transferReceiver.isActive { transferReceiver.cancel(courtText("机位连接中断，已传部分会保留，重新连接后点「继续回传」。")) }
+        if clipReceiver.isActive { clipReceiver.cancel(courtText("机位连接中断，片段未取完。")) }
         cameraCapabilities = []; linkPath = nil; hawkEyePending = nil
         if wasConnected {
             // After a normal finish the disconnect is not news: say the record is safe first.
-            serverStatus = cameraOwnsSession && hasActiveSession ? "机位连接中断：\(reason) · 机位继续录像，重连后补齐"
-                : finishedRecord != nil ? "记录已保存 · \(reason)" : reason
+            serverStatus = cameraOwnsSession && hasActiveSession ? courtFormat("机位连接中断：%1$@ · 机位继续录像，重连后补齐", "\(reason)")
+                : finishedRecord != nil ? courtFormat("记录已保存 · %1$@", "\(reason)") : reason
         }
         updateIdleTimer()
     }
@@ -1022,7 +1022,7 @@ struct LinkStats {
         #if os(macOS)
         let device = Host.current().localizedName ?? "Mac"
         #else
-        let device = "iPhone 看板"
+        let device = courtText("iPhone 看板")
         #endif
         // An interrupted camera session goes too, so a camera that restarted again recovers it from disk.
         let open = hasControllableSession ? session?.withoutTennisEvents() : nil
@@ -1053,7 +1053,7 @@ struct LinkStats {
         nextResyncAt = Date().addingTimeInterval(delays[min(resyncAttempts, delays.count - 1)])
         resyncAttempts += 1; resyncRequests += 1; disagreements = 0
         sendHandshake()
-        if resyncAttempts == 5 { error = "看板与机位的记录状态仍不一致，已停止自动对齐。请以机位为准，或重新连接机位。" }
+        if resyncAttempts == 5 { error = courtText("看板与机位的记录状态仍不一致，已停止自动对齐。请以机位为准，或重新连接机位。") }
     }
 
     private func receive(_ packet: StreamPacket) {
@@ -1061,11 +1061,11 @@ struct LinkStats {
             switch packet.wireKind {
             case .hello:
                 let hello = try packet.decode(WireHello.self)
-                guard hello.role == .camera else { error = "连上来的设备不是机位：在那台设备上进入机位模式后重新扫码。"; server?.disconnectClient("这台看板只接受机位连接"); return }
+                guard hello.role == .camera else { error = courtText("连上来的设备不是机位：在那台设备上进入机位模式后重新扫码。"); server?.disconnectClient(courtText("这台看板只接受机位连接")); return }
                 let model = CameraHardware.name(hello.hardware)
                 deviceName = hello.device.contains(model) ? hello.device : hello.device + " · " + model
                 cameraCapabilities = hello.capabilities ?? []
-                serverStatus = "已连接机位"
+                serverStatus = courtText("已连接机位")
             case .status:
                 guard !packet.payload.isEmpty else { return }
                 let status = try packet.decode(CameraStatus.self)
@@ -1090,7 +1090,7 @@ struct LinkStats {
                 resolveReply(request, control)
             default: break
             }
-        } catch { self.error = "机位发来的数据无法读取（\(error.localizedDescription)）：把两台设备更新到同一版本后重新连接。" }
+        } catch { self.error = courtFormat("机位发来的数据无法读取（%1$@）：把两台设备更新到同一版本后重新连接。", "\(error.localizedDescription)") }
     }
 
     /// The camera's copy of a session. The camera is authoritative for any session it owns; a
@@ -1112,7 +1112,7 @@ struct LinkStats {
             }
             if localOpen {
                 var closed = local; closed.finish(); save(closed)
-                notice = "机位已有进行中的记录「\(remote.title)」，看板已切换到这条记录；本机记录「\(local.title)」已结束并保存在历史记录中。"
+                notice = courtFormat("机位已有进行中的记录「%1$@」，看板已切换到这条记录；本机记录「%2$@」已结束并保存在历史记录中。", "\(remote.title)", "\(local.title)")
             }
             pendingIntents = []
             session = remote
@@ -1168,7 +1168,7 @@ struct LinkStats {
 
     private func queueIntent(_ control: WireControl) {
         pendingIntents.append(control)
-        notice = "机位未连接：操作已在看板记录，机位重连后同步。机位上的录像以机位为准。"
+        notice = courtText("机位未连接：操作已在看板记录，机位重连后同步。机位上的录像以机位为准。")
     }
 
     private func sendControl(_ control: WireControl) { send(.control, control) }
@@ -1179,7 +1179,7 @@ struct LinkStats {
     private func send<T: Encodable>(_ kind: WireKind, _ body: T) {
         guard let server else { return }
         do { server.send(try StreamPacket.message(kind, body)) }
-        catch { self.error = "无法编码发往机位的数据：\(error.localizedDescription)" }
+        catch { self.error = courtFormat("无法编码发往机位的数据：%1$@", "\(error.localizedDescription)") }
     }
 
     /// Sends a command and waits for the camera's reply (or nil after `timeout`).
@@ -1233,7 +1233,7 @@ struct LinkStats {
         await camera.shutdown()
         preview.clear(); dashboardEvents = []; recentRows = []; displaySnapshot = nil
         cameraStatus = nil
-        connected = false; deviceName = "尚未连接机位"
+        connected = false; deviceName = courtText("尚未连接机位")
     }
 
     private func save(_ value: CourtSession) {
@@ -1293,7 +1293,7 @@ extension WorkspaceModel {
     func testingActAsDisplay() {
         guard role == nil else { return }
         role = .server
-        serverStatus = "等待机位扫码连接"
+        serverStatus = courtText("等待机位扫码连接")
     }
     /// Tests and offscreen renders: handle one message as if a connected camera had sent it.
     func testingReceiveFromCamera(_ packet: StreamPacket) {

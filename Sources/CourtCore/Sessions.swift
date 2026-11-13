@@ -163,7 +163,7 @@ public struct CourtSession: Codable, Identifiable, Sendable {
     public mutating func addRecording(_ recording: StoredRecording) throws {
         try SessionStore.validateRecordingFilename(recording.filename)
         guard recording.frames >= 0, recording.duration.isFinite, recording.duration >= 0, recording.firstPTS.isFinite, recording.firstPTS >= 0 else {
-            throw CourtError.message("录像时间信息无效。")
+            throw CourtError.message(courtText("录像时间信息无效。"))
         }
         if !recordings.contains(where: { $0.id == recording.id }) { recordings.append(recording) }
     }
@@ -174,7 +174,7 @@ public struct CourtSession: Codable, Identifiable, Sendable {
     fileprivate mutating func recover() {
         guard state == .active || state == .paused else { return }
         state = .interrupted; activeSince = nil
-        append(.interruption, at: Date(), label: "上次会话未正常结束")
+        append(.interruption, at: Date(), label: courtText("上次会话未正常结束"))
     }
     private mutating func append(_ kind: SessionEventKind, at date: Date, label: String? = nil, sourcePTS: Double? = nil, streamID: UUID? = nil) {
         events.append(SessionEvent(kind: kind, date: date, elapsed: elapsed(at: date), label: label, sourcePTS: sourcePTS.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }, streamID: streamID))
@@ -199,13 +199,13 @@ public final class SessionStore {
         for url in urls where url.pathExtension == "json" && UUID(uuidString: url.deletingPathExtension().lastPathComponent) != nil {
             var session = try JSONDecoder().decode(CourtSession.self, from: Data(contentsOf: url))
             guard session.id.uuidString.lowercased() == url.deletingPathExtension().lastPathComponent.lowercased() else {
-                throw CourtError.message("会话文件与记录编号不一致，原文件已保留。")
+                throw CourtError.message(courtText("会话文件与记录编号不一致，原文件已保留。"))
             }
             for recording in session.recordings {
                 try Self.validateRecordingFilename(recording.filename)
                 guard recording.frames >= 0, recording.duration.isFinite, recording.duration >= 0,
                       recording.firstPTS.isFinite, recording.firstPTS >= 0 else {
-                    throw CourtError.message("已保存的录像时间信息无效，原文件已保留。")
+                    throw CourtError.message(courtText("已保存的录像时间信息无效，原文件已保留。"))
                 }
             }
             if recoverUnfinished, session.state == .active || session.state == .paused {
@@ -279,14 +279,14 @@ public final class SessionStore {
               // folder existed when the URL was made, so equal folders can compare unequal.
               url.resolvingSymlinksInPath().deletingLastPathComponent().standardizedFileURL.path
                 == directory.resolvingSymlinksInPath().standardizedFileURL.path else {
-            throw CourtError.message("录像文件不能指向会话目录之外。")
+            throw CourtError.message(courtText("录像文件不能指向会话目录之外。"))
         }
         return url
     }
     public static func validateRecordingFilename(_ filename: String) throws {
         guard !filename.isEmpty, filename != ".", filename != "..", !filename.contains("/"), !filename.contains("\\"),
               !filename.contains(":"), !filename.contains("\0"), filename.utf8.count <= 255 else {
-            throw CourtError.message("录像必须使用安全的相对文件名。")
+            throw CourtError.message(courtText("录像必须使用安全的相对文件名。"))
         }
     }
 }
@@ -294,11 +294,11 @@ public final class SessionStore {
 /// The 「记录保存失败」 notice: one wording on the camera and the display, and recognisable so a later
 /// successful save can take it down again.
 public enum SaveFailure {
-    static let prefix = "记录保存失败："
+    static let prefix = courtText("记录保存失败：")
     public static func message(_ error: Error) -> String {
         var reason = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         while let last = reason.last, "。.！!".contains(last) { reason.removeLast() }   // no 「。。」
-        return prefix + reason + "。检查存储空间后重试。"
+        return prefix + reason + courtText("。检查存储空间后重试。")
     }
     public static func isMessage(_ text: String?) -> Bool { text?.hasPrefix(prefix) == true }
 }

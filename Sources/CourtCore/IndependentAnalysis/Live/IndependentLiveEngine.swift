@@ -51,9 +51,9 @@ public struct IndependentLiveConfiguration: Sendable {
     /// Written into every snapshot; names the person stage too, since it changes the rows.
     public var modelVersion: String { Self.baseVersion + (poseFill ? "+posefill" : "") }
     public static let limitations = [
-        "自研模型估计：球速只在看到球落地时给出，其余显示「—」并附原因；空中球不按地面换算。",
-        "动作类型要看得到击球人；按右手持拍判断正反手。",
-        "球场由画面白线自动识别，记录中定时复查；识别出球场前的击球在识别后补算（最多 30 秒）。",
+        courtText("自研模型估计：球速只在看到球落地时给出，其余显示「—」并附原因；空中球不按地面换算。"),
+        courtText("动作类型要看得到击球人；按右手持拍判断正反手。"),
+        courtText("球场由画面白线自动识别，记录中定时复查；识别出球场前的击球在识别后补算（最多 30 秒）。"),
     ]
 }
 
@@ -688,17 +688,17 @@ public final class IndependentLiveEngine {
             let refusal = court?.latest?.refusals.first?.message
             if court?.shaking == true, refusal == nil {
                 return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
-                                                   reason: "正在识别球场 · 画面晃动较大，逐帧识别中")
+                                                   reason: courtText("正在识别球场 · 画面晃动较大，逐帧识别中"))
             }
             return TennisCourtCalibrationState(isAvailable: false, landmarkCount: 0, validationErrorMeters: nil,
-                                               reason: refusal.map { "正在识别球场 · " + $0 } ?? "正在识别球场")
+                                               reason: refusal.map { courtText("正在识别球场 · ") + $0 } ?? courtText("正在识别球场"))
         }
         guard let solve = courtCalibration else {
-            return TennisCourtCalibrationState(isAvailable: true, landmarkCount: 0, validationErrorMeters: nil, reason: "使用给定的球场位置")
+            return TennisCourtCalibrationState(isAvailable: true, landmarkCount: 0, validationErrorMeters: nil, reason: courtText("使用给定的球场位置"))
         }
-        var text = "自动识别 · \(solve.linesUsed.count) 条球场线"
-        if let rms = solve.fitRMS { text += String(format: " · 对齐误差 %.1f 像素", rms) }
-        if solve.quality == .partial { text += " · 部分球场线不在画面里，建议调整机位" }
+        var text = courtFormat("自动识别 · %1$@ 条球场线", "\(solve.linesUsed.count)")
+        if let rms = solve.fitRMS { text += courtPrintf(" · 对齐误差 %.1f 像素", rms) }
+        if solve.quality == .partial { text += courtText(" · 部分球场线不在画面里，建议调整机位") }
         return TennisCourtCalibrationState(isAvailable: true, landmarkCount: solve.linesUsed.count, validationErrorMeters: nil, reason: text)
     }
 

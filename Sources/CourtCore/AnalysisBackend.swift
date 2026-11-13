@@ -10,7 +10,7 @@ public enum CourtAnalysisBackend: String, CaseIterable, Sendable, Codable {
 
     public static let defaultsKey = "court.analysis.backend"
 
-    public var title: String { self == .sjia ? "S家模型" : "自研模型" }
+    public var title: String { self == .sjia ? courtText("S家模型") : courtText("自研模型") }
 
     /// The saved choice, or S家 when nothing (or something unknown) is saved. Installs saved before
     /// the rename stored `swing` for S家.

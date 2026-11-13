@@ -163,22 +163,22 @@ public struct WebHTTPRequest: Sendable {
     /// Parses a request head from `data`; nil while the blank line has not arrived yet.
     public static func parse(_ data: Data) throws -> (request: WebHTTPRequest, length: Int)? {
         guard let end = data.range(of: Data("\r\n\r\n".utf8)) else {
-            if data.count > maximumHeader { throw CourtError.message("请求头过长。") }
+            if data.count > maximumHeader { throw CourtError.message(courtText("请求头过长。")) }
             return nil
         }
         guard end.lowerBound <= maximumHeader, let text = String(data: data[data.startIndex..<end.lowerBound], encoding: .utf8) else {
-            throw CourtError.message("请求头无效。")
+            throw CourtError.message(courtText("请求头无效。"))
         }
         let lines = text.components(separatedBy: "\r\n")
         let parts = lines[0].split(separator: " ", omittingEmptySubsequences: true)
-        guard parts.count == 3, parts[2].hasPrefix("HTTP/1.") else { throw CourtError.message("请求行无效。") }
+        guard parts.count == 3, parts[2].hasPrefix("HTTP/1.") else { throw CourtError.message(courtText("请求行无效。")) }
         var headers: [String: String] = [:]
         for line in lines.dropFirst() {
             guard let colon = line.firstIndex(of: ":") else { continue }
             headers[line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
         }
         let target = String(parts[1])
-        guard target.hasPrefix("/"), let components = URLComponents(string: target) else { throw CourtError.message("请求路径无效。") }
+        guard target.hasPrefix("/"), let components = URLComponents(string: target) else { throw CourtError.message(courtText("请求路径无效。")) }
         var query: [String: String] = [:]
         for item in components.queryItems ?? [] { query[item.name] = item.value ?? "" }
         let request = WebHTTPRequest(method: String(parts[0]).uppercased(), path: components.percentEncodedPath.removingPercentEncoding ?? components.percentEncodedPath,
@@ -230,16 +230,16 @@ public enum WebSocketFrame {
         public init() {}
         public mutating func append(_ chunk: Data) throws -> [(WebSocketOpcode, Data)] {
             pending.append(chunk)
-            guard pending.count <= maximumIncoming + 16 else { throw CourtError.message("WebSocket 消息过大。") }
+            guard pending.count <= maximumIncoming + 16 else { throw CourtError.message(courtText("WebSocket 消息过大。")) }
             var frames: [(WebSocketOpcode, Data)] = []
             var bytes = [UInt8](pending)
             var offset = 0
             while bytes.count - offset >= 2 {
                 let first = bytes[offset], second = bytes[offset + 1]
-                guard first & 0x70 == 0 else { throw CourtError.message("WebSocket 帧无效。") }
-                guard let opcode = WebSocketOpcode(rawValue: first & 0x0F) else { throw CourtError.message("不支持的 WebSocket 帧。") }
-                guard first & 0x80 != 0, opcode != .continuation else { throw CourtError.message("不支持分片的 WebSocket 消息。") }
-                guard second & 0x80 != 0 else { throw CourtError.message("浏览器发来的 WebSocket 帧必须加掩码。") }
+                guard first & 0x70 == 0 else { throw CourtError.message(courtText("WebSocket 帧无效。")) }
+                guard let opcode = WebSocketOpcode(rawValue: first & 0x0F) else { throw CourtError.message(courtText("不支持的 WebSocket 帧。")) }
+                guard first & 0x80 != 0, opcode != .continuation else { throw CourtError.message(courtText("不支持分片的 WebSocket 消息。")) }
+                guard second & 0x80 != 0 else { throw CourtError.message(courtText("浏览器发来的 WebSocket 帧必须加掩码。")) }
                 var length = Int(second & 0x7F), cursor = offset + 2
                 if length == 126 {
                     guard bytes.count - cursor >= 2 else { break }
@@ -248,10 +248,10 @@ public enum WebSocketFrame {
                     guard bytes.count - cursor >= 8 else { break }
                     var value: UInt64 = 0
                     for index in 0..<8 { value = value << 8 | UInt64(bytes[cursor + index]) }
-                    guard value <= UInt64(maximumIncoming) else { throw CourtError.message("WebSocket 消息过大。") }
+                    guard value <= UInt64(maximumIncoming) else { throw CourtError.message(courtText("WebSocket 消息过大。")) }
                     length = Int(value); cursor += 8
                 }
-                guard length <= maximumIncoming else { throw CourtError.message("WebSocket 消息过大。") }
+                guard length <= maximumIncoming else { throw CourtError.message(courtText("WebSocket 消息过大。")) }
                 guard bytes.count - cursor >= 4 + length else { break }
                 let mask = Array(bytes[cursor..<(cursor + 4)]); cursor += 4
                 for index in 0..<length { bytes[cursor + index] ^= mask[index & 3] }

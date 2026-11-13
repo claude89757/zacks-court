@@ -115,7 +115,7 @@ import VideoToolbox
         var local = listening; local.host = "127.0.0.1"
         let pipeline = CameraMediaPipeline(queue: DispatchQueue(label: "court.probe.camera", qos: .userInitiated))
         let camera = CameraSessionController(storageDirectory: folder, configuration: nil,
-                                             identity: CameraIdentity(device: "合成测试机位（非 iPhone）", hardware: "court-probe", app: "court-probe"),
+                                             identity: CameraIdentity(device: courtText("合成测试机位（非 iPhone）"), hardware: "court-probe", app: "court-probe"),
                                              pipeline: pipeline)
         let source = SyntheticFrameSource(pipeline: pipeline, seconds: 3)
         camera.pair(local)
@@ -141,7 +141,7 @@ import VideoToolbox
         let decoded = try await decodeMovie(folder.appendingPathComponent(recording.filename))
         let previews = display.previewSamples()
         let previewDecoded = try decodeCount(previews)
-        guard session.capturedOn == "合成测试机位（非 iPhone）", recording.frames == 180, decoded.frames == 180,
+        guard session.capturedOn == courtText("合成测试机位（非 iPhone）"), recording.frames == 180, decoded.frames == 180,
               abs(decoded.duration - 3) < 0.02, abs(recording.firstPTS - 2000) < 0.001 else {
             throw CourtError.message("Recording check failed: frames=\(recording.frames) decoded=\(decoded.frames) duration=\(decoded.duration) firstPTS=\(recording.firstPTS)")
         }
@@ -171,7 +171,7 @@ import VideoToolbox
         }()
         let independent = video == nil ? nil : independentAnalyzer()
         let configuration = video == nil || independent != nil ? nil : models.map { TennisAnalysisConfiguration(modelDirectory: $0) }
-        let name = video == nil ? "合成测试机位（非 iPhone）" : "录像回放机位（非实时摄像头）"
+        let name = video == nil ? courtText("合成测试机位（非 iPhone）") : courtText("录像回放机位（非实时摄像头）")
         let camera = CameraSessionController(storageDirectory: folder, configuration: configuration,
                                              identity: CameraIdentity(device: name, hardware: "court-probe", app: "court-probe"), pipeline: pipeline,
                                              analyzer: independent)
@@ -211,7 +211,7 @@ import VideoToolbox
         }()
         let independent = video == nil ? nil : independentAnalyzer()
         let configuration = video == nil || independent != nil ? nil : models.map { TennisAnalysisConfiguration(modelDirectory: $0) }
-        let name = video == nil ? "合成测试机位（非 iPhone）" : "录像回放机位（非实时摄像头）"
+        let name = video == nil ? courtText("合成测试机位（非 iPhone）") : courtText("录像回放机位（非实时摄像头）")
         let camera = CameraSessionController(storageDirectory: folder, configuration: configuration,
                                              identity: CameraIdentity(device: name, hardware: "court-probe", app: "court-probe"), pipeline: pipeline,
                                              analyzer: independent)
@@ -255,7 +255,7 @@ import VideoToolbox
         let configuration = independent != nil ? nil : models.map { TennisAnalysisConfiguration(modelDirectory: $0) }
         guard independent != nil || configuration != nil else { throw CourtError.message("No analysis models: set COURT_PROBE_INDEPENDENT or stage .local/AnalysisModels") }
         let camera = CameraSessionController(storageDirectory: folder, configuration: configuration,
-                                             identity: CameraIdentity(device: "录像回放机位（非实时摄像头）", hardware: "court-probe", app: "court-probe"),
+                                             identity: CameraIdentity(device: courtText("录像回放机位（非实时摄像头）"), hardware: "court-probe", app: "court-probe"),
                                              pipeline: pipeline, analyzer: independent)
         camera.setHawkEye(HawkEyeSettings(enabled: true, format: format, farHalf: true))
         let source = try await FileFrameSource(pipeline: pipeline, video: video)
@@ -332,7 +332,7 @@ import VideoToolbox
     static func independentAnalyzer() -> CameraSideAnalyzer? {
         guard let path = ProcessInfo.processInfo.environment["COURT_PROBE_INDEPENDENT"] else { return nil }
         let directory = URL(fileURLWithPath: path, isDirectory: true)
-        print("In-house live chain (自研), model folder \(directory.lastPathComponent).")
+        print(courtFormat("In-house live chain (自研), model folder %1$@.", "\(directory.lastPathComponent)"))
         return CameraSideAnalyzer(configuration: nil, independent: IndependentLiveConfiguration(
             loadAssets: { try IndependentBallModelAssets.load(directory: directory, variant: .fp16) }))
     }
@@ -414,7 +414,7 @@ import VideoToolbox
         }
     }
     func sendHello(session: CourtSession?) {
-        send(.hello, WireHello(role: .display, device: "court-probe 看板", hardware: "court-probe", app: "court-probe", session: session))
+        send(.hello, WireHello(role: .display, device: courtText("court-probe 看板"), hardware: "court-probe", app: "court-probe", session: session))
     }
     func send<T: Encodable>(_ kind: WireKind, _ body: T) {
         if let packet = try? StreamPacket.message(kind, body) { server.send(packet) }

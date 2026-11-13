@@ -234,5 +234,134 @@
         ]
       }
     }
+  },
+  "ja": {
+    "demo": "画面はデモデータです",
+    "frames": {
+      "01-scene": {
+        "title": "一台が[撮る]。一台が[見る]。",
+        "sub": "コート脇の iPhone が録画し、端末上で各ショットを推定。別のスマホかブラウザが結果を見る。",
+        "camera": "機位 · 録画と端末内の分析",
+        "phone": "表示 · スマホ",
+        "browser": "表示 · どのブラウザでも",
+        "cameraTag": "サーブ · 152 km/h 推定",
+        "foot": "同じ Wi-Fi、テザリング、または直接接続 · アカウント不要"
+      },
+      "02-line-calls": {
+        "title": "ライン判定。音声は [Out!]",
+        "sub": "着地ごとにイン、アウト、際どいを推定。アウトは Out! と読み、放送風の再生も付く。",
+        "note": "カメラ一台の推定で、公式の判定ではありません。初期設定は手前ハーフ。",
+        "calls": [
+          ["OUT", "アウト", "ベースラインの外、約 32 cm"],
+          ["IN", "イン", "サイドラインの内側、約 40 cm"],
+          ["CLOSE", "際どい", "ベースラインから 10 cm 以内はアウトにしない"]
+        ],
+        "voice": "アウトのとき"
+      },
+      "03-serve-speed": {
+        "title": "[サーブ速度]を大きく",
+        "sub": "サーブごとの速度の推定。最高、平均、推移も並ぶ。",
+        "points": [
+          "サーブを自動で拾う",
+          "最高、平均、推移を一画面で",
+          "画面いっぱいが数字"
+        ]
+      },
+      "04-replay": {
+        "title": "どのショットも[再生]",
+        "sub": "速度、着地、ショット種別を一覧。タップでその一打を見て、元の映像を書き出せる。"
+      },
+      "05-private": {
+        "title": "アカウント不要。データは[端末の中]",
+        "sub": "同じ Wi-Fi、テザリング、または直接接続でペアリング。途中にサーバーはない。",
+        "chips": ["登録不要", "クラウドに送らない", "ローカルネットワークのみ"]
+      }
+    }
+  },
+  "de": {
+    "demo": "Die Bilder zeigen Demodaten",
+    "frames": {
+      "01-scene": {
+        "title": "Eins [filmt]. Eins [schaut].",
+        "sub": "Ein iPhone neben dem Platz nimmt auf und schätzt jeden Schlag auf dem Gerät. Ein anderes Telefon oder ein Browser sieht zu.",
+        "camera": "Kamera · Aufnahme und Analyse",
+        "phone": "Anzeige · Telefon",
+        "browser": "Anzeige · beliebiger Browser",
+        "cameraTag": "Aufschlag · 152 km/h geschätzt",
+        "foot": "Gleiches WLAN, Hotspot oder Direktverbindung · Kein Konto"
+      },
+      "02-line-calls": {
+        "title": "Linienrufe mit gesprochenem [Out!]",
+        "sub": "Jeder Aufprall wird als drin, draußen oder zu knapp geschätzt, mit einer Wiederholung.",
+        "note": "Schätzung einer einzelnen Kamera, kein offizieller Entscheid. Standard ist die nahe Platzhälfte.",
+        "calls": [
+          ["OUT", "Draußen", "Etwa 32 cm lang · Grundlinie"],
+          ["IN", "Drin", "Etwa 40 cm innerhalb der Seitenlinie"],
+          ["CLOSE", "Zu knapp", "Unter 10 cm an der Grundlinie, nie draußen"]
+        ],
+        "voice": "Laut angesagt"
+      },
+      "03-serve-speed": {
+        "title": "[Aufschlagtempo], groß und klar",
+        "sub": "Eine geschätzte Geschwindigkeit für jeden Aufschlag, mit Maximum, Schnitt und Verlauf.",
+        "points": [
+          "Aufschläge werden erkannt",
+          "Maximum, Schnitt und Verlauf auf einen Blick",
+          "Der ganze Bildschirm ist die Zahl"
+        ]
+      },
+      "04-replay": {
+        "title": "Jeden Schlag [ansehen]",
+        "sub": "Jeder Schlag mit Tempo, Aufprall und Schlagart. Tippen zeigt ihn; das Originalvideo lässt sich exportieren."
+      },
+      "05-private": {
+        "title": "Kein Konto. Daten [bleiben bei dir]",
+        "sub": "Zwei Geräte über WLAN, einen Hotspot oder direkt koppeln. Kein Server dazwischen.",
+        "chips": ["Keine Anmeldung", "Keine Cloud", "Nur lokales Netz"]
+      }
+    }
+  },
+  "fr": {
+    "demo": "Les écrans montrent une démo",
+    "frames": {
+      "01-scene": {
+        "title": "Un [filme]. Un [regarde].",
+        "sub": "Un iPhone au bord du court enregistre et estime chaque frappe sur l'appareil. Un autre téléphone ou un navigateur suit.",
+        "camera": "Caméra · enregistre et analyse",
+        "phone": "Affichage · téléphone",
+        "browser": "Affichage · n'importe quel navigateur",
+        "cameraTag": "Service · 152 km/h estimés",
+        "foot": "Même Wi-Fi, partage ou lien direct · Pas de compte"
+      },
+      "02-line-calls": {
+        "title": "Jugement de ligne, [Out!] à voix haute",
+        "sub": "Chaque rebond est estimé dedans, dehors ou trop proche, avec une relecture.",
+        "note": "Estimation d'une seule caméra, pas une décision officielle. Moitié proche par défaut.",
+        "calls": [
+          ["OUT", "Dehors", "Environ 32 cm long · ligne de fond"],
+          ["IN", "Dedans", "Environ 40 cm à l'intérieur de la ligne"],
+          ["CLOSE", "Trop proche", "À moins de 10 cm, jamais annoncé dehors"]
+        ],
+        "voice": "Annoncé à voix haute"
+      },
+      "03-serve-speed": {
+        "title": "[Vitesse de service], en grand",
+        "sub": "Une vitesse estimée pour chaque service, avec maximum, moyenne et tendance.",
+        "points": [
+          "Services repérés automatiquement",
+          "Maximum, moyenne et tendance d'un coup d'œil",
+          "Tout l'écran est le chiffre"
+        ]
+      },
+      "04-replay": {
+        "title": "[Revoir] chaque frappe",
+        "sub": "Chaque frappe avec vitesse, rebond et coup. Un toucher la montre ; la vidéo d'origine s'exporte."
+      },
+      "05-private": {
+        "title": "Pas de compte. Les données [restent ici]",
+        "sub": "Deux appareils se couplent en Wi-Fi, partage de connexion ou lien direct. Pas de serveur entre les deux.",
+        "chips": ["Sans inscription", "Pas de cloud", "Réseau local seulement"]
+      }
+    }
   }
 }

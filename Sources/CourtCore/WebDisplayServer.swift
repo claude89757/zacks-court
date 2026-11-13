@@ -162,10 +162,10 @@ public final class WebDisplayServer: @unchecked Sendable {
     // MARK: Requests
 
     fileprivate func route(_ request: WebHTTPRequest, peer: Peer) {
-        guard request.method == "GET" || request.method == "HEAD" else { peer.respond(405, "只支持 GET。"); return }
+        guard request.method == "GET" || request.method == "HEAD" else { peer.respond(405, courtText("只支持 GET。")); return }
         if request.path == "/ws" {
             guard request.headers["upgrade"]?.lowercased() == "websocket", let key = request.headers["sec-websocket-key"],
-                  request.headers["sec-websocket-version"] == "13" else { peer.respond(400, "需要 WebSocket 升级。"); return }
+                  request.headers["sec-websocket-version"] == "13" else { peer.respond(400, courtText("需要 WebSocket 升级。")); return }
             peer.upgrade(key: key, nonce: WebDisplayCredentials.hex(WebDisplayCredentials.random(16)))
             return
         }
@@ -173,9 +173,9 @@ public final class WebDisplayServer: @unchecked Sendable {
             let now = Date()
             guard let key = request.query["k"], let entry = accessKeys[key],
                   entry.closedAt.map({ now.timeIntervalSince($0) < Self.accessGrace }) ?? true else {
-                peer.respond(401, "访问码无效或已过期，请刷新浏览器看板。"); return
+                peer.respond(401, courtText("访问码无效或已过期，请刷新浏览器看板。")); return
             }
-            guard let handler = onHTTP else { peer.respond(503, "机位暂不可用。"); return }
+            guard let handler = onHTTP else { peer.respond(503, courtText("机位暂不可用。")); return }
             Task { [weak self] in
                 let response = await handler(request)
                 self?.queue.async { peer.serve(response, request: request) }
@@ -186,12 +186,12 @@ public final class WebDisplayServer: @unchecked Sendable {
     }
 
     private func serveStatic(_ request: WebHTTPRequest, peer: Peer) {
-        guard let webRoot else { peer.respond(503, "浏览器看板资源缺失，请重新安装 App。"); return }
+        guard let webRoot else { peer.respond(503, courtText("浏览器看板资源缺失，请重新安装 App。")); return }
         let name = request.path == "/" ? "index.html" : String(request.path.dropFirst())
         guard !name.isEmpty, !name.contains("/"), !name.contains(".."), !name.hasPrefix("."),
-              let type = Self.contentTypes[(name as NSString).pathExtension.lowercased()] else { peer.respond(404, "没有这个页面。"); return }
+              let type = Self.contentTypes[(name as NSString).pathExtension.lowercased()] else { peer.respond(404, courtText("没有这个页面。")); return }
         let url = webRoot.appendingPathComponent(name)
-        guard FileManager.default.fileExists(atPath: url.path) else { peer.respond(404, "没有这个页面。"); return }
+        guard FileManager.default.fileExists(atPath: url.path) else { peer.respond(404, courtText("没有这个页面。")); return }
         peer.serve(.file(url, contentType: type, downloadName: nil, onFinish: nil), request: request)
     }
 
@@ -202,28 +202,28 @@ public final class WebDisplayServer: @unchecked Sendable {
 
     fileprivate func authenticate(_ peer: Peer, _ request: WebAuthRequest) {
         guard credentials.isValid() else {
-            peer.authFailed("浏览器看板配对已过期，请在机位上点「连接」刷新配对后重新扫码。", close: true); return
+            peer.authFailed(courtText("浏览器看板配对已过期，请在机位上点「连接」刷新配对后重新扫码。"), close: true); return
         }
         var token: String?
         if let mac = request.mac {
             guard Self.constantTimeEqual(mac.lowercased(), credentials.mac(nonce: peer.nonce)) else {
-                peer.authFailed("配对令牌无效或已过期，请重新扫描机位上的二维码。", close: true); return
+                peer.authFailed(courtText("配对令牌无效或已过期，请重新扫描机位上的二维码。"), close: true); return
             }
         } else if let pin = request.pin {
-            guard pinFailures < Self.maxPINFailures else { peer.authFailed("配对码已更换，请输入机位屏幕上的新配对码。", close: false); return }
+            guard pinFailures < Self.maxPINFailures else { peer.authFailed(courtText("配对码已更换，请输入机位屏幕上的新配对码。"), close: false); return }
             guard Self.constantTimeEqual(pin, credentials.pin) else {
                 pinFailures += 1
                 if pinFailures >= Self.maxPINFailures {
                     credentials = credentials.withNewPIN(); pinFailures = 0
                     onCredentials?(credentials)
-                    peer.authFailed("配对码错误次数过多，机位已换新码，请输入机位屏幕上的新配对码。", close: false)
+                    peer.authFailed(courtText("配对码错误次数过多，机位已换新码，请输入机位屏幕上的新配对码。"), close: false)
                 } else {
-                    peer.authFailed("配对码不正确（还可再试 \(Self.maxPINFailures - pinFailures) 次）。", close: false)
+                    peer.authFailed(courtFormat("配对码不正确（还可再试 %1$@ 次）。", "\(Self.maxPINFailures - pinFailures)"), close: false)
                 }
                 return
             }
             token = credentials.token
-        } else { peer.authFailed("缺少配对信息。", close: true); return }
+        } else { peer.authFailed(courtText("缺少配对信息。"), close: true); return }
         let access = WebDisplayCredentials.hex(WebDisplayCredentials.random(16))
         accessKeys[access] = (peer.id, nil)
         peer.authenticated = true
@@ -392,7 +392,7 @@ public final class WebDisplayServer: @unchecked Sendable {
                                       "Cache-Control": "no-store"]) + (request.method == "HEAD" ? Data() : body)) { [weak self] in self?.finish() }
             case .file(let url, let type, let name, let done):
                 let size = ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? NSNumber)?.int64Value ?? -1
-                guard size >= 0, let handle = try? FileHandle(forReadingFrom: url) else { done?(); respond(404, "文件不存在。"); return }
+                guard size >= 0, let handle = try? FileHandle(forReadingFrom: url) else { done?(); respond(404, courtText("文件不存在。")); return }
                 var headers = ["Content-Type": type, "Accept-Ranges": "bytes", "Cache-Control": "no-store"]
                 if let name { headers["Content-Disposition"] = "attachment; filename=\"\(name)\"" }
                 var status = 200, range: ClosedRange<Int64> = 0...max(0, size - 1)

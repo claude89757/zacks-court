@@ -1,0 +1,5 @@
+/* Permission purpose strings. Simplified Chinese in the base plist is the development language. */
+
+NSCameraUsageDescription = "Enregistre et analyse le court en mode Caméra, ou scanne le code d'appairage d'un Tableau.";
+NSPhotoLibraryAddUsageDescription = "Enregistre une vidéo ou le clip d'un coup dans Photos. Ajout seulement ; la photothèque n'est pas lue.";
+NSLocalNetworkUsageDescription = "Se connecte à un autre appareil exécutant Zacks Court, ou laisse un navigateur du même réseau ouvrir le tableau, via le réseau local, le partage de connexion ou le Wi-Fi pair à pair. Envoie l'analyse coup par coup, un aperçu basse définition et des extraits.";

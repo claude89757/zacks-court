@@ -33,7 +33,7 @@ extension WorkspaceModel {
             if let error = clip.progress.error { return .failed(error) }
             if !clip.progress.done {
                 let kb = { (bytes: Int64) in String(format: "%.1f", Double(bytes) / 1_048_576) }
-                return .fetching(clip.progress.total > 0 ? "正在取片段 \(kb(clip.progress.received)) / \(kb(clip.progress.total)) MB" : "机位正在剪片段…")
+                return .fetching(clip.progress.total > 0 ? courtFormat("正在取片段 %1$@ / %2$@ MB", "\(kb(clip.progress.received))", "\(kb(clip.progress.total))") : courtText("机位正在剪片段…"))
             }
         }
         return .fetchable
@@ -77,7 +77,7 @@ struct ShotReplayButton: View {
                 HStack {
                     Text(text).font(.caption.monospacedDigit()).foregroundStyle(CourtStyle.muted)
                     Spacer()
-                    CourtTextButton("取消", font: .caption) { model.cancelClip() }
+                    CourtTextButton(courtText("取消"), font: .caption) { model.cancelClip() }
                 }
             case .failed(let reason):
                 Text(reason).font(.caption).foregroundStyle(CourtStyle.muted)
@@ -89,7 +89,7 @@ struct ShotReplayButton: View {
     }
 
     /// Said once above a shot list whose rows can fetch clips.
-    static let clipNote = "机位剪出击球前后几秒，不重新编码，约 5 MB。"
+    static let clipNote = courtText("机位剪出击球前后几秒，不重新编码，约 5 MB。")
 
     /// The icon alone. While a clip is on its way the icon becomes a spinner that cancels; a failed
     /// fetch shows a retry icon in the warning color, with the reason read out by VoiceOver.
@@ -99,12 +99,12 @@ struct ShotReplayButton: View {
             Button { model.cancelClip() } label: {
                 ProgressView().frame(width: 44, height: 44).contentShape(Rectangle())
             }.buttonStyle(.plain)
-                .accessibilityLabel(text + "，点按取消")
+                .accessibilityLabel(text + courtText("，点按取消"))
                 .accessibilityIdentifier("court.shot.replay")
         default:
             Button { activate(state) } label: {
                 HStack(spacing: CourtStyle.Space.xs) {
-                    if stateIsFailure(state) { Text("未取到").font(.caption).foregroundStyle(CourtStyle.warning) }
+                    if stateIsFailure(state) { Text(courtText("未取到")).font(.caption).foregroundStyle(CourtStyle.warning) }
                     Image(systemName: compactIcon(state)).font(.title2)
                         .foregroundStyle(stateIsFailure(state) ? CourtStyle.warning : CourtStyle.green)
                         .frame(width: 44, height: 44)
@@ -130,10 +130,10 @@ struct ShotReplayButton: View {
 
     private func title(_ state: ShotReplay) -> String {
         switch state {
-        case .recording, .clip: return "回看这一拍"
-        case .fetching: return "正在取片段…"
-        case .failed: return "重试取片段"
-        default: return "从机位取这一拍片段"
+        case .recording, .clip: return courtText("回看这一拍")
+        case .fetching: return courtText("正在取片段…")
+        case .failed: return courtText("重试取片段")
+        default: return courtText("从机位取这一拍片段")
         }
     }
     private func icon(_ state: ShotReplay) -> String {

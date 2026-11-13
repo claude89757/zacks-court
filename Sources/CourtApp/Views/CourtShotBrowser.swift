@@ -26,38 +26,38 @@ struct CourtShotBrowser: View {
         records = TennisHistoryShot.index(sessions: sessions)
     }
     private var rangeError: String? {
-        if !minimumSpeed.isEmpty && (Double(minimumSpeed).map { !$0.isFinite || $0 < 0 } ?? true) { return "最低球速请输入大于或等于 0 的数字。" }
-        if !maximumSpeed.isEmpty && (Double(maximumSpeed).map { !$0.isFinite || $0 < 0 } ?? true) { return "最高球速请输入大于或等于 0 的数字。" }
-        if let lower = Double(minimumSpeed), let upper = Double(maximumSpeed), lower > upper { return "最低球速不能高于最高球速。" }
-        if useDates && firstDate > lastDate { return "开始日期不能晚于结束日期。" }
+        if !minimumSpeed.isEmpty && (Double(minimumSpeed).map { !$0.isFinite || $0 < 0 } ?? true) { return courtText("最低球速请输入大于或等于 0 的数字。") }
+        if !maximumSpeed.isEmpty && (Double(maximumSpeed).map { !$0.isFinite || $0 < 0 } ?? true) { return courtText("最高球速请输入大于或等于 0 的数字。") }
+        if let lower = Double(minimumSpeed), let upper = Double(maximumSpeed), lower > upper { return courtText("最低球速不能高于最高球速。") }
+        if useDates && firstDate > lastDate { return courtText("开始日期不能晚于结束日期。") }
         return nil
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             filters
             if let rangeError { CourtNotice(text: rangeError, warning: true) }
-            else if loading { ProgressView("正在查询本机数据…") }
+            else if loading { ProgressView(courtText("正在查询本机数据…")) }
             else {
                 let events = rows.map(\.event)
                 let summary = TennisEventSummary(events: events)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : sizeClass == .compact ? 2 : 4), spacing: CourtStyle.Space.s) {
-                    CourtMetric(title: "匹配击球", value: "\(summary.count)", unit: "拍")
-                    CourtMetric(title: "有效平均球速", value: courtSpeed(summary.averageSpeed), unit: "km/h")
-                    CourtMetric(title: "最高球速", value: courtSpeed(summary.maximumSpeed), unit: "km/h")
-                    CourtMetric(title: "有落点", value: "\(summary.placementCount)", unit: "拍")
+                    CourtMetric(title: courtText("匹配击球"), value: "\(summary.count)", unit: courtText("拍"))
+                    CourtMetric(title: courtText("有效平均球速"), value: courtSpeed(summary.averageSpeed), unit: "km/h")
+                    CourtMetric(title: courtText("最高球速"), value: courtSpeed(summary.maximumSpeed), unit: "km/h")
+                    CourtMetric(title: courtText("有落点"), value: "\(summary.placementCount)", unit: courtText("拍"))
                 }.accessibilityIdentifier("court.history.results")
                 if rows.isEmpty {
-                    ContentUnavailableView("没有匹配的击球", systemImage: "magnifyingglass", description: Text(records.isEmpty ? "本机还没有保存击球。完成一次记录后就能在这里查询。" : "试试清除筛选，或扩大日期与球速范围。"))
+                    ContentUnavailableView(courtText("没有匹配的击球"), systemImage: "magnifyingglass", description: Text(records.isEmpty ? courtText("本机还没有保存击球。完成一次记录后就能在这里查询。") : courtText("试试清除筛选，或扩大日期与球速范围。")))
                 } else {
-                    CourtPanel("查询结果") {
-                        Text("\(summary.speedCount) 拍有球速，\(summary.count - summary.speedCount) 拍暂无球速；缺失值不按 0 计算。")
+                    CourtPanel(courtText("查询结果")) {
+                        Text(courtFormat("%1$@ 拍有球速，%2$@ 拍暂无球速；缺失值不按 0 计算。", "\(summary.speedCount)", "\(summary.count - summary.speedCount)"))
                             .font(.caption).foregroundStyle(CourtStyle.muted)
                         let layout = sizeClass == .compact ? AnyLayout(VStackLayout(spacing: 16)) : AnyLayout(HStackLayout(alignment: .top, spacing: 20))
                         layout {
                             if summary.speedCount > 0 {
-                                TennisSpeedChart(events: events, xAxisTitle: "查询结果序号").frame(maxWidth: .infinity)
+                                TennisSpeedChart(events: events, xAxisTitle: courtText("查询结果序号")).frame(maxWidth: .infinity)
                             } else {
-                                CourtNotice(text: "这组查询结果没有可用球速，缺失值保留为空。可修改筛选条件查看其他拍次。")
+                                CourtNotice(text: courtText("这组查询结果没有可用球速，缺失值保留为空。可修改筛选条件查看其他拍次。"))
                                     .frame(maxWidth: .infinity)
                             }
                             VStack(spacing: 10) {
@@ -68,13 +68,13 @@ struct CourtShotBrowser: View {
                         if let selected, let row = rows.first(where: { $0.event.id == selected }) {
                             historyShot(row)
                         }
-                        Text("点击落点或逐拍记录，可互相定位。点击「回看」播放对应录像片段。")
+                        Text(courtText("点击落点或逐拍记录，可互相定位。点击「回看」播放对应录像片段。"))
                             .font(.caption).foregroundStyle(CourtStyle.muted)
                     }
                     LazyVStack(spacing: 10) {
                         ForEach(rows.prefix(visibleCount)) { row in historyShot(row) }
                         if rows.count > visibleCount {
-                            Button("再显示 100 拍（还有 \(rows.count - visibleCount) 拍）") { visibleCount += 100 }
+                            Button(courtFormat("再显示 100 拍（还有 %1$@ 拍）", "\(rows.count - visibleCount)")) { visibleCount += 100 }
                                 .buttonStyle(CourtButton())
                         }
                     }
@@ -96,29 +96,29 @@ struct CourtShotBrowser: View {
         .sheet(item: $playback) { item in RecordingPlayer(item: item) }
     }
     private var filters: some View {
-        CourtPanel("查询球速与落点") {
-            TextField("搜索记录名称", text: $query.text).courtField()
+        CourtPanel(courtText("查询球速与落点")) {
+            TextField(courtText("搜索记录名称"), text: $query.text).courtField()
                 .accessibilityIdentifier("court.history.search")
             CourtMetricGrid(minimum: 180) {
-                filterMenu("动作", selection: $query.stroke,
-                           options: [(nil, "所有动作")] + TennisStrokeKind.allCases.map { (Optional($0), $0.courtTitle) })
+                filterMenu(courtText("动作"), selection: $query.stroke,
+                           options: [(nil, courtText("所有动作"))] + TennisStrokeKind.allCases.map { (Optional($0), $0.courtTitle) })
                     .accessibilityIdentifier("court.history.stroke")
-                filterMenu("数据", selection: $query.availability,
-                           options: [(.all, "全部数据"), (.speed, "有球速"), (.placement, "有落点"),
-                                     (.missingSpeed, "缺少球速"), (.missingPlacement, "缺少落点")])
+                filterMenu(courtText("数据"), selection: $query.availability,
+                           options: [(.all, courtText("全部数据")), (.speed, courtText("有球速")), (.placement, courtText("有落点")),
+                                     (.missingSpeed, courtText("缺少球速")), (.missingPlacement, courtText("缺少落点"))])
                     .accessibilityIdentifier("court.history.availability")
-                filterMenu("排序", selection: $query.order,
-                           options: [(.newest, "最近优先"), (.fastest, "球速从高到低"), (.oldest, "最早优先")])
+                filterMenu(courtText("排序"), selection: $query.order,
+                           options: [(.newest, courtText("最近优先")), (.fastest, courtText("球速从高到低")), (.oldest, courtText("最早优先"))])
                     .accessibilityIdentifier("court.history.order")
             }
             DisclosureGroup {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
-                        speedField("最低 km/h", text: $minimumSpeed).accessibilityLabel("最低球速")
-                        Text("至").foregroundStyle(CourtStyle.muted)
-                        speedField("最高 km/h", text: $maximumSpeed).accessibilityLabel("最高球速")
+                        speedField(courtText("最低 km/h"), text: $minimumSpeed).accessibilityLabel(courtText("最低球速"))
+                        Text(courtText("至")).foregroundStyle(CourtStyle.muted)
+                        speedField(courtText("最高 km/h"), text: $maximumSpeed).accessibilityLabel(courtText("最高球速"))
                     }
-                    Toggle("限定记录日期", isOn: $useDates).frame(minHeight: 44)
+                    Toggle(courtText("限定记录日期"), isOn: $useDates).frame(minHeight: 44)
                     if useDates {
                         ViewThatFits(in: .horizontal) {
                             HStack { dateStart; dateEnd }
@@ -127,9 +127,9 @@ struct CourtShotBrowser: View {
                     }
                 }.padding(.top, 8)
             } label: {
-                Text("日期与球速区间").font(.callout.weight(.medium)).foregroundStyle(.white).frame(minHeight: 44)
+                Text(courtText("日期与球速区间")).font(.callout.weight(.medium)).foregroundStyle(.white).frame(minHeight: 44)
             }
-            CourtLinkButton(title: "清除筛选", systemImage: "xmark.circle") {
+            CourtLinkButton(title: courtText("清除筛选"), systemImage: "xmark.circle") {
                 minimumSpeed = ""; maximumSpeed = ""; useDates = false; query = TennisHistoryQuery()
             }.disabled(!filtered).opacity(filtered ? 1 : 0.4).accessibilityIdentifier("court.history.clear")
         }
@@ -169,8 +169,8 @@ struct CourtShotBrowser: View {
         .accessibilityLabel(title)
         .accessibilityValue(current)
     }
-    private var dateStart: some View { DatePicker("从", selection: $firstDate, displayedComponents: .date) }
-    private var dateEnd: some View { DatePicker("至", selection: $lastDate, displayedComponents: .date) }
+    private var dateStart: some View { DatePicker(courtText("从"), selection: $firstDate, displayedComponents: .date) }
+    private var dateEnd: some View { DatePicker(courtText("至"), selection: $lastDate, displayedComponents: .date) }
     private func updateDates() {
         query.from = useDates ? Calendar.current.startOfDay(for: firstDate) : nil
         query.until = useDates ? Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: lastDate)) : nil
@@ -181,7 +181,7 @@ struct CourtShotBrowser: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         HStack(spacing: 7) {
-                            Text("第 \(row.ordinal) 拍").foregroundStyle(CourtStyle.muted)
+                            Text(courtFormat("第 %1$@ 拍", "\(row.ordinal)")).foregroundStyle(CourtStyle.muted)
                             CourtStrokeTag(kind: row.event.stroke)
                         }
                         Spacer()
@@ -190,9 +190,9 @@ struct CourtShotBrowser: View {
                     Text(row.sessionTitle + " · " + row.sessionDate.formatted(date: .abbreviated, time: .shortened))
                         .font(.caption).foregroundStyle(CourtStyle.muted)
                     if row.event.hasCourtPlacement, let x = row.event.bounce?.xMeters, let y = row.event.bounce?.yMeters {
-                        Text(String(format: "落点 · 约横 %.1f m / 纵 %.1f m（从近端左角起）", x, y)).font(.caption).foregroundStyle(CourtStyle.green)
-                    } else { Text("落点：" + (row.event.placementReasonText ?? TennisReason.other.text)).font(.caption).foregroundStyle(CourtStyle.muted) }
-                    if let reason = row.event.speedReasonText { Text("球速：" + reason).font(.caption).foregroundStyle(CourtStyle.muted) }
+                        Text(courtPrintf("落点 · 约横 %.1f m / 纵 %.1f m（从近端左角起）", x, y)).font(.caption).foregroundStyle(CourtStyle.green)
+                    } else { Text(courtText("落点：") + (row.event.placementReasonText ?? TennisReason.other.text)).font(.caption).foregroundStyle(CourtStyle.muted) }
+                    if let reason = row.event.speedReasonText { Text(courtText("球速：") + reason).font(.caption).foregroundStyle(CourtStyle.muted) }
                 }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
             }.buttonStyle(.plain)
             let session = sessions.first(where: { $0.id == row.sessionID })
@@ -203,11 +203,11 @@ struct CourtShotBrowser: View {
                         let url = model.recordingURL(filename: recording.filename)
                         playback = PlaybackItem(url: url, seconds: max(0, seconds - 2),
                                                 export: .shot(row.event, session: session, recording: url, firstPTS: recording.firstPTS, duration: recording.duration))
-                    } label: { Label("回看 · " + courtDuration(seconds), systemImage: "play.circle") }
+                    } label: { Label(courtText("回看 · ") + courtDuration(seconds), systemImage: "play.circle") }
                         .buttonStyle(CourtButton())
                 }
                 if let session {
-                    NavigationLink("记录详情", value: session.id).buttonStyle(CourtButton())
+                    NavigationLink(courtText("记录详情"), value: session.id).buttonStyle(CourtButton())
                 }
             }
             // Recording still on the camera: a clip fetched earlier, or one the camera can cut now.

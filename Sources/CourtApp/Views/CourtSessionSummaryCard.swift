@@ -13,14 +13,14 @@ struct CourtSessionSummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: CourtStyle.Space.m) {
             HStack(alignment: .center, spacing: CourtStyle.Space.s) {
-                Label("记录已保存", systemImage: "checkmark.circle.fill")
+                Label(courtText("记录已保存"), systemImage: "checkmark.circle.fill")
                     .font(.subheadline.weight(.semibold)).foregroundStyle(CourtStyle.green)
                     .accessibilityIdentifier("court.summary.saved")
                 Spacer(minLength: CourtStyle.Space.s)
                 Button(action: dismiss) {
                     Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
                 }.buttonStyle(.plain).foregroundStyle(CourtStyle.muted)
-                    .accessibilityLabel("关闭记录总结")
+                    .accessibilityLabel(courtText("关闭记录总结"))
                     .accessibilityIdentifier("court.summary.close")
             }
             .padding(.vertical, -CourtStyle.Space.s)
@@ -28,18 +28,18 @@ struct CourtSessionSummaryCard: View {
                 Text(summary.title).font(.headline).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: CourtStyle.Space.s)
                 Text(courtDuration(summary.duration)).font(.callout.monospacedDigit()).foregroundStyle(CourtStyle.muted)
-                    .accessibilityLabel("时长 " + courtDuration(summary.duration))
+                    .accessibilityLabel(courtText("时长 ") + courtDuration(summary.duration))
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: typeSize.isAccessibilitySize ? 220 : 96), spacing: CourtStyle.Space.s)],
                       spacing: CourtStyle.Space.s) {
-                CourtMetric(title: "击球", value: summary.shotCount.map(String.init) ?? "—", unit: "拍")
-                CourtMetric(title: "最高", value: courtSpeed(summary.maximumSpeed), unit: "km/h")
-                CourtMetric(title: "平均", value: courtSpeed(summary.averageSpeed), unit: "km/h")
+                CourtMetric(title: courtText("击球"), value: summary.shotCount.map(String.init) ?? "—", unit: courtText("拍"))
+                CourtMetric(title: courtText("最高"), value: courtSpeed(summary.maximumSpeed), unit: "km/h")
+                CourtMetric(title: courtText("平均"), value: courtSpeed(summary.averageSpeed), unit: "km/h")
             }
             Text(caption).font(.caption).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
             if !summary.strokes.isEmpty { strokes }
             Button(action: viewDetails) {
-                Label("查看详情", systemImage: "chart.xyaxis.line").frame(maxWidth: .infinity)
+                Label(courtText("查看详情"), systemImage: "chart.xyaxis.line").frame(maxWidth: .infinity)
             }.buttonStyle(CourtButton())
                 .accessibilityIdentifier("court.summary.details")
         }
@@ -54,11 +54,11 @@ struct CourtSessionSummaryCard: View {
     private var caption: String {
         var parts: [String]
         switch summary.shotCount {
-        case nil: parts = ["没有逐拍分析结果"]
-        case 0: parts = ["没有识别到击球候选"]
-        case let shots?: parts = ["\(summary.speedCount) / \(shots) 拍有球速 · 模型估算"]
+        case nil: parts = [courtText("没有逐拍分析结果")]
+        case 0: parts = [courtText("没有识别到击球候选")]
+        case let shots?: parts = [courtFormat("%1$@ / %2$@ 拍有球速 · 模型估算", "\(summary.speedCount)", "\(shots)")]
         }
-        if summary.markerCount > 0 { parts.append("标记 \(summary.markerCount) 个时刻") }
+        if summary.markerCount > 0 { parts.append(courtFormat("标记 %1$@ 个时刻", "\(summary.markerCount)")) }
         return parts.joined(separator: " · ")
     }
 
@@ -87,7 +87,7 @@ struct CourtSessionSummaryCard: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("动作分布")
+        .accessibilityLabel(courtText("动作分布"))
         .accessibilityIdentifier("court.summary.strokes")
     }
 }

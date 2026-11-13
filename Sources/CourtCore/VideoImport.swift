@@ -18,7 +18,7 @@ public enum VideoImport {
     public static let minimumSeconds = 3.0
     public static let maximumSeconds = 600.0
     /// `capturedOn` of imported records: they did not come from a live camera.
-    public static let device = "导入的视频（非实时机位）"
+    public static let device = courtText("导入的视频（非实时机位）")
 
     public struct Info: Sendable, Equatable {
         public var filename: String
@@ -32,33 +32,33 @@ public enum VideoImport {
         /// One line for the picker page: 「1920×1080 · 60 帧/秒 · 0:42」.
         public var summary: String {
             let seconds = Int(duration.rounded())
-            return "\(width)×\(height) · \(String(format: "%.0f", frameRate)) 帧/秒 · \(seconds / 60):\(String(format: "%02d", seconds % 60))"
+            return courtFormat("%1$@×%2$@ · %3$@ 帧/秒 · %4$@:%5$@", "\(width)", "\(height)", "\(String(format: "%.0f", frameRate))", "\(seconds / 60)", "\(String(format: "%02d", seconds % 60))")
         }
     }
 
     /// Accepts or rejects a video by the rules above. The message says why, in words a user can act on.
     public static func check(filename: String, duration: Double, width: Double, height: Double, frameRate: Double) throws -> Info {
         guard duration.isFinite, duration > 0, width.isFinite, height.isFinite, width > 0, height > 0, frameRate.isFinite, frameRate > 0 else {
-            throw CourtError.message("读不出这段视频的时长、尺寸或帧率，请换一段视频。")
+            throw CourtError.message(courtText("读不出这段视频的时长、尺寸或帧率，请换一段视频。"))
         }
         guard width > height else {
-            throw CourtError.message("需要横屏拍摄的视频（像机位那样横着拍整片球场），这段是竖屏。")
+            throw CourtError.message(courtText("需要横屏拍摄的视频（像机位那样横着拍整片球场），这段是竖屏。"))
         }
         let aspect = width / height
         guard abs(aspect - 16.0 / 9.0) < 0.03 else {
-            throw CourtError.message("需要 16:9 的横屏视频（例如 1920×1080），这段是 \(Int(width))×\(Int(height))。")
+            throw CourtError.message(courtFormat("需要 16:9 的横屏视频（例如 1920×1080），这段是 %1$@×%2$@。", "\(Int(width))", "\(Int(height))"))
         }
         guard height >= minimumHeight else {
-            throw CourtError.message("画面太小：需要 720p（1280×720）或更清晰的视频，这段是 \(Int(width))×\(Int(height))。")
+            throw CourtError.message(courtFormat("画面太小：需要 720p（1280×720）或更清晰的视频，这段是 %1$@×%2$@。", "\(Int(width))", "\(Int(height))"))
         }
         guard frameRates.contains(frameRate) else {
             let rate = String(format: "%.0f", frameRate)
-            let hint = frameRate > frameRates.upperBound ? "慢动作或高帧率视频请先导出为 60 帧/秒的常速视频。" : "请用 60 帧/秒拍摄（iPhone：设置 › 相机 › 录制视频 › 1080p 60 fps）。"
-            throw CourtError.message("需要 60 帧/秒的视频，这段是 \(rate) 帧/秒。" + hint)
+            let hint = frameRate > frameRates.upperBound ? courtText("慢动作或高帧率视频请先导出为 60 帧/秒的常速视频。") : courtText("请用 60 帧/秒拍摄（iPhone：设置 › 相机 › 录制视频 › 1080p 60 fps）。")
+            throw CourtError.message(courtFormat("需要 60 帧/秒的视频，这段是 %1$@ 帧/秒。", "\(rate)") + hint)
         }
-        guard duration >= minimumSeconds else { throw CourtError.message("视频太短：至少需要 \(Int(minimumSeconds)) 秒。") }
+        guard duration >= minimumSeconds else { throw CourtError.message(courtFormat("视频太短：至少需要 %1$@ 秒。", "\(Int(minimumSeconds))")) }
         guard duration <= maximumSeconds else {
-            throw CourtError.message("视频太长：一次最多分析 \(Int(maximumSeconds / 60)) 分钟，请先剪短再导入。")
+            throw CourtError.message(courtFormat("视频太长：一次最多分析 %1$@ 分钟，请先剪短再导入。", "\(Int(maximumSeconds / 60))"))
         }
         return Info(filename: filename, duration: duration, width: Int(width.rounded()), height: Int(height.rounded()), frameRate: frameRate)
     }
@@ -68,8 +68,8 @@ public enum VideoImport {
         let asset = AVURLAsset(url: url)
         let tracks: [AVAssetTrack]
         do { tracks = try await asset.loadTracks(withMediaType: .video) }
-        catch { throw CourtError.message("无法读取这段视频：\(error.localizedDescription)") }
-        guard let track = tracks.first else { throw CourtError.message("这个文件里没有视频画面。") }
+        catch { throw CourtError.message(courtFormat("无法读取这段视频：%1$@", "\(error.localizedDescription)")) }
+        guard let track = tracks.first else { throw CourtError.message(courtText("这个文件里没有视频画面。")) }
         let (size, transform, rate) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate)
         let duration = try await asset.load(.duration).seconds
         let upright = CGRect(origin: .zero, size: size).applying(transform)
@@ -80,7 +80,7 @@ public enum VideoImport {
     /// Default title of an imported record: 「导入 · 文件名」 without the extension.
     public static func title(for filename: String) -> String {
         let name = (filename as NSString).deletingPathExtension.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "导入 · " + String((name.isEmpty ? "视频" : name).prefix(80))
+        return courtText("导入 · ") + String((name.isEmpty ? courtText("视频") : name).prefix(80))
     }
 }
 
@@ -145,13 +145,13 @@ public enum VideoImport {
         } catch { await discard(); throw error }
         if let failure = analyzer.currentMetrics.loadError {
             await discard()
-            throw CourtError.message("自研模型未能载入：\(failure)")
+            throw CourtError.message(courtFormat("自研模型未能载入：%1$@", "\(failure)"))
         }
 
         // The record opens before the first frame, so the recording starts with it.
         controller.startSession(title: title)
         guard controller.session != nil else {
-            let reason = controller.error ?? "无法新建记录。"
+            let reason = controller.error ?? courtText("无法新建记录。")
             await discard(); throw CourtError.message(reason)
         }
 
@@ -181,7 +181,7 @@ public enum VideoImport {
         }
         if let failure = finished.failure {
             await discard()
-            throw CourtError.message("视频读取中断：\(failure)")
+            throw CourtError.message(courtFormat("视频读取中断：%1$@", "\(failure)"))
         }
 
         // End of file ends the capture; the controller pauses the record, saves the recording and
@@ -190,12 +190,12 @@ public enum VideoImport {
         progress(report)
         do {
             try await Self.wait(seconds: 120) { controller.session?.state != .active && !controller.isBusy }
-        } catch { await discard(); throw CourtError.message("分析结果保存超时，请重试。") }
+        } catch { await discard(); throw CourtError.message(courtText("分析结果保存超时，请重试。")) }
         await controller.finish()
         // The recording reaches the record a moment after it is closed.
         try? await Self.wait(seconds: 20) { controller.session.map { !$0.recordings.isEmpty } ?? true }
         guard var session = controller.session, session.state == .completed else {
-            let reason = controller.error ?? "记录未能保存。"
+            let reason = controller.error ?? courtText("记录未能保存。")
             await discard(); throw CourtError.message(reason)
         }
         report.shots = session.tennisEvents?.count ?? 0
@@ -213,7 +213,7 @@ public enum VideoImport {
         let deadline = Date().addingTimeInterval(seconds)
         while !condition() {
             if cancellable, Task.isCancelled { throw CancellationError() }
-            guard Date() < deadline else { throw CourtError.message("等待超时。") }
+            guard Date() < deadline else { throw CourtError.message(courtText("等待超时。")) }
             try? await Task.sleep(for: .milliseconds(50))
         }
     }

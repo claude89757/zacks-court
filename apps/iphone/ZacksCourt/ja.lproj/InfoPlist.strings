@@ -1,0 +1,5 @@
+/* Permission purpose strings. Simplified Chinese in the base plist is the development language. */
+
+NSCameraUsageDescription = "カメラモードでコートを録画・分析するか、ディスプレイのペアリングコードを読み取ります。";
+NSPhotoLibraryAddUsageDescription = "録画または1ショットのクリップを写真に保存します。追加のみで、ライブラリは読み取りません。";
+NSLocalNetworkUsageDescription = "ローカルネットワーク、インターネット共有、またはピア・ツー・ピア Wi-Fi で、Zacks Court の別デバイスに接続するか、同じネットワークのブラウザにディスプレイを開かせます。ショットごとの分析、低解像度プレビュー、動画クリップを送ります。";

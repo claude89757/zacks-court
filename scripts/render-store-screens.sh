@@ -1,5 +1,9 @@
 #!/bin/zsh
 # Renders the App Store screenshots (iPhone 6.9", 1320×2868) for every locale in captions.json.
+# Still requires Google Chrome headless: the browser-display frames are a real page, and the
+# marketing frames are HTML/CSS. A local non-browser layout tool is not a small substitute and
+# is not implemented here. Do not upload the output. This script was not run in the 2026-11-13
+# Mac validation.
 #
 #   ./scripts/render-store-screens.sh            # browser-display screens + all frames
 #
@@ -33,6 +37,30 @@ serve() { # dir port
   echo "server on $2 did not start" >&2; exit 1
 }
 
+# App screenshots must already be real simulator captures in raw/<ui-language>/.
+# This script renders the browser display itself (real DOM) per language and composites captions.
+# It does not copy one language's pixels into another, and it does not draw a fake app UI.
+python3 - "$SRC" <<'PY'
+import json, sys
+from pathlib import Path
+src = Path(sys.argv[1])
+captions = json.loads((src / "captions.json").read_text())
+def ui(lang):
+    return "en" if lang.startswith("en") else lang
+missing = []
+for lang in captions:
+    folder = src / "raw" / ui(lang)
+    for name in ("app-summary.png", "app-bounces.png", "app-shots.png"):
+        if not (folder / name).is_file():
+            missing.append(f"{lang} ({ui(lang)}): {name}")
+if missing:
+    print("Refusing to render. These real UI captures are not in docs/app-store/screenshots/source/raw/<language>/:", file=sys.stderr)
+    for line in missing:
+        print("  " + line, file=sys.stderr)
+    print("Run scripts/capture-store-ui.sh on a Mac with Xcode. This machine has not captured them.", file=sys.stderr)
+    sys.exit(2)
+PY
+
 # 1. Browser display with the demo record: the 20th shot is a forehand called out at the baseline.
 mkdir -p "$STAGE/web" "$STAGE/demo"
 cp Sources/CourtCore/Web/* "$STAGE/web/"
@@ -48,9 +76,13 @@ json.dump({"older": rows[:-1], "newest": rows[-1]}, open(stage + "/web/demo-rows
 PY
 serve "$STAGE/web" 8765
 WEB=http://127.0.0.1:8765/demo.html
-shoot "$WEB?view=challenge" 956 440 3 "$SRC/raw/web-challenge.png"
-shoot "$WEB?view=serve" 956 440 3 "$SRC/raw/web-serve.png"
-shoot "$WEB?view=board" 1180 820 2 "$SRC/raw/web-board-alert.png" 1800
+# One real browser render per UI language. en-US and en-GB share en.
+for ui in $(python3 -c "import json;langs=json.load(open('$SRC/captions.json'));print(' '.join(dict.fromkeys('en' if k.startswith('en') else k for k in langs)))"); do
+  mkdir -p "$SRC/raw/$ui"
+  shoot "$WEB?view=challenge&lang=$ui" 956 440 3 "$SRC/raw/$ui/web-challenge.png"
+  shoot "$WEB?view=serve&lang=$ui" 956 440 3 "$SRC/raw/$ui/web-serve.png"
+  shoot "$WEB?view=board&lang=$ui" 1180 820 2 "$SRC/raw/$ui/web-board-alert.png" 1800
+done
 
 # 2. The frames.
 serve "$ROOT/$SRC" 8766
