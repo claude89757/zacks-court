@@ -1058,8 +1058,9 @@ final class IndependentShotPipelineTests: XCTestCase {
             var r = IndependentShotResult(hitKind: "first observation", hitterFound: true, bounceFound: false, contactUV: [0, 0], hitterBox: nil,
                                           incoming: nil, hitterSide: "far", tHit: 10, nObs: 40, firstFrame: 600, lastFrame: 690)
             r.fitHit = [0, 23, 1]
+            // Live descents always carry `last`; keep it here so `endsAtHit` is refused by both the fit path and v35.
             r.descent = .init(t: 11.52, x: 1, y: y, vx: 0, vy: -15, ahead: 1, zLast: zLast, u: 900, v: 800, px: 20, tLast: 11.5,
-                              accepted: true, rms: 2, hitY: 23, endsAtHit: endsAtHit, knee: knee)
+                              accepted: true, rms: 2, hitY: 23, endsAtHit: endsAtHit, knee: knee, last: [900, 820])
             return r
         }
         func landing(_ shots: [IndependentShotResult]) -> IndependentShotResult.LandEstimate? {
@@ -1113,6 +1114,8 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(l.sigma.min() ?? 0, IndependentIncomingLanding.lastLandSigmaFloor)
         XCTAssertLessThan(l.sigma[1], IndependentIncomingLanding.sigmaFloor, "its own sigma, not the brought-down floor")
         XCTAssertNil(landing([incoming(lastAt: SIMD2(1.0, 3.0), zLast: 0.7)]), "the ball still in the air there")
+        var struck = incoming(lastAt: SIMD2(1.0, 3.0)); struck.descent?.endsAtHit = true
+        XCTAssertNil(landing([struck]), "the chain ended at a hit, not a bounce")
         var volley = incoming(lastAt: SIMD2(1.0, 3.0)); volley.hitterSide = "near"; volley.tHit = 11.55
         XCTAssertNil(landing([incoming(lastAt: SIMD2(1.0, 3.0)), volley]), "the near player hit it then")
         XCTAssertNil(landing([incoming(lastAt: SIMD2(1.0, 12.5))]), "past the net")

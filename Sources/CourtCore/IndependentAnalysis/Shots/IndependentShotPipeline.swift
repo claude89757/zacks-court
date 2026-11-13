@@ -434,7 +434,9 @@ public enum IndependentShotPipeline {
         // Tracked down to the ground and lost right there (v35): the fit is still a little high at the last
         // observation, so the landing is that observation on the ground, not where the fit comes down. Night videos: of the incoming flights without a landing whose last observation is a colour-found
         // bounce, 14 of 16 pass; of those still in the air there (fit 0.63-1.01 m high), none.
-        guard d.accepted, let rms = d.rms, rms <= L.maxRms, let hitY = d.hitY, hitY > netY,
+        // `endsAtHit` is required here too: live descents always carry `last`, and a low ball struck (not
+        // bounced) can sit inside `lastLandZ` while the near hit is still missing from `receiverHits`.
+        guard d.accepted, let rms = d.rms, rms <= L.maxRms, !d.endsAtHit, let hitY = d.hitY, hitY > netY,
               L.lastLandZ.contains(d.zLast), let last = d.last, last.count >= 2 else { return nil }
         let g = camera.onPlaneZ(last[0], last[1], z: IndependentCourt.ballRadius)
         guard g.x.isFinite, g.y.isFinite, onNearHalf(g.x, g.y),
