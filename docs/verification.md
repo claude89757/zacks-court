@@ -6389,3 +6389,21 @@ Mac 对 `ad213773` 的编译、355 项测试、court-check、模拟器构建和�
 测速牌状态行最多两行，法语等改短，拍号、有效球速和动作仍在。没有跑界面测试。
 
 `scripts/render-store-frames.py` 用 Pillow 把真实截图贴进 1320×2868 文案框，不打开浏览器。`--self-test` 通过。仓库里没有这次采集的原图，正式渲染退出码 2，没有画出假界面。
+
+## 2026-11-13 宣传帧换首图、补日德法文案、预览时钟与字体（仍未编 iOS）
+
+Mac 对 `c4b23daf` 的编译、355 项测试、court-check 和模拟器构建已通过，六个 `InfoPlist.strings` 已在 App 里。90 张原图已有。Pillow 只出了简体、繁体、en-US、en-GB 各 5 张，因为 `captions.json` 没有日语、德语、法语。简体预览两次没过时钟检查（录像约 48 秒，墙钟约 83 秒）；另外五种约 26 秒通过。这台 Mac 上没有 `Hiragino Sans CNS.ttc` 和 `Hiragino Sans.ttc`，繁体和日语是靠 `COURT_PREVIEW_FONT` 指到 `Hiragino Sans GB.ttc` 才画出水印的。
+
+**时钟**：录屏在 `marks.txt` 出现 `end` 时就已经停了。检查却用测试进程退出的时刻当墙钟。简体的 `tearDown` 会去找「结束」「历史记录」「切换模式」，另外五种对不上这些中文标签，所以只有简体多出大约半分钟。检查改为对照录屏进程从开始到被打断的时间，相差超过 10% 仍然失败；测试进程退出和每个标记的偏移写进 `timing.txt`。预览这条测试不再做那段收尾，免得录到主屏幕，也免得简体单独拖很久。阈值没有放宽。
+
+**首图**：`01-scene` 不再贴 `00-home.png`。那张是模拟器首页，上面有 “The Simulator has no camera and can’t be used as a camera.”，这句是真的，没有涂掉，也没有改发行界面。首图改为已采集的历史记录页 `01-history.png`，演示标记还在文案里。回看帧改贴记录详情顶部，隐私帧改贴落点页，五张用的原图互不重复。文案仍说明一台机位、一台看板。两台设备同时入画的首页留给以后的真机采集。日语、德语、法语各补了 5 条功能说明，不写精度承诺。
+
+**字体**：按字库 cmap 找已安装、且能画出该水印全部字符的字体。本机没有的 Hiragino 路径直接跳过。`COURT_PREVIEW_FONT` 仍可指定，但盖不住这些字就失败。
+
+**本环境跑了**：`python3 scripts/store_preview_tools.py --self-test`、`python3 scripts/render-store-frames.py --self-test`。正式渲染没有原图，没有产出可上传的宣传帧。**没有跑** `swift build`、`swift test`、`court-check`、iOS 编译、截图和录屏。
+
+**Mac 需要再验证**（准备，不发布）：
+
+1. 简体预览重录一次：`./scripts/record-store-preview.sh <UDID> <目录> zh-Hans`。应写出 `timing.txt`，`ratio_raw_over_alive` 在 0.9–1.1，成片仍是 App 内画面，水印是「画面为演示数据，不是实测」。不要用上次被拒的编码。另外五种如果只改了脚本的计时口径，也建议各抽查一次；它们上次已经通过，不是必须六段全重录才能看这一处。
+2. 不设 `COURT_PREVIEW_FONT` 再录繁体或日语，脚本应自己选到已安装且能画出水印的字体（这台机器上是 Hiragino Sans GB 即可）。
+3. `COURT_STORE_RAW` 指向已有六语原图，跑 `python3 scripts/render-store-frames.py`。应得到 7 个语言目录各 5 张。`01-scene` 的画面是该语言的历史记录页，不是带模拟器警告的首页。缺图就停。

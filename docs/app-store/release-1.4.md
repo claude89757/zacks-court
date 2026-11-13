@@ -21,8 +21,8 @@
 
 1. 用一份干净检出（不要用那台未推送 ahead 12 的 Mac mini 工程）生成工程：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh`，确认 `scripts/reference-chain.sh status` 为 off。
 2. `./scripts/capture-store-ui.sh <新建的 iPhone 模拟器 UDID>` 为六种界面语言各跑一遍 `testStoreScreens`。原图在 `docs/app-store/screenshots/source/raw/<语言>/`。en-US 与 en-GB 共用 `raw/en/`。
-3. 宣传帧用 `python3 scripts/render-store-frames.py`（Pillow，不打开浏览器）。它只贴 `capture-store-ui.sh` 写下的真实截图，缺图就停。`render-store-screens.sh` 仍要 Chrome，这轮不要用它来补画面。
-4. 预览视频每种语言单独录，不要复制文件：`./scripts/record-store-preview.sh <UDID> <目录> <语言>`。
+3. 宣传帧用 `python3 scripts/render-store-frames.py`（Pillow，不打开浏览器）。它只贴 `capture-store-ui.sh` 写下的真实截图，缺图就停。文案要有 zh-Hans、zh-Hant、en-US、en-GB、ja、de、fr 各 5 张。首图贴历史记录页 `01-history.png`，不贴 `00-home.png`：那张首页写着模拟器没有相机，这句是真的，不要涂掉，也不要把它当商店首图。两台设备同时出现的首页要等真机再拍。`render-store-screens.sh` 仍要 Chrome，这轮不要用它来补画面。
+4. 预览视频每种语言单独录，不要复制文件：`./scripts/record-store-preview.sh <UDID> <目录> <语言>`。时钟对照的是录屏进程从开始到被打断的时间，不是测试进程退出的时间；`timing.txt` 记下两者和每个标记的偏移。字体在已安装的字库里找能画出该语言水印的文件，不要写死本机没有的 Hiragino 路径。
 5. 创意素材模板不再画 149 km/h 和 OUT 卡片。没有真实界面截图时不要把它当成 App 截图上传。
 
 ## 相对已发布 1.3 源的代码

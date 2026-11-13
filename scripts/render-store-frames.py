@@ -10,6 +10,12 @@ A missing screenshot is reported and that frame is not drawn. Nothing here is a 
     COURT_STORE_RAW=/path/to/raw python3 scripts/render-store-frames.py
 
 en-US and en-GB both use the English captures in raw/en/.
+ja, de and fr use raw/ja, raw/de and raw/fr. Each locale needs all five frames.
+
+The first frame uses the captured history list, not 00-home.png. That home
+screen says the simulator has no camera. The warning stays in the capture;
+it is not painted over, and it is not a store frame. A two-device home picture
+needs a real camera phone and is left for a later device session.
 """
 
 from __future__ import annotations
@@ -30,10 +36,15 @@ W, H = 1320, 2868
 
 # Which captured screen each marketing frame uses. These names are what
 # testStoreScreens writes. Web-only pictures are not invented.
+# 00-home.png is the simulator home and shows that it has no camera. It is not
+# used. 01-scene is the history list (demo records stay labelled). The replay
+# frame uses the record summary so the two frames are not the same picture.
+# 05-private uses the landing map from the same detail capture.
+REQUIRED_LOCALES = ("zh-Hans", "zh-Hant", "en-US", "en-GB", "ja", "de", "fr")
 FRAME_SHOT = {
-    "01-scene": "00-home.png",
-    "04-replay": "01-history.png",
-    "05-private": "03-detail-0.png",
+    "01-scene": "01-history.png",
+    "04-replay": "03-detail-0.png",
+    "05-private": "03-detail-1.png",
     "03-serve-speed": "02-query.png",
     "02-line-calls": "03-detail-3.png",
 }
@@ -128,6 +139,23 @@ def raw_root() -> Path:
     return Path(os.environ.get("COURT_STORE_RAW") or DEFAULT_RAW)
 
 
+def assert_catalog(captions: dict) -> None:
+    shots = list(FRAME_SHOT.values())
+    if len(shots) != len(set(shots)):
+        raise SystemExit(f"store frames share a screenshot: {shots}")
+    if "00-home.png" in shots:
+        raise SystemExit("00-home.png shows the simulator camera warning and is not a store frame")
+    for locale in REQUIRED_LOCALES:
+        pack = captions.get(locale)
+        if not isinstance(pack, dict) or not str(pack.get("demo") or "").strip():
+            raise SystemExit(f"captions.json missing demo line for {locale}")
+        frames = pack.get("frames") or {}
+        for frame_id in FRAME_SHOT:
+            block = frames.get(frame_id)
+            if not isinstance(block, dict) or not str(block.get("title") or "").strip() or not str(block.get("sub") or "").strip():
+                raise SystemExit(f"{locale} missing title or sub for {frame_id}")
+
+
 def compose(captions: dict, root: Path, out: Path) -> tuple[list[str], list[str]]:
     made: list[str] = []
     missing: list[str] = []
@@ -151,14 +179,20 @@ def compose(captions: dict, root: Path, out: Path) -> tuple[list[str], list[str]
 
 
 def self_test() -> None:
+    if not CAPTIONS.is_file():
+        raise SystemExit(f"Missing {CAPTIONS}")
+    catalog = json.loads(CAPTIONS.read_text())
+    assert_catalog(catalog)
     with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp) / "raw" / "en"
-        root.mkdir(parents=True)
         fixture = Image.new("RGB", (400, 800), (180, 40, 40))
         d = ImageDraw.Draw(fixture)
         d.text((16, 40), "FIXTURE NOT A CAPTURE", font=load_font(28), fill=(255, 255, 255))
-        for name in FRAME_SHOT.values():
-            fixture.save(root / name)
+        raw = Path(tmp) / "raw"
+        for locale in ("en", "ja", "de", "fr"):
+            folder = raw / locale
+            folder.mkdir(parents=True)
+            for name in FRAME_SHOT.values():
+                fixture.save(folder / name)
         captions = {
             "en-US": {
                 "demo": "Demo data, not a measurement",
@@ -169,12 +203,22 @@ def self_test() -> None:
             }
         }
         out = Path(tmp) / "out"
-        made, missing = compose(captions, Path(tmp) / "raw", out)
+        made, missing = compose(captions, raw, out)
         if missing or len(made) != len(FRAME_SHOT):
             raise SystemExit(f"self-test did not draw every frame: {missing}")
         image = Image.open(out / "en-US" / "01-scene.png")
         if image.size != (W, H):
             raise SystemExit(f"self-test size {image.size}")
+        # The committed catalog must produce five frames for ja, de and fr.
+        subset = {locale: catalog[locale] for locale in ("ja", "de", "fr")}
+        made, missing = compose(subset, raw, out)
+        if missing or len(made) != 15:
+            raise SystemExit(f"ja/de/fr did not draw five frames each: {missing} {made}")
+        for locale in ("ja", "de", "fr"):
+            for frame_id in FRAME_SHOT:
+                shot = Image.open(out / locale / f"{frame_id}.png")
+                if shot.size != (W, H):
+                    raise SystemExit(f"{locale} {frame_id} size {shot.size}")
     empty = Path(tempfile.mkdtemp())
     made, missing = compose({"en-US": {"demo": "x", "frames": {"01-scene": {"title": "t", "sub": "s"}}}}, empty, empty / "o")
     if made or not missing:
@@ -189,6 +233,7 @@ def main(argv: list[str]) -> None:
     if not CAPTIONS.is_file():
         raise SystemExit(f"Missing {CAPTIONS}")
     captions = json.loads(CAPTIONS.read_text())
+    assert_catalog(captions)
     made, missing = compose(captions, raw_root(), OUT)
     report = OUT / "SOURCES.txt"
     lines = ["Each frame is a real screenshot pasted into a caption frame.", "Missing files were not replaced with a drawing.", ""]

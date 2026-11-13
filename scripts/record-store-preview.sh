@@ -10,8 +10,9 @@
 # Use a dedicated new iPhone 17 Pro Max simulator (booted ones are shared with other sessions).
 # The record is made up by `court-probe demo-session` and titled 演示数据; the video says so in its
 # corner. Writes <OUT_DIR>/preview-raw.mov, marks.txt, preview-1920x886.mp4 and frames/ (stills from each
-# replay to compare with the app). It fails when the recording's timeline drifts from the clock or the
-# picture freezes: the simulator recorder has silently done both on a busy Mac.
+# replay to compare with the app). It fails when the raw file drifts from the time the
+# recorder process was alive, or the picture freezes. timing.txt also logs when the
+# test process exited and each mark's offset. A missing font path is not required.
 # Needs ffmpeg (with overlay; Homebrew's build has no drawtext) and Pillow for the caption.
 set -euo pipefail
 UDID=${1:?simulator UDID}
@@ -29,31 +30,24 @@ esac
 command -v xcodebuild >/dev/null || { echo "xcodebuild is required. This environment has not recorded a preview." >&2; exit 2; }
 ROOT=${0:A:h:h}
 DD="$ROOT/.local/dd-store-preview"
-FONT=${COURT_PREVIEW_FONT:-}
-if [[ -z "$FONT" ]]; then
-  case "$LOCALE" in
-    zh-Hant) FONT="/System/Library/Fonts/Hiragino Sans CNS.ttc" ;;
-    ja) FONT="/System/Library/Fonts/Hiragino Sans.ttc" ;;
-    *) FONT="/System/Library/Fonts/Hiragino Sans GB.ttc" ;;
-  esac
-fi
-if [[ -z "${COURT_PREVIEW_CAPTION:-}" ]]; then
-  case "$LOCALE" in
-    zh-Hans) CAPTION="画面为演示数据，不是实测" ;;
-    zh-Hant) CAPTION="畫面為示範資料，不是實測" ;;
-    en) CAPTION="Demo data, not a measurement" ;;
-    ja) CAPTION="デモデータです。実測ではありません" ;;
-    de) CAPTION="Demodaten, keine Messung" ;;
-    fr) CAPTION="Données de démo, pas une mesure" ;;
-  esac
-else
-  CAPTION=$COURT_PREVIEW_CAPTION
-fi
 command -v ffmpeg >/dev/null || { echo "ffmpeg is required" >&2; exit 1; }
 # Homebrew's python3 has no Pillow here; Xcode's /usr/bin/python3 does, so fall back to it.
 PY=${COURT_PREVIEW_PYTHON:-python3}
 "$PY" -c 'import PIL' 2>/dev/null || PY=/usr/bin/python3
 "$PY" -c 'import PIL' 2>/dev/null || { echo "Pillow is required for the caption (python3 -m pip install pillow, or set COURT_PREVIEW_PYTHON)" >&2; exit 1; }
+if [[ -n "${COURT_PREVIEW_CAPTION:-}" ]]; then
+  CAPTION=$COURT_PREVIEW_CAPTION
+else
+  CAPTION=$("$PY" "$ROOT/scripts/store_preview_tools.py" caption --locale "$LOCALE")
+fi
+# Resolve a font that can draw this caption before the long record. A missing
+# Hiragino path is skipped; the override is used only when it covers the text.
+if [[ -n "${COURT_PREVIEW_FONT:-}" ]]; then
+  FONT=$("$PY" "$ROOT/scripts/store_preview_tools.py" font --caption "$CAPTION" --override "$COURT_PREVIEW_FONT")
+else
+  FONT=$("$PY" "$ROOT/scripts/store_preview_tools.py" font --caption "$CAPTION")
+fi
+echo "preview font: $FONT"
 mkdir -p "$OUT"
 OUT=${OUT:A}
 cd "$ROOT"
@@ -64,6 +58,9 @@ trap 'git -C "$ROOT" checkout -- apps/iphone/ZacksCourt/Info.plist 2>/dev/null |
 xcodebuild build-for-testing -project apps/iphone/ZacksCourt.xcodeproj -scheme ZacksCourt -configuration Release \
   -destination "id=$UDID" -derivedDataPath "$DD" CODE_SIGNING_ALLOWED=NO -quiet
 APP=$(find "$DD/Build/Products/Release-iphonesimulator" -maxdepth 1 -name 'ZacksCourt.app' | head -1)
+# spawn needs a booted simulator. Boot, set the language, then reboot so it applies.
+xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$UDID" -b >/dev/null
 xcrun simctl spawn "$UDID" defaults write "Apple Global Domain" AppleLanguages -array "$APPLE_LANG"
 xcrun simctl spawn "$UDID" defaults write "Apple Global Domain" AppleLocale -string "$APPLE_LOCALE"
 xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
@@ -80,25 +77,43 @@ xcrun simctl io "$UDID" recordVideo --codec=h264 --force "$RAW" 2>"$LOG" &
 REC=$!
 for _ in {1..50}; do grep -q -i 'recording started' "$LOG" && break; sleep 0.1; done
 START=$(python3 -c 'import time; print(time.time())')
+REC_STOP=""
+stop_recorder() {
+  [[ -n "${REC:-}" ]] || return 0
+  kill -INT $REC 2>/dev/null || true
+  REC_STOP=$(python3 -c 'import time; print(time.time())')
+  wait $REC 2>/dev/null || true
+  REC=""
+}
 TEST_RUNNER_COURT_UI_STORE_PREVIEW="$OUT" TEST_RUNNER_COURT_LANGUAGE="$LOCALE" xcodebuild test-without-building -project apps/iphone/ZacksCourt.xcodeproj -scheme ZacksCourt \
   -configuration Release -destination "id=$UDID" -derivedDataPath "$DD" \
   -only-testing:ZacksCourtUITests/WorkspaceUITests/testStorePreviewFlow -quiet &
 TEST=$!
-# Stop the recorder when the test has marked the last in-app frame, before tearDown
-# rotates to portrait and the runner terminates the app onto the Home Screen.
+# Stop the recorder when the test has marked the last in-app frame, before the
+# runner returns. The preview test does not rotate or hunt Chinese buttons after that.
 while kill -0 $TEST 2>/dev/null; do
   if [[ -f "$OUT/marks.txt" ]] && grep -q '^end ' "$OUT/marks.txt"; then
     sleep 0.25
-    kill -INT $REC 2>/dev/null || true
-    wait $REC 2>/dev/null || true
-    REC=""
+    stop_recorder
     break
   fi
   sleep 0.1
 done
-wait $TEST || { [[ -n "${REC:-}" ]] && kill -INT $REC; wait $REC || true; exit 1; }
-STOP=$(python3 -c 'import time; print(time.time())')
-if [[ -n "${REC:-}" ]]; then kill -INT $REC; wait $REC || true; fi
+wait $TEST || {
+  stop_recorder
+  [[ -n "$REC_STOP" ]] || REC_STOP=$(python3 -c 'import time; print(time.time())')
+  TEST_STOP=$(python3 -c 'import time; print(time.time())')
+  if [[ -s "$RAW" ]]; then
+    RAWLEN=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$RAW" || echo 0)
+    "$PY" "$ROOT/scripts/store_preview_tools.py" timing \
+      --raw "$RAWLEN" --start "$START" --alive-end "$REC_STOP" --test-end "$TEST_STOP" \
+      --marks "$OUT/marks.txt" --out "$OUT/timing.txt" || true
+  fi
+  exit 1
+}
+if [[ -n "${REC:-}" ]]; then stop_recorder; fi
+TEST_STOP=$(python3 -c 'import time; print(time.time())')
+[[ -n "$REC_STOP" ]] || REC_STOP=$TEST_STOP
 [[ -s "$OUT/marks.txt" ]] || { echo "The UI test wrote no marks.txt" >&2; exit 1; }
 
 # Trim to the marks (15–30 s as Apple requires), turn the portrait framebuffer to landscape, scale to
@@ -135,16 +150,12 @@ ffmpeg -y -loglevel error -i "$RAW" -i "$CAP" -f lavfi -i anullsrc=channel_layou
   -movflags +faststart "$OUT/preview-1920x886.mp4"
 ffprobe -v error -show_entries stream=codec_type,width,height,r_frame_rate:format=duration -of compact "$OUT/preview-1920x886.mp4"
 
-# The recording must keep time with the clock: on a loaded Mac it once held 4 s for 31 s of app time.
+# Compare the file to the recorder-alive window, not to when the test process exits.
+# On a loaded Mac the recorder once held 4 s for 31 s of app time; that still fails.
 RAWLEN=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$RAW")
-python3 - "$RAWLEN" "$START" "$STOP" <<'PY' || exit 1
-import sys
-raw, start, stop = map(float, sys.argv[1:])
-wall = stop - start
-print(f"recording {raw:.1f} s for {wall:.1f} s of clock time")
-if abs(raw - wall) > 0.1 * wall:
-    sys.exit("The recording drifted from the clock; record again on a quieter Mac")
-PY
+"$PY" "$ROOT/scripts/store_preview_tools.py" timing \
+  --raw "$RAWLEN" --start "$START" --alive-end "$REC_STOP" --test-end "$TEST_STOP" \
+  --marks "$OUT/marks.txt" --out "$OUT/timing.txt" || exit 1
 # No frozen stretch after the speed board: a replay stuck on its title once went unnoticed (a stuck
 # replay stays still for its whole 7 s). The board (first 3 s) and each verdict hold (2–4 s, longer for
 # the first replay while the test waits for it) are still on purpose.

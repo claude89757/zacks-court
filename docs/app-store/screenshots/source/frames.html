@@ -1,6 +1,7 @@
 <!doctype html>
-<!-- App Store screenshot template, 1320×2868 (iPhone 6.9"). Open as frames.html?frame=02-line-calls&lang=zh-Hans;
-     scripts/render-store-screens.sh renders every frame and locale. Captions live in captions.json, screens in raw/. -->
+<!-- App Store screenshot template, 1320×2868 (iPhone 6.9"). Open as frames.html?frame=02-line-calls&lang=zh-Hans.
+     The 1.4 frames are composed by scripts/render-store-frames.py from real captures.
+     01-scene pastes the history list. It does not draw a court or a second device, and it does not use 00-home.png. -->
 <html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0;padding:0}
 html{background:#060d09}
@@ -73,28 +74,7 @@ function caption(c) {
   return `<div class="cap"><h1>${mark(c.title)}</h1><p>${esc(c.sub)}</p>${c.note ? `<small>${esc(c.note)}</small>` : ""}</div>`;
 }
 const frames = {
-  "01-scene": (c) => `${caption(c)}
-    <svg class="abs" width="1320" height="2868" viewBox="0 0 1320 2868">
-      <defs><linearGradient id="tr" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#C2F057" stop-opacity="0"/><stop offset="1" stop-color="#C2F057" stop-opacity=".85"/></linearGradient></defs>
-      <g transform="translate(0 660)">
-        <path d="M430 20 L890 20 L1250 740 L70 740 Z" fill="#0E2921"/>
-        <g fill="none" stroke="#ffffff8c" stroke-width="5"><path d="M430 20 L890 20 L1250 740 L70 740 Z"/><path d="M480 20 L190 740"/><path d="M840 20 L1130 740"/>
-          <path d="M375 250 L945 250"/><path d="M290 470 L1030 470"/><path d="M660 250 L660 470"/></g>
-        <path d="M330 330 L990 330" stroke="#ffffffcc" stroke-width="7" stroke-dasharray="16 10"/>
-        <path d="M330 330 L330 280 L990 280 L990 330" stroke="#ffffff55" stroke-width="3" fill="none"/>
-        <path d="M760 640 C 700 300, 600 120, 520 150" fill="none" stroke="url(#tr)" stroke-width="16" stroke-linecap="round"/>
-        <circle cx="515" cy="152" r="22" fill="#C2F057"/>
-      </g>
-      <g fill="none" stroke="#C2F057" stroke-width="6" stroke-dasharray="4 16" stroke-linecap="round">
-        <path d="M540 1680 C 500 1820, 420 1900, 400 2010"/><path d="M820 1650 C 880 1700, 950 1730, 1010 1760"/></g>
-      <g stroke="#56655d" stroke-width="12" stroke-linecap="round"><path d="M660 1680 L560 2010"/><path d="M660 1680 L760 2010"/><path d="M660 1680 L660 1970"/></g>
-    </svg>
-    <div class="label main" style="left:50%;transform:translateX(-50%);top:1330px">${esc(c.camera)}</div>
-    <div class="tablet" style="left:50px;top:2030px;width:720px;height:500px"><img src="raw/${ui}/web-board-alert.png"></div>
-    <div class="label alt" style="left:120px;top:2570px">${esc(c.browser)}</div>
-    ${phone("app-summary.png", 820, 1790, 450)}
-    <div class="label alt" style="left:850px;top:1700px">${esc(c.phone)}</div>
-    <div style="position:absolute;left:96px;top:2690px;font-size:30px;color:var(--faint)">${esc(c.foot)}</div>`,
+  "01-scene": (c) => `${caption(c)}${phone("01-history.png", 155, 720, 1010)}`,
   "02-line-calls": (c) => `${caption(c)}
     ${landscape("web-challenge.png", 40, 900, 1240)}
     <div class="voice" style="right:70px;top:820px">🔊 ${esc(c.voice)} <i>Out!</i></div>
@@ -103,8 +83,8 @@ const frames = {
     ${court(2000)}
     ${landscape("web-serve.png", 30, 760, 1260)}
     <div class="points" style="top:1460px">${c.points.map((p) => `<div class="point">${esc(p)}</div>`).join("")}</div>`,
-  "04-replay": (c) => `${caption(c)}${phone("app-shots.png", 155, 760, 1010)}`,
-  "05-private": (c) => `${caption(c)}${phone("app-bounces.png", 155, 960, 1010)}
+  "04-replay": (c) => `${caption(c)}${phone("03-detail-0.png", 155, 760, 1010)}`,
+  "05-private": (c) => `${caption(c)}${phone("03-detail-1.png", 155, 960, 1010)}
     <div class="chips" style="top:800px">${c.chips.map((t) => `<div class="chip">${esc(t)}</div>`).join("")}</div>`,
 };
 fetch("captions.json").then((r) => r.json()).then((all) => {

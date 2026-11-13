@@ -27,6 +27,14 @@ final class WorkspaceUITests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        // The preview recorder stops when marks.txt contains `end`, then this method runs.
+        // Looking up 结束 / 历史记录 / 切换模式 only matches Simplified Chinese and held the
+        // test open long enough that a clock check against process exit called a real-time
+        // recording slow. Leave that take on the replay, in landscape.
+        if name.contains("testStorePreviewFlow") {
+            try super.tearDownWithError()
+            return
+        }
         if app.state != .runningForeground { app.activate() }
         // Also runs after assertion failures, so development sessions are finalized.
         if app.buttons["结束"].firstMatch.exists {
