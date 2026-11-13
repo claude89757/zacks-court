@@ -22,12 +22,15 @@ targets:
       - path: ZacksCourt/Assets.xcassets
       - path: ZacksCourt/PrivacyInfo.xcprivacy
         buildPhase: resources
-      - path: ZacksCourt/zh-Hans.lproj
-      - path: ZacksCourt/zh-Hant.lproj
-      - path: ZacksCourt/en.lproj
-      - path: ZacksCourt/ja.lproj
-      - path: ZacksCourt/de.lproj
-      - path: ZacksCourt/fr.lproj
+      # A path whose last component has an extension is a file to XcodeGen, and the
+      # lproj file type has no build phase. Listing each *.lproj therefore never
+      # copies InfoPlist.strings. The parent directory is a group, so the six
+      # languages become one variant group in Copy Bundle Resources.
+      - path: ZacksCourt
+        type: group
+        includes:
+          - "*.lproj/InfoPlist.strings"
+        buildPhase: resources
       # A folder reference preserves compiled CoreML directories byte-for-byte.
       # scripts/generate-ios.sh prepares and verifies this ignored local asset set.
       - path: ../../.local/AnalysisModels

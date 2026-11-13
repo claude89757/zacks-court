@@ -21,7 +21,7 @@
 
 1. 用一份干净检出（不要用那台未推送 ahead 12 的 Mac mini 工程）生成工程：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh`，确认 `scripts/reference-chain.sh status` 为 off。
 2. `./scripts/capture-store-ui.sh <新建的 iPhone 模拟器 UDID>` 为六种界面语言各跑一遍 `testStoreScreens`。原图在 `docs/app-store/screenshots/source/raw/<语言>/`。en-US 与 en-GB 共用 `raw/en/`。
-3. `./scripts/render-store-screens.sh` 会拒绝用另一种语言的 App 截图顶上。它仍要用本机 Google Chrome 做无界面渲染（真实浏览器页面和 HTML 版式）。2026-11-13 的 Mac 验证没有跑它，这里也没有换成另一个浏览器或本地重画。
+3. 宣传帧用 `python3 scripts/render-store-frames.py`（Pillow，不打开浏览器）。它只贴 `capture-store-ui.sh` 写下的真实截图，缺图就停。`render-store-screens.sh` 仍要 Chrome，这轮不要用它来补画面。
 4. 预览视频每种语言单独录，不要复制文件：`./scripts/record-store-preview.sh <UDID> <目录> <语言>`。
 5. 创意素材模板不再画 149 km/h 和 OUT 卡片。没有真实界面截图时不要把它当成 App 截图上传。
 

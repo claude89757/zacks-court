@@ -29,8 +29,26 @@ esac
 command -v xcodebuild >/dev/null || { echo "xcodebuild is required. This environment has not recorded a preview." >&2; exit 2; }
 ROOT=${0:A:h:h}
 DD="$ROOT/.local/dd-store-preview"
-FONT=${COURT_PREVIEW_FONT:-/System/Library/Fonts/Hiragino Sans GB.ttc}
-CAPTION=${COURT_PREVIEW_CAPTION:-画面为演示数据 · Demo data}
+FONT=${COURT_PREVIEW_FONT:-}
+if [[ -z "$FONT" ]]; then
+  case "$LOCALE" in
+    zh-Hant) FONT="/System/Library/Fonts/Hiragino Sans CNS.ttc" ;;
+    ja) FONT="/System/Library/Fonts/Hiragino Sans.ttc" ;;
+    *) FONT="/System/Library/Fonts/Hiragino Sans GB.ttc" ;;
+  esac
+fi
+if [[ -z "${COURT_PREVIEW_CAPTION:-}" ]]; then
+  case "$LOCALE" in
+    zh-Hans) CAPTION="画面为演示数据，不是实测" ;;
+    zh-Hant) CAPTION="畫面為示範資料，不是實測" ;;
+    en) CAPTION="Demo data, not a measurement" ;;
+    ja) CAPTION="デモデータです。実測ではありません" ;;
+    de) CAPTION="Demodaten, keine Messung" ;;
+    fr) CAPTION="Données de démo, pas une mesure" ;;
+  esac
+else
+  CAPTION=$COURT_PREVIEW_CAPTION
+fi
 command -v ffmpeg >/dev/null || { echo "ffmpeg is required" >&2; exit 1; }
 # Homebrew's python3 has no Pillow here; Xcode's /usr/bin/python3 does, so fall back to it.
 PY=${COURT_PREVIEW_PYTHON:-python3}
@@ -64,9 +82,23 @@ for _ in {1..50}; do grep -q -i 'recording started' "$LOG" && break; sleep 0.1; 
 START=$(python3 -c 'import time; print(time.time())')
 TEST_RUNNER_COURT_UI_STORE_PREVIEW="$OUT" TEST_RUNNER_COURT_LANGUAGE="$LOCALE" xcodebuild test-without-building -project apps/iphone/ZacksCourt.xcodeproj -scheme ZacksCourt \
   -configuration Release -destination "id=$UDID" -derivedDataPath "$DD" \
-  -only-testing:ZacksCourtUITests/WorkspaceUITests/testStorePreviewFlow -quiet || { kill -INT $REC; wait $REC || true; exit 1; }
+  -only-testing:ZacksCourtUITests/WorkspaceUITests/testStorePreviewFlow -quiet &
+TEST=$!
+# Stop the recorder when the test has marked the last in-app frame, before tearDown
+# rotates to portrait and the runner terminates the app onto the Home Screen.
+while kill -0 $TEST 2>/dev/null; do
+  if [[ -f "$OUT/marks.txt" ]] && grep -q '^end ' "$OUT/marks.txt"; then
+    sleep 0.25
+    kill -INT $REC 2>/dev/null || true
+    wait $REC 2>/dev/null || true
+    REC=""
+    break
+  fi
+  sleep 0.1
+done
+wait $TEST || { [[ -n "${REC:-}" ]] && kill -INT $REC; wait $REC || true; exit 1; }
 STOP=$(python3 -c 'import time; print(time.time())')
-kill -INT $REC; wait $REC || true
+if [[ -n "${REC:-}" ]]; then kill -INT $REC; wait $REC || true; fi
 [[ -s "$OUT/marks.txt" ]] || { echo "The UI test wrote no marks.txt" >&2; exit 1; }
 
 # Trim to the marks (15–30 s as Apple requires), turn the portrait framebuffer to landscape, scale to

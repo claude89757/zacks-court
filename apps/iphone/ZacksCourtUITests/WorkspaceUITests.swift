@@ -1146,8 +1146,9 @@ final class WorkspaceUITests: XCTestCase {
         }
         mark("end")
         try marks.write(to: URL(fileURLWithPath: folder).appendingPathComponent("marks.txt"), atomically: true, encoding: .utf8)
-        app.buttons["court.replay.close"].firstMatch.tap()
-        XCUIDevice.shared.orientation = .portrait
+        // Stay on the replay, in landscape. The recorder stops when it sees this file, before
+        // the test returns, tearDown rotates, and the runner terminates the app.
+        Thread.sleep(forTimeInterval: 0.8)
     }
 
     /// A record's 「导出」 menu offers the diagnostic package first; picking it opens the share sheet

@@ -6377,3 +6377,15 @@ Mac mini / Xcode 27 对 `d6eb59ac60884be6213e4cf323533661986e7d33` 的 debug、r
 演示记录的标题、机位名、模型名和「精彩」标记仍以简体键写入，界面按当前语言显示，译文写明不是实测。`render-store-screens.sh` 仍要 Chrome 无界面渲染，这一轮没有改成别的浏览器，也没有跑。
 
 **本环境跑了**：`python3 scripts/l10n-check.py`、`node --check`。**没有跑** `swift build`、`swift test`、`court-check`、iOS 编译、截图和录屏。
+
+## 2026-11-13 权限说明进包、预览水印与宣传帧（仍未在本机编 iOS）
+
+Mac 对 `ad213773` 的编译、355 项测试、court-check、模拟器构建和六语截图/录屏已通过。生成的 Xcode 工程没有把六个 `InfoPlist.strings` 放进 Copy Bundle Resources：XcodeGen 把路径以 `.lproj` 结尾的源当成没有构建阶段的文件。`project.yml` 改为从上级目录按组收录 `*.lproj/InfoPlist.strings`。`generate-ios.sh` 生成后检查 `knownRegions` 和资源阶段。本环境没有 xcodegen，没有生成工程，也没有重新编 iOS。
+
+`CourtCopy.swift` 文件头已改成：没有支持的语言时用英语。启动前仍是简体中文键。
+
+预览水印按语言写明演示、不是实测。录屏在测试写下结束标记后先停，测试不再转回竖屏。已录好的视频不在这台机器上，没有重剪。
+
+测速牌状态行最多两行，法语等改短，拍号、有效球速和动作仍在。没有跑界面测试。
+
+`scripts/render-store-frames.py` 用 Pillow 把真实截图贴进 1320×2868 文案框，不打开浏览器。`--self-test` 通过。仓库里没有这次采集的原图，正式渲染退出码 2，没有画出假界面。

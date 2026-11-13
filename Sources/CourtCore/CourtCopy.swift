@@ -11,8 +11,8 @@ import Foundation
 /// not a locale choice.
 ///
 /// en-US and en-GB share the `en` strings. Region still selects dates and decimal separators
-/// (`en_GB` vs `en_US`). An unsupported preferred language (for example Spanish) stays Simplified
-/// Chinese, the same screens the app showed before it was localized.
+/// (`en_GB` vs `en_US`). After `activate()`, a preferred list with no supported language
+/// (for example Spanish only) resolves to English, not Simplified Chinese.
 ///
 /// The spoken line call stays the recorded English "Out!" / "In." in every language. Those clips
 /// are what Simplified Chinese already plays; this catalog does not invent new audio.

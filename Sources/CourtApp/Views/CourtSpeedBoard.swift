@@ -164,7 +164,7 @@ private struct AllSpeedReadout: View {
     private var measurementStatus: String {
         guard let latest, let shotNumber else { return courtText("等待有效击球") }
         if events.last?.validSpeedKPH == nil { return courtFormat("#%1$@ · 本拍暂无球速 · 保留上一有效值", "\(shotNumber)") }
-        return courtFormat("#%1$@ · 最近有效球速 · ", "\(shotNumber)") + latest.stroke.courtTitle
+        return courtFormat("#%1$@ · 最近有效球速 · %2$@", "\(shotNumber)", latest.stroke.courtTitle)
     }
     var body: some View {
         VStack(spacing: 6) {
@@ -316,7 +316,7 @@ private struct SpeedBoardFooter: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(status)
-                .lineLimit(1).minimumScaleFactor(0.8)
+                .lineLimit(2).minimumScaleFactor(0.65)
                 .accessibilityLabel(spoken ?? status)
                 .accessibilityIdentifier("court.speedboard.status")
             Spacer(minLength: 8)

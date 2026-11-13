@@ -142,10 +142,10 @@
   },
   "#%1$@ · 最近有效球速 · %2$@": {
    "zh-Hant": "#%1$@ · 最近有效球速 · %2$@",
-   "en": "#%1$@ · latest valid ball speed · %2$@",
-   "ja": "#%1$@ · 最近の有効な球速 · %2$@",
-   "de": "#%1$@ · letzte gültige Ballgeschwindigkeit · %2$@",
-   "fr": "#%1$@ · dernière vitesse de balle valide · %2$@"
+   "en": "#%1$@ · valid speed · %2$@",
+   "ja": "#%1$@ · 有効球速 · %2$@",
+   "de": "#%1$@ · gültige Geschwindigkeit · %2$@",
+   "fr": "#%1$@ · vitesse valide · %2$@"
   },
   "#%1$@ · 本发无速": {
    "zh-Hant": "#%1$@ · 本發無速",
