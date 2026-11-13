@@ -499,7 +499,8 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         if request.eventID != nil, !bounceEnabled {
             metrics.bounceShed += 1; lock.unlock()
             if let id = request.eventID {
-                applyBounce(id, .init(sourcePTS: request.pts, confidence: 0, reason: courtText("设备降载期间未做触地定位")), nil, resolved: false)
+                // Match key for TennisReason.classify. The short wording is TennisReason.text.
+                applyBounce(id, .init(sourcePTS: request.pts, confidence: 0, reason: "设备降载期间未做触地定位"), nil, resolved: false) // l10n:keep
             }
             return
         }
@@ -507,7 +508,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             if request.eventID != nil { metrics.bounceRejectedBusy += 1 }
             lock.unlock()
             if let id = request.eventID {
-                applyBounce(id, .init(sourcePTS: request.pts, confidence: 0, reason: courtText("触地定位队列繁忙，未定位")), nil, resolved: false)
+                applyBounce(id, .init(sourcePTS: request.pts, confidence: 0, reason: "触地定位队列繁忙，未定位"), nil, resolved: false) // l10n:keep
             }
             return
         }
@@ -522,7 +523,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
                 do {
                     resolved = try autoreleasepool { try runtime.resolve(request) }
                 } catch { failure = error.localizedDescription }
-            } else { failure = courtText("触地定位模型未加载") }
+            } else { failure = "触地定位模型未加载" } // l10n:keep
             let elapsed = ProcessInfo.processInfo.systemUptime - start
             lock.lock()
             bounceInFlight = false; metrics.bounceBusySeconds += elapsed
@@ -533,7 +534,8 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             if let failure { metrics.bounceErrors += 1; metrics.lastError = failure }
             lock.unlock()
             guard let id = request.eventID else { return }
-            let estimate = resolved?.estimate ?? .init(sourcePTS: request.pts, confidence: 0, reason: courtFormat("触地定位失败：%1$@", "\(failure ?? "未知错误")"))
+            // Prefix is the classify key (`触地定位失败`). The detail may be a system error.
+            let estimate = resolved?.estimate ?? .init(sourcePTS: request.pts, confidence: 0, reason: "触地定位失败：\(failure ?? "未知错误")") // l10n:keep
             let succeeded = resolved != nil
             worker.async { [self] in applyBounce(id, estimate, resolved?.mapping, resolved: succeeded) }
         }

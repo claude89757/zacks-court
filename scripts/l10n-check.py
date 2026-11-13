@@ -165,8 +165,12 @@ def is_dictionary_key(text, opening, end):
     if next_nonspace(text, end) != ":":
         return False
     j = opening
-    while j > 0 and text[j - 1] in " \t\n":
+    while j > 0 and text[j - 1] in " \t":
         j -= 1
+    # A key on its own line (`"原文": .value`) is still a collection entry. A comment
+    # on the previous line must not make the checker treat it as prose.
+    if j > 0 and text[j - 1] == "\n":
+        return True
     return j > 0 and text[j - 1] in "[{,"
 
 
@@ -594,6 +598,8 @@ def self_test():
     checks.append('t("进行中")' in js)
     assert placeholders("约 %1$@ 厘米") == placeholders("about %1$@ cm"), placeholders("约 %1$@ 厘米")
     assert placeholders("机高约 %.1f 米") == placeholders("about %.1f m")
+    kept = rewrite_swift('let table: [String: Int] = [\n        // note\n        "等待首弹": .pending,\n    ]\n')
+    checks.append('courtText("等待首弹")' not in kept and '"等待首弹"' in kept)
     if not all(checks):
         print(rewritten)
         print(js)

@@ -59,12 +59,15 @@ public enum TennisReason: String, CaseIterable, Sendable {
         return .other
     }
 
+    /// Keys are the engine's Simplified Chinese wording. They are matched, not shown.
+    /// `text` is what the user reads. Translating a key makes `classify` miss it whenever
+    /// the app language is not Simplified Chinese, and the shot is then stored as `.other`.
     static let table: [String: TennisReason] = [
         // Waiting (reference chain)
-        courtText("等待首弹地及连续三维轨迹"): .pending,
+        "等待首弹地及连续三维轨迹": .pending,
         "等待独立队列触地定位": .pending,
         // Speed (reference chain)
-        courtText("缺少击球轨迹样本"): .ballNotSeen,
+        "缺少击球轨迹样本": .ballNotSeen,
         "需要至少四个连续击球轨迹样本": .ballNotSeen,
         "速度拟合时间跨度不足": .ballNotSeen,
         "弹地三维模型位置不可用": .ballNotSeen,
@@ -76,14 +79,14 @@ public enum TennisReason: String, CaseIterable, Sendable {
         "端点与轨迹方向不一致": .speedUnreliable,
         "水平运动方向不一致": .speedUnreliable,
         // Flight ended without a first bounce (engine)
-        courtText("下一段击球前没有可靠首弹地证据"): .noBounceSeen,
+        "下一段击球前没有可靠首弹地证据": .noBounceSeen,
         "会话结束前没有可靠首弹地证据": .noBounceSeen,
         "超过已支持的飞行时间，未确认首弹地": .noBounceSeen,
         "首弹地前出现其他事件": .noBounceSeen,
         "无触地候选": .noBounceSeen,
         "首弹地前检测到触网候选": .hitNet,
         // Landing (engine and CameraSideAnalyzer)
-        courtText("Focus球位置缺失、低分或存在竞争目标"): .ballNotSeen,
+        "Focus球位置缺失、低分或存在竞争目标": .ballNotSeen,
         "触地候选缺少受支持的球场映射": .notOnCourt,
         "模型弹地候选，未验证物理触地或判线精度": .estimate,
         "设备降载期间未做触地定位": .cameraCooling,

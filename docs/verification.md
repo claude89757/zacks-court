@@ -6407,3 +6407,9 @@ Mac 对 `c4b23daf` 的编译、355 项测试、court-check 和模拟器构建已
 1. 简体预览重录一次：`./scripts/record-store-preview.sh <UDID> <目录> zh-Hans`。应写出 `timing.txt`，`ratio_raw_over_alive` 在 0.9–1.1，成片仍是 App 内画面，水印是「画面为演示数据，不是实测」。不要用上次被拒的编码。另外五种如果只改了脚本的计时口径，也建议各抽查一次；它们上次已经通过，不是必须六段全重录才能看这一处。
 2. 不设 `COURT_PREVIEW_FONT` 再录繁体或日语，脚本应自己选到已安装且能画出水印的字体（这台机器上是 Hiragino Sans GB 即可）。
 3. `COURT_STORE_RAW` 指向已有六语原图，跑 `python3 scripts/render-store-frames.py`。应得到 7 个语言目录各 5 张。`01-scene` 的画面是该语言的历史记录页，不是带模拟器警告的首页。缺图就停。
+
+## 2026-11-13 落点原因匹配键不随界面语言改写（未在本机跑 Swift）
+
+机位在降载、定位队列忙、定位失败时写进落点的句子，以及 `TennisReason` 表里的四条引擎原句，被 `courtText` 包过。简体下原文不变，分类正确。其他语言会先译成该语言，再拿去和简体原句比较，对不上就记成 `.other`。用户看到的短句仍走 `TennisReason.text`。球速和界内外算法没有改。
+
+**本环境跑了** `python3 scripts/l10n-check.py`。**没有跑** `swift test`。归档用的工程必须是不带 `COURT_CODE_ONLY` 的默认 `./scripts/generate-ios.sh`（`independent`），不能用模拟器那份不能分析的工程。
