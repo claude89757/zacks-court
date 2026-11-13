@@ -27,7 +27,11 @@ final class CourtCopyTests: XCTestCase {
         XCTAssertEqual(CourtLocale.resolve(preferred: ["de-AT"]).formatIdentifier, "de_AT")
         XCTAssertEqual(CourtLocale.resolve(preferred: ["fr-CA"]).formatIdentifier, "fr_CA")
         XCTAssertEqual(CourtLocale.resolve(preferred: ["es-MX", "fr-FR"]).language, .fr)
-        XCTAssertEqual(CourtLocale.resolve(preferred: ["es-MX"]).language, .zhHans)
+        XCTAssertEqual(CourtLocale.resolve(preferred: ["es-MX"]).language, .en)
+        XCTAssertEqual(CourtLocale.resolve(preferred: ["es-MX"]).formatIdentifier, "en_US")
+        XCTAssertEqual(CourtLocale.resolve(preferred: []).language, .en)
+        XCTAssertEqual(CourtLocale.resolve(preferred: ["pt-BR", "zh-Hans"]).language, .zhHans)
+        XCTAssertEqual(CourtLocale.resolve(preferred: ["es-ES", "zh-Hant-TW"]).language, .zhHant)
         XCTAssertEqual(CourtLocale.resolve(preferred: [], environment: ["COURT_LANGUAGE": "de"]).language, .de)
         XCTAssertEqual(CourtLocale.resolve(preferred: ["en"], environment: ["COURT_LANGUAGE": "zh-Hant"]).language, .zhHant)
     }
@@ -68,5 +72,31 @@ final class CourtCopyTests: XCTestCase {
         CourtCopy.withLanguage("en") {
             XCTAssertEqual(courtText("这条不在词表里"), "这条不在词表里")
         }
+    }
+
+    /// Before `activate()`, copy stays Simplified Chinese even though an unsupported language list
+    /// would resolve to English. `withLanguage` does not leak into that default.
+    func testStartupStaysChineseUntilActivation() throws {
+        XCTAssertEqual(CourtCopy.language, .zhHans)
+        XCTAssertEqual(courtText("机位"), "机位")
+        let data = try Data(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/CourtCore/Web/l10n.json"))
+        CourtCopy.load(from: data)
+        try CourtCopy.withLanguage("es-MX") {
+            XCTAssertEqual(CourtCopy.language, .en)
+            XCTAssertEqual(courtText("历史记录"), "History")
+            XCTAssertEqual(CourtCopy.stored("示例记录 · 演示数据，非实测"), "Sample record · demo data, not a measurement")
+            XCTAssertEqual(CourtCopy.stored("演示数据"), "Demo data")
+            XCTAssertEqual(CourtCopy.stored("精彩"), "Highlight")
+            XCTAssertEqual(CourtCopy.stored("我的上场"), "我的上场")
+        }
+        XCTAssertEqual(CourtCopy.language, .zhHans)
+        XCTAssertEqual(courtText("机位"), "机位")
+        CourtCopy.activate(preferred: ["ko-KR"], environment: [:])
+        XCTAssertEqual(CourtCopy.language, .en)
+        CourtCopy.resetActivationForTesting()
+        XCTAssertEqual(CourtCopy.language, .zhHans)
+        XCTAssertEqual(courtText("机位"), "机位")
     }
 }

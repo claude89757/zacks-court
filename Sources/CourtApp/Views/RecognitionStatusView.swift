@@ -1,4 +1,5 @@
 import SwiftUI
+import CourtCore
 
 /// The 「识别状态」 rows: a symbol and color per state (never color alone), title, value and a
 /// one-line reason. Stacks vertically at accessibility sizes so values never wrap per character.

@@ -7,7 +7,8 @@
 ## 这一版相对 1.3 的用户可见变化
 
 - App 与浏览器看板的界面、错误提示和权限用途文字可以是简体中文、繁体中文、英语、日语、德语、法语。en-US 与 en-GB 共用英语界面。
-- 简体中文是开发语言。系统语言不在这六种里时仍显示简体中文，和现在上架的界面一样。
+- 启动前（尚未 `activate()`）文案仍是简体中文键，测试和启动顺序靠这个。App 在创建会话和界面之前就激活语言。
+- 激活之后按用户的语言列表选第一项支持的语言。简体、繁体仍按标签明确分开。列表里没有任何支持的语言时用英语（en-US），与商店主语言一致。词表缺一条时仍显示简体中文原文，那是缺译，不是语言回退。
 - 球速仍是 km/h，不换算成 mph。简体中文的数字格式与原来的 `String(format:)` 相同。其他语言用该地区的小数点。
 - 司线语音仍是已录好的英文 “Out!” / “In.”。设置里的说明被翻译，没有新的语音文件，也没有新的网络服务。
 - 局域网、个人热点、点对点的连接方式没有变，没有新权限。权限弹窗的三句用途文字按系统语言显示。
@@ -20,7 +21,7 @@
 
 1. 用一份干净检出（不要用那台未推送 ahead 12 的 Mac mini 工程）生成工程：`COURT_CODE_ONLY=1 ./scripts/generate-ios.sh`，确认 `scripts/reference-chain.sh status` 为 off。
 2. `./scripts/capture-store-ui.sh <新建的 iPhone 模拟器 UDID>` 为六种界面语言各跑一遍 `testStoreScreens`。原图在 `docs/app-store/screenshots/source/raw/<语言>/`。en-US 与 en-GB 共用 `raw/en/`。
-3. `./scripts/render-store-screens.sh` 会拒绝用另一种语言的 App 截图顶上。浏览器看板那三张由脚本按真实页面渲染。
+3. `./scripts/render-store-screens.sh` 会拒绝用另一种语言的 App 截图顶上。它仍要用本机 Google Chrome 做无界面渲染（真实浏览器页面和 HTML 版式）。2026-11-13 的 Mac 验证没有跑它，这里也没有换成另一个浏览器或本地重画。
 4. 预览视频每种语言单独录，不要复制文件：`./scripts/record-store-preview.sh <UDID> <目录> <语言>`。
 5. 创意素材模板不再画 149 km/h 和 OUT 卡片。没有真实界面截图时不要把它当成 App 截图上传。
 

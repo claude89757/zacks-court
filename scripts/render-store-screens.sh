@@ -1,5 +1,9 @@
 #!/bin/zsh
 # Renders the App Store screenshots (iPhone 6.9", 1320×2868) for every locale in captions.json.
+# Still requires Google Chrome headless: the browser-display frames are a real page, and the
+# marketing frames are HTML/CSS. A local non-browser layout tool is not a small substitute and
+# is not implemented here. Do not upload the output. This script was not run in the 2026-11-13
+# Mac validation.
 #
 #   ./scripts/render-store-screens.sh            # browser-display screens + all frames
 #

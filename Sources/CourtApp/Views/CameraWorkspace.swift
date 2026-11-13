@@ -236,9 +236,11 @@ struct CameraWorkspace: View {
                 }.disabled(controller.isBusy || controller.counters.saving)
                 if controller.isBusy && !controller.counters.saving { disabledReason(courtText("正在等待上一个操作完成…")) }
                 buttonPair {
-                    Button { model.markEvent("精彩") } label: { Label(courtText("精彩"), systemImage: "bookmark").frame(maxWidth: .infinity) } // l10n:keep.buttonStyle(CourtButton())
+                    Button { model.markEvent("精彩") } label: { Label(courtText("精彩"), systemImage: "bookmark").frame(maxWidth: .infinity) } // l10n:keep
+                        .buttonStyle(CourtButton())
                 } _: {
-                    Button { model.markEvent("待复核") } label: { Label(courtText("待复核"), systemImage: "bookmark").frame(maxWidth: .infinity) } // l10n:keep.buttonStyle(CourtButton())
+                    Button { model.markEvent("待复核") } label: { Label(courtText("待复核"), systemImage: "bookmark").frame(maxWidth: .infinity) } // l10n:keep
+                        .buttonStyle(CourtButton())
                 }.disabled(session.state != .active)
                 if session.state != .active {
                     disabledReason(session.state == .paused ? courtText("暂停中不能标记，点「继续」后可标记。") : courtText("记录进行中才能标记。"))

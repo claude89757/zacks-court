@@ -240,7 +240,7 @@ public final class CameraSessionController {
         guard !hasOpenSession, !isBusy else { return }
         guard store != nil else { error = courtText("记录目录不可用：检查存储空间后重新打开 App。"); return }
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        var created = CourtSession(title: trimmed.isEmpty ? courtText("球场分析") : String(trimmed.prefix(100)), kind: kind)
+        var created = CourtSession(title: trimmed.isEmpty ? "球场分析" : String(trimmed.prefix(100)), kind: kind) // l10n:keep
         created.setCapturedOn(identity.device)
         open(created)
     }

@@ -6367,3 +6367,13 @@ B 段没给速的 12 拍全是近端发球，超差的 12 拍里 9 拍是近端�
 - `node --check` 检查 `app.js` 与 `l10n.js`
 
 **没有验证**：`swift build`、`swift test`、`court-check`、iOS 编译、模拟器截图、预览视频、任何精度。数字格式的德文逗号只写在 `CourtCopyTests` 里，这台机器跑不了。
+
+## 2026-11-13 修复 Mac 编译与不支持语言回退（仍未跑 iOS 测试）
+
+Mac mini / Xcode 27 对 `d6eb59ac60884be6213e4cf323533661986e7d33` 的 debug、release 和无签名 iOS Simulator 构建都失败。根因是 `courtText` 在 CourtCore，同一模块的其他文件不会自动看见它；报错的文件都没有 `import CourtCore`。值守屏那一长串同时报了类型检查超时，已拆开。CourtMac 目标补上了对 CourtCore 的依赖。
+
+不支持的语言、且优先列表里没有下一项支持的语言时，激活后用英语。简体和繁体仍按标签选择。`activate()` 之前仍是简体中文，避免现有测试改口；App 在创建模型之前就激活。
+
+演示记录的标题、机位名、模型名和「精彩」标记仍以简体键写入，界面按当前语言显示，译文写明不是实测。`render-store-screens.sh` 仍要 Chrome 无界面渲染，这一轮没有改成别的浏览器，也没有跑。
+
+**本环境跑了**：`python3 scripts/l10n-check.py`、`node --check`。**没有跑** `swift build`、`swift test`、`court-check`、iOS 编译、截图和录屏。

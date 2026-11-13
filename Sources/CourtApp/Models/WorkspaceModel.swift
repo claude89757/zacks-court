@@ -604,7 +604,7 @@ struct LinkStats {
         guard store != nil else { error = courtText("记录目录不可用：检查存储空间后重新打开 App。"); return }
         if !persisted { persistSession(); guard persisted else { return } }
         let title = sessionTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let created = CourtSession(title: title.isEmpty ? courtText("球场分析") : String(title.prefix(100)))
+        let created = CourtSession(title: title.isEmpty ? "球场分析" : String(title.prefix(100))) // l10n:keep
         if connected {
             // The camera is the authority: the session exists once the camera adopts it and echoes
             // it back. A refusal (camera busy, or its own session open) leaves nothing behind here.

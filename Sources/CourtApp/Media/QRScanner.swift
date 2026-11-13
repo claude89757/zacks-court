@@ -1,6 +1,7 @@
 #if os(iOS)
 import SwiftUI
 import AVFoundation
+import CourtCore
 
 struct QRScanner: UIViewControllerRepresentable {
     let onCode: (String) -> Void

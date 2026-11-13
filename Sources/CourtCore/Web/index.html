@@ -5,8 +5,11 @@
     // Hide until l10n.js applies a non-Chinese language, so the first paint is not Simplified Chinese.
     (function () {
       var q = new URLSearchParams(location.search).get("lang") || "";
-      var tag = q || (navigator.languages && navigator.languages[0]) || "";
-      var hans = !tag || /^zh($|-Hans|-CN|-SG)/i.test(tag);
+      var list = q ? [q] : (navigator.languages ? [].slice.call(navigator.languages) : []);
+      function supported(tag) { return /^(zh|en|ja|de|fr)([-_]|$)/i.test(tag || ""); }
+      var first = "";
+      for (var i = 0; i < list.length; i++) { if (supported(list[i])) { first = list[i]; break; } }
+      var hans = /^zh($|-Hans|-CN|-SG)/i.test(first);
       if (!hans) document.documentElement.hidden = true;
     })();
   </script>

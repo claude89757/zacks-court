@@ -1,6 +1,7 @@
 // Browser-display copy. The camera serves this file with l10n.json. Simplified Chinese is the
-// key and the fallback: a missing entry, a failed fetch, or an unsupported language stays Chinese.
-// ?lang= overrides navigator.languages so a screenshot run can force one language on this machine.
+// catalog key. A missing entry stays Chinese. If the browser's language list has no supported
+// language, the page uses English (the store's primary locale). ?lang= overrides navigator.languages
+// so a screenshot run can force one language on this machine.
 
 const LOCALES = ["zh-Hant", "en", "ja", "de", "fr"];
 
@@ -37,7 +38,21 @@ function pick() {
     const parsed = parse(tag);
     if (parsed) return parsed;
   }
-  return { language: "zh-Hans", format: "zh-CN" };
+  return { language: "en", format: "en_US" };
+}
+
+/// Phrases the app itself wrote. User-typed titles are left unchanged. Demo phrases say they are not a measurement.
+const STORED = new Set([
+  "示例记录 · 演示数据，非实测",
+  "演示数据",
+  "球场分析",
+  "精彩",
+  "待复核",
+  "标记",
+]);
+
+export function stored(value) {
+  return value && STORED.has(value) ? t(value) : value;
 }
 
 export function language() { return choice.language; }

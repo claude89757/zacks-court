@@ -2,10 +2,10 @@ import Foundation
 import CourtCore
 
 /// `court-probe demo-session DIR`: writes one finished session of made-up shots into DIR (a
-/// `Zacks Court/Sessions` folder), for App Store and README screenshots. The title and device name
-/// say it is demo data; nothing in it was measured. The shots follow the court frame of
-/// `TennisBounceEstimate`, and the line calls come from `HawkEye.annotate`, so the screens show
-/// the same wording a real session would.
+/// `Zacks Court/Sessions` folder), for App Store and README screenshots. The title, device name,
+/// model label and marker are the canonical phrases in `CourtCopy.storedPhrases`. Screens translate
+/// those phrases and still say the record is demo data, not a measurement. The shots follow the
+/// court frame of `TennisBounceEstimate`, and the line calls come from `HawkEye.annotate`.
 extension CourtProbe {
     static func writeDemoSession(directory: URL) throws {
         var random = DemoRandom(seed: 20261103)

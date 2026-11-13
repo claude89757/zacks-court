@@ -1,4 +1,5 @@
 import SwiftUI
+import CourtCore
 
 @MainActor
 public struct CourtLiveVideoWindow: View {

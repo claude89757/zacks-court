@@ -1,7 +1,7 @@
 // Zacks Court browser display (docs/web-display.md). A thin client: the camera owns the session,
 // recordings and shot rows; this page shows them and sends requests the camera answers.
 import { hmacSHA256Hex, uuid } from "./hmac.js";
-import { t, fmt, loadCatalog, dateTag } from "./l10n.js";
+import { t, fmt, stored, loadCatalog, dateTag } from "./l10n.js";
 
 await loadCatalog();
 
@@ -379,14 +379,14 @@ async function runSession(name, fields, timeout) {
   return reply;
 }
 
-$("start").addEventListener("click", () => runSession("start", { label: $("title").value.trim() || t("球场分析") }));
+$("start").addEventListener("click", () => runSession("start", { label: $("title").value.trim() || "球场分析" }));
 $("pause").addEventListener("click", () => {
   const session = state.session; if (!session) return;
   runSession(session.state === "active" ? "pause" : "resume", { sessionID: session.id }, 30000);
 });
 $("finish").addEventListener("click", () => {
   const session = state.session; if (!session) return;
-  if (!confirm(fmt("结束记录「%1$@」？结束后机位停止录像。", session.title))) return;
+  if (!confirm(fmt("结束记录「%1$@」？结束后机位停止录像。", stored(session.title)))) return;
   runSession("finish", { sessionID: session.id }, 60000);
 });
 // The same two markers as the App: 精彩 and 待复核.
@@ -395,7 +395,7 @@ for (const id of ["marker", "marker-review"]) {
     const session = state.session; if (!session) return;
     const label = $(id).dataset.label;
     const reply = await run($(id), "marker", { sessionID: session.id, label, date: Date.now() + state.clockOffset });
-    if (reply.ok !== false) { toast(fmt("已标记「%1$@」", label), true); navigator.vibrate?.(30); }
+    if (reply.ok !== false) { toast(fmt("已标记「%1$@」", stored(label)), true); navigator.vibrate?.(30); }
   });
 }
 $("wake").addEventListener("click", async () => {
@@ -458,7 +458,7 @@ async function refreshHistory() {
 function renderHistory() {
   const items = state.history.slice(0, 30).map((row) => {
     const status = SESSION_STATES[row.state] || row.state;
-    return fmt("<li><button data-session=\"%1$@\">%2$@<br><span class=\"muted small\">%3$@ · %4$@ · %5$@ · %6$@ 拍（球速 %7$@ · 落点 %8$@）</span></button></li>", esc(row.id), esc(row.title), dateText(row.startedAt), duration(row.elapsed), status, row.shots, row.speeds, row.landings);
+    return fmt("<li><button data-session=\"%1$@\">%2$@<br><span class=\"muted small\">%3$@ · %4$@ · %5$@ · %6$@ 拍（球速 %7$@ · 落点 %8$@）</span></button></li>", esc(row.id), esc(stored(row.title)), dateText(row.startedAt), duration(row.elapsed), status, row.shots, row.speeds, row.landings);
   });
   $("history").innerHTML = items.join("") || fmt("<li class=\"muted small\">机位上还没有记录。</li>", );
 }
@@ -473,9 +473,9 @@ $("detail-close").addEventListener("click", () => {
 });
 function showDetail({ session, elapsed, available }) {
   const rows = (session.tennisEvents || []).slice().sort((a, b) => a.sourcePTS - b.sourcePTS);
-  $("detail-title").textContent = session.title;
+  $("detail-title").textContent = stored(session.title);
   const speeds = rows.map((r) => r.speedKPH).filter(validSpeed);
-  $("detail-meta").textContent = fmt("%1$@ · %2$@ · %3$@ 拍 · 有效平均 %4$@ km/h · 模型 %5$@", dateText(session.startedAt), duration(elapsed), rows.length, speeds.length ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : "—", session.tennisModelVersion || "—");
+  $("detail-meta").textContent = fmt("%1$@ · %2$@ · %3$@ 拍 · 有效平均 %4$@ km/h · 模型 %5$@", dateText(session.startedAt), duration(elapsed), rows.length, speeds.length ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : "—", stored(session.tennisModelVersion || "") || "—");
   const recordings = session.recordings || [];
   // `available` lists recordings still on the camera (older cameras omit it: offer them all).
   const onCamera = (r) => !Array.isArray(available) || available.includes(r.filename);
@@ -1546,9 +1546,9 @@ function render() {
   $("warnings").textContent = [status?.shed > 0 ? status.shedReason : null, ...(status?.warnings || [])].filter(Boolean).join(" ");
 
   // Session controls
-  $("session-title").textContent = session ? session.title : t("未开始记录");
+  $("session-title").textContent = session ? stored(session.title) : t("未开始记录");
   const stateText = SESSION_STATES[session?.state] || "";
-  $("session-meta").textContent = session ? fmt("%1$@ · 开始于 %2$@%3$@", stateText, dateText(session.startedAt), session.capturedOn ? ` · ${session.capturedOn}` : "") : t("开始后机位录像并把逐拍结果归入本次记录。");
+  $("session-meta").textContent = session ? fmt("%1$@ · 开始于 %2$@%3$@", stateText, dateText(session.startedAt), session.capturedOn ? ` · ${stored(session.capturedOn)}` : "") : t("开始后机位录像并把逐拍结果归入本次记录。");
   $("elapsed").textContent = session ? duration(sessionElapsed(session)) : "—";
   const controllable = isControllable(session);
   $("start-row").hidden = controllable; $("run-row").hidden = !controllable;

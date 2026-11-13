@@ -1,5 +1,6 @@
 import SwiftUI
 import CourtApp
+import CourtCore
 
 @main struct ZacksCourtMacApp: App {
     private let languageReady: Void = CourtAppLaunch.activate()

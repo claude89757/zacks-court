@@ -2,11 +2,13 @@ import Foundation
 
 /// In-app copy for the six supported languages.
 ///
-/// Simplified Chinese is the development language and the key of every entry. `courtText` returns
-/// that key unchanged while the language is Simplified Chinese, which is the default until
-/// `activate()` — unit tests and any caller that never activates keep the wording that shipped
-/// before this catalog existed. Other languages look up `Web/l10n.json`. A missing entry falls
-/// back to the Simplified Chinese source rather than a placeholder.
+/// Simplified Chinese is the development language and the key of every entry. Until `activate()`,
+/// `courtText` returns that key unchanged. That startup default is safe: the app activates before
+/// it creates a session or a view, and tests that never activate keep asserting the old Chinese
+/// sentences. It is not the locale fallback. After `activate()`, a preferred list with no supported
+/// language (Spanish only, or an empty list) resolves to English, the store's primary locale.
+/// A missing catalog entry still shows the Simplified Chinese source, which is a gap in the table,
+/// not a locale choice.
 ///
 /// en-US and en-GB share the `en` strings. Region still selects dates and decimal separators
 /// (`en_GB` vs `en_US`). An unsupported preferred language (for example Spanish) stays Simplified
@@ -39,11 +41,15 @@ public struct CourtLocaleChoice: Equatable, Sendable {
     public var formatLocale: Locale { Locale(identifier: formatIdentifier) }
 
     public static let simplifiedChinese = CourtLocaleChoice(language: .zhHans, formatIdentifier: "zh_CN")
+    /// Store primary locale is en-US. Used only when the preferred list has no supported language.
+    public static let english = CourtLocaleChoice(language: .en, formatIdentifier: "en_US")
 }
 
 public enum CourtLocale {
     /// `COURT_LANGUAGE` wins (screenshot and UI-test runs). Otherwise the first preferred language
-    /// we have copy for. Anything else, including an empty list, is Simplified Chinese.
+    /// we have copy for. Simplified Chinese and Traditional Chinese stay explicit. If the list has
+    /// no supported language at all, including an empty list, the result is English (`en_US`),
+    /// matching the store's primary locale.
     public static func resolve(preferred: [String], environment: [String: String] = [:]) -> CourtLocaleChoice {
         if let forced = environment["COURT_LANGUAGE"], !forced.isEmpty, let choice = parse(forced) {
             return choice
@@ -51,7 +57,7 @@ public enum CourtLocale {
         for tag in preferred {
             if let choice = parse(tag) { return choice }
         }
-        return .simplifiedChinese
+        return .english
     }
 
     /// One BCP-47 tag. `nil` when this app has no strings for it.
@@ -86,7 +92,10 @@ public enum CourtLocale {
 }
 
 public enum CourtCopy {
-    /// Set by the app at launch. Tests leave it nil and therefore stay on Simplified Chinese.
+    /// Set by `activate()` at app launch. Until then the choice stays Simplified Chinese, so a
+    /// string read during process startup is the canonical key and unit tests that never activate
+    /// keep the wording they already assert. The app calls `activate()` before it builds a session
+    /// or a view, so a user does not see that startup default.
     private static let state = LockedChoice()
     @TaskLocal private static var override: CourtLocaleChoice?
 
@@ -106,8 +115,14 @@ public enum CourtCopy {
     /// Runs `body` in another language without touching the process-wide choice. Safe next to tests
     /// that still expect Simplified Chinese.
     public static func withLanguage<T>(_ tag: String, _ body: () throws -> T) rethrows -> T {
-        let choice = CourtLocale.parse(tag) ?? .simplifiedChinese
+        let choice = CourtLocale.parse(tag) ?? .english
         return try $override.withValue(choice, operation: body)
+    }
+
+    /// Clears `activate()` so a test can prove the pre-launch default again. Does not touch a
+    /// `withLanguage` override on the current task.
+    public static func resetActivationForTesting() {
+        state.clear()
     }
 
     public static func text(_ source: String) -> String {
@@ -176,6 +191,7 @@ public enum CourtCopy {
         private var value: CourtLocaleChoice?
         var current: CourtLocaleChoice? { lock.lock(); defer { lock.unlock() }; return value }
         func set(_ choice: CourtLocaleChoice) { lock.lock(); value = choice; lock.unlock() }
+        func clear() { lock.lock(); value = nil; lock.unlock() }
     }
 }
 

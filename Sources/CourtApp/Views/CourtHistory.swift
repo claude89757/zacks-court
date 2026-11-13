@@ -257,8 +257,8 @@ struct SessionDetail: View {
                         CourtMetric(title: courtText("击球"), value: session.tennisEvents.map { "\($0.count)" } ?? "—", unit: courtText("拍"))
                     }
                     if session.state == .interrupted { CourtNotice(text: courtText("这次记录意外中断，已保留中断前保存的数据。"), warning: true) }
-                    if let version = session.tennisModelVersion { Text(courtText("分析模型 ") + version).font(.caption).foregroundStyle(CourtStyle.muted).textSelection(.enabled) }
-                    if let camera = session.capturedOn { Text(courtText("机位：") + camera).font(.caption).foregroundStyle(CourtStyle.muted) }
+                    if let version = session.tennisModelVersion { Text(courtText("分析模型 ") + CourtCopy.stored(version)).font(.caption).foregroundStyle(CourtStyle.muted).textSelection(.enabled) }
+                    if let camera = session.capturedOn { Text(courtText("机位：") + CourtCopy.stored(camera)).font(.caption).foregroundStyle(CourtStyle.muted) }
                     analysisGaps
                 }
                 TennisAnalysisOverview(events: session.tennisEvents ?? [],
