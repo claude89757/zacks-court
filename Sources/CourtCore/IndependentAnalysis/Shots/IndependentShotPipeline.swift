@@ -247,7 +247,9 @@ public enum IndependentShotPipeline {
             guard let side = shots[i].hitterSide, let b = pairs[i].0.bounce, abs(b.ground.y - IndependentCourt.netY) <= IndependentShotFlights.ServeSpeed.netBounceY else { continue }
             let job = pairs[i].0, near = side == "near", cam = cameras[shots[i].segment]
             if let r = cached(i, near: near, hypothesis: 4, { IndependentShotFlights.serveNetRefit(job, near: near, camera: cam) }) {
-                applyServeSpeed(r, to: &shots[i]); shots[i].bounceFound = false; shots[i].serveSpeedFrom = "net"
+                // clear the tracker's net-foot bounce like v24: rows()/HawkEye key off bounceGround, not bounceFound
+                applyServeSpeed(r, to: &shots[i]); shots[i].bounceFound = false; shots[i].bounceGround = nil; shots[i].tBounce = nil
+                shots[i].serveSpeedFrom = "net"
             }
         }
         // serves into the net the tracker did not split (v24): the track drops at the foot of the net
@@ -553,6 +555,9 @@ public enum IndependentShotPipeline {
         s.landSpeedKmh = r.landSpeedKmh; s.landY = r.landY
         if r.speedAnchor == .serveBounce {
             s.bounceFound = true; s.bounceGround = r.bounceGround; s.tBounce = r.tBounce
+        } else if r.speedAnchor == .serveNet {
+            // serveNetRefit clears the bounce; honour it so a net-foot tracker point cannot become a landing
+            s.bounceFound = false; s.bounceGround = nil; s.tBounce = nil
         }
     }
 
