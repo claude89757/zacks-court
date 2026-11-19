@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v36"
+    public static let rulesVersion = "independent-shots-v37"
 
     /// Median image step of a run of track points, pixels per frame (0 for fewer than two points).
     static func imageSpeed(_ P: [IndependentTrackPoint]) -> Double {

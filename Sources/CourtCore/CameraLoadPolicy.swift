@@ -4,7 +4,8 @@ import Foundation
 /// 1080p60 capture or recording; it trims preview, auxiliary detection and analysis instead.
 ///
 /// | Level | Trigger | Effect |
-/// | L1 | thermal fair, camera pressure fair, Low Power Mode, or analysis lag | preview 1 frame/s, person detection off (in-house: slower) |
+/// | L0 | nominal or fair thermal state with no other demand | normal preview and analysis cadence |
+/// | L1 | camera pressure fair, Low Power Mode, or sustained analysis lag | preview 1 frame/s, person detection off (in-house: slower) |
 /// | L2 | serious, or analysis lag that L1 did not clear | preview off, court refresh every 10 s, bounce localization off |
 /// | L3 | critical | analysis paused, recording continues; the session records an analysis gap |
 /// | L4 | camera pressure shutdown | the system is about to stop the camera; the session pauses |
@@ -49,13 +50,13 @@ public struct CameraLoadPolicy: Sendable {
         return (raw.hasPrefix(prefix) ? String(raw.dropFirst(prefix.count)) : raw).lowercased()
     }
 
-    static func thermalLevel(_ thermal: String) -> Int { ["fair": 1, "serious": 2, "critical": 3][thermal] ?? 0 }
+    static func thermalLevel(_ thermal: String) -> Int { ["serious": 2, "critical": 3][thermal] ?? 0 }
     static func pressureLevel(_ pressure: String?) -> Int {
         pressure.flatMap { ["fair": 1, "serious": 2, "critical": 3, "shutdown": 4][pressureName($0)] } ?? 0
     }
 
-    /// At mild warmth the core serve observations can continue while preview and auxiliary people
-    /// detection shed load. Check the live inputs even when a different cause holds the same level.
+    /// During the L1 recovery minute, resume serve observations as soon as the limiting signal clears.
+    /// A steady fair thermal state already runs everything at L0.
     public func allowsServeDetailAtL1(on device: CameraDeviceState) -> Bool {
         guard level == 1, lagLevel == 0, !device.lowPowerMode,
               device.thermal == "fair" || device.thermal == "nominal" else { return false }
@@ -75,7 +76,7 @@ public struct CameraLoadPolicy: Sendable {
         case 3: return (3, (heat ? "机位过热" : "机位相机负载过高") + "：实时分析暂停，录像继续；这段时间的拍次保持为空，结束后可在历史记录里离线补算。" + fix)
         case 2: return (2, cause + "，预览关闭，部分击球可能缺少速度或落点。" + fix)
         case 1: return (1, source == .lowPower ? "低电量模式下，预览降为每秒 1 张，辅助检测减少。"
-                         : (heat ? "机位偏暖" : "机位相机负载偏高") + "，预览降为每秒 1 张，辅助检测减少。")
+                         : "机位相机负载偏高，预览降为每秒 1 张，辅助检测减少。")
         default: return (0, nil)
         }
     }
@@ -91,10 +92,8 @@ public struct CameraLoadPolicy: Sendable {
 
     static func cause(thermal: String, pressure: String?, lowPower: Bool) -> Cause {
         let thermalLevel = Self.thermalLevel(thermal), pressureLevel = Self.pressureLevel(pressure)
-        // At L1 pressure or Low Power Mode also curtails serve detail. Name the limiting signal
-        // when mild warmth is present at the same time.
-        if pressureLevel > thermalLevel || (pressureLevel == 1 && thermalLevel == 1) { return .pressure }
-        return lowPower && thermalLevel <= 1 && pressureLevel == 0 ? .lowPower : .heat
+        if pressureLevel > thermalLevel { return .pressure }
+        return lowPower && thermalLevel == 0 ? .lowPower : .heat
     }
 
     static func reason(level: Int, cause: Cause) -> String? {
@@ -104,7 +103,9 @@ public struct CameraLoadPolicy: Sendable {
         case .lag: return lagReason(level: level)
         case .pressure: return target(thermal: "nominal", pressure: name, lowPower: false).reason
         case .lowPower: return target(thermal: "nominal", pressure: nil, lowPower: true).reason
-        case .heat: return target(thermal: name, pressure: nil, lowPower: false).reason
+        case .heat:
+            if level == 1 { return "机位温度回落，预览暂为每秒 1 张，逐步恢复全速。" }
+            return target(thermal: name, pressure: nil, lowPower: false).reason
         }
     }
 
@@ -135,8 +136,10 @@ public struct CameraLoadPolicy: Sendable {
         guard let since = belowSince else { belowSince = now; return false }
         guard now - since >= Self.recoverySeconds else { return false }
         level -= 1; belowSince = level > target ? now : nil
+        if level == 0 { cause = nil }
+        else if level == device.level { cause = deviceCause }
+        else if level == lagLevel { cause = .lag }
         reason = cause.flatMap { Self.reason(level: level, cause: $0) }
-        if level == 0 { reason = nil; cause = nil }
         return true
     }
 

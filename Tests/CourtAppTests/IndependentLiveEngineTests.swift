@@ -181,7 +181,7 @@ final class IndependentLiveEngineTests: XCTestCase {
         XCTAssertFalse(engine.stats.pictureMoving, "still again for longer than the hold")
     }
 
-    /// At mild warmth the 3 Hz person reads share the 10 Hz serve frames. L1 for power, pressure
+    /// During L1 recovery the 3 Hz person reads share the 10 Hz serve frames. L1 for power, pressure
     /// or lag and all L2 cases shed the extra reads. A source that outruns the worker does too.
     func testLoadSheddingSlowsPersonFramesInsteadOfStoppingThem() throws {
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -192,12 +192,12 @@ final class IndependentLiveEngineTests: XCTestCase {
         let assets = try IndependentBallModelAssets.load(directory: staged, variant: .fp16)
         let camera = IndependentPinholeCamera.lookingAt(SIMD3(0, 11, 0), from: SIMD3(0.3, -6.4, 3.1), f: 1300)
         let frame = try nv12(y: 90, cb: 128, cr: 128)
-        func samples(people: Bool, bounces: Bool, warm: Bool = false, backlog: Bool = false) throws -> CameraSideAnalyzer.Metrics {
+        func samples(people: Bool, bounces: Bool, recovering: Bool = false, backlog: Bool = false) throws -> CameraSideAnalyzer.Metrics {
             let analyzer = CameraSideAnalyzer(configuration: nil, independent: .init(assets: assets, camera: camera, automaticCourt: false))
             let deadline = Date().addingTimeInterval(60)
             while !analyzer.currentMetrics.ready && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
             XCTAssertTrue(analyzer.currentMetrics.ready)
-            analyzer.preservesServeDetailAtL1 = warm
+            analyzer.preservesServeDetailAtL1 = recovering
             analyzer.isDetectingPeople = people; analyzer.isLocalizingBounces = bounces
             let stream = UUID()
             let resume = DispatchSemaphore(value: 0)
@@ -218,15 +218,15 @@ final class IndependentLiveEngineTests: XCTestCase {
         }
         let normal = try samples(people: true, bounces: true)
         XCTAssertEqual([normal.copies, normal.poseCopies, normal.poseFramesLive], [10, 10, 20])
-        let mild = try samples(people: false, bounces: true, warm: true)
-        XCTAssertEqual([mild.copies, mild.poseCopies, mild.poseFramesLive], [6, 14, 20])
+        let recovery = try samples(people: false, bounces: true, recovering: true)
+        XCTAssertEqual([recovery.copies, recovery.poseCopies, recovery.poseFramesLive], [6, 14, 20])
         let limited = try samples(people: false, bounces: true)
         XCTAssertEqual([limited.copies, limited.poseCopies, limited.poseFramesLive], [6, 0, 0])
-        let serious = try samples(people: false, bounces: false, warm: true)
+        let serious = try samples(people: false, bounces: false, recovering: true)
         XCTAssertEqual([serious.copies, serious.poseCopies, serious.poseFramesLive], [4, 0, 0])
-        let behind = try samples(people: false, bounces: true, warm: true, backlog: true)
+        let behind = try samples(people: false, bounces: true, recovering: true, backlog: true)
         XCTAssertGreaterThan(behind.poseSkippedBehind, 0)
-        XCTAssertLessThan(behind.poseFramesLive, mild.poseFramesLive)
-        XCTAssertEqual(behind.copies, mild.copies)
+        XCTAssertLessThan(behind.poseFramesLive, recovery.poseFramesLive)
+        XCTAssertEqual(behind.copies, recovery.copies)
     }
 }

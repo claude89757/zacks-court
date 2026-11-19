@@ -28,7 +28,7 @@ public struct IndependentLiveConfiguration: Sendable {
     /// players whose feet leave the frame are the common case). On by default.
     public var poseFill = true
     /// Region poses of the players standing where a serve is hit, every this many frames (6 = 10 Hz at
-    /// 60 fps; 0 turns them off). At mild warmth, person reads share these frames. The analyzer
+    /// 60 fps; 0 turns them off). At L0, person reads share these frames every 12 frames. The analyzer
     /// can skip region poses and the receiver crop when the queue backs up or the device is under pressure.
     public var poseInterval = 6
     public init(loadAssets: @escaping @Sendable () throws -> IndependentBallModelAssets, computeUnits: MLComputeUnits = .all,

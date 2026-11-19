@@ -337,4 +337,30 @@ final class IndependentLiveCourtTests: XCTestCase {
         let moved = IndependentPinholeCamera.lookingAt(SIMD3(0, 11, 0), from: SIMD3(0.6, -6.4, 3.1), f: 1400)
         XCTAssertTrue(live.catchUp(now: 13.25, camera: moved, people: IndependentPeople([:])).isEmpty, "frozen shots are not revised or duplicated")
     }
+
+    func testReceiverBatchMayArriveBeforeEarlierFullFrameObservations() throws {
+        let camera = IndependentPinholeCamera.lookingAt(SIMD3(0, 11, 0), from: SIMD3(0.3, -6.4, 3.1), f: 1400)
+        let wide = syntheticShot(camera: camera, t0: 600)
+        let p = wide[wide.count / 2]
+        let detail = [IndependentShotCandidate(decodeIndex: p.decodeIndex, time: p.time, u: p.u, v: p.v,
+                                               peak: p.peak, fromReceiverCrop: true)]
+        let people = IndependentPeople([:])
+        var ordered = IndependentLiveShots(), overlapping = IndependentLiveShots()
+        ordered.append(wide); ordered.append(detail)
+        overlapping.append(detail); overlapping.append(wide)
+        ordered.update(now: 13, camera: camera, people: people)
+        overlapping.update(now: 13, camera: camera, people: people)
+        let expected = try XCTUnwrap(ordered.published.first { $0.shot.reportedSpeedKmh != nil })
+        let actual = try XCTUnwrap(overlapping.published.first { $0.shot.reportedSpeedKmh != nil })
+        XCTAssertEqual(actual.shot.tHit, expected.shot.tHit)
+        XCTAssertEqual(actual.shot.reportedSpeedKmh, expected.shot.reportedSpeedKmh)
+
+        var moved = IndependentLiveShots()
+        moved.trim(keeping: 0, now: 12)
+        moved.append(detail); moved.append(wide)
+        XCTAssertTrue(moved.catchUp(now: 13, camera: camera, people: people).isEmpty)
+        moved.reset()
+        moved.append(detail); moved.append(wide)
+        XCTAssertFalse(moved.catchUp(now: 13, camera: camera, people: people).isEmpty)
+    }
 }

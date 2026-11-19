@@ -151,7 +151,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         set { lock.lock(); personEnabled = newValue; lock.unlock() }
     }
 
-    /// A mildly warm camera can keep the in-house serve cadence while auxiliary people detection is off.
+    /// The in-house serve cadence can resume during L1 recovery while auxiliary detection is still off.
     public var preservesServeDetailAtL1: Bool {
         get { lock.lock(); defer { lock.unlock() }; return serveDetailAtL1 }
         set { lock.lock(); serveDetailAtL1 = newValue; lock.unlock() }
@@ -225,10 +225,10 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             // L1 3 Hz, L2 2 Hz with rule updates once a second (docs/model-replacement-design.md §3.4).
             let base = liveConfiguration.personInterval
             let interval = shedBounces ? max(base, 30) : shedPeople ? max(base, 20) : base
-            let warm = shedPeople && !shedBounces && keepServeDetail
-            let poses = !shedBounces && (!shedPeople || warm) ? liveConfiguration.poseInterval : 0
+            let recovering = shedPeople && !shedBounces && keepServeDetail
+            let poses = !shedBounces && (!shedPeople || recovering) ? liveConfiguration.poseInterval : 0
             submitInHouse(pixelBuffer, pts: pts, streamID: streamID, restart: restartNext || resync, now: now,
-                          pending: pending, personInterval: interval, poseInterval: poses, sharePoseFrames: warm,
+                          pending: pending, personInterval: interval, poseInterval: poses, sharePoseFrames: recovering,
                           updateInterval: shedBounces ? max(1, liveConfiguration.updateInterval) : liveConfiguration.updateInterval,
                           receiver: receiver)
             restartNext = false
