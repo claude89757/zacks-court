@@ -20,7 +20,7 @@ struct PlaybackExport: Sendable {
 
     /// A shot: the clip already on this device, or a cut from the local recording.
     static func shot(_ shot: TennisShotEvent, session: CourtSession?, source: Source) -> PlaybackExport {
-        PlaybackExport(source: source, name: VideoExport.shotName(shot, session: session), what: "这一拍")
+        PlaybackExport(source: source, name: VideoExport.shotName(shot, session: session), what: courtText("这一拍"))
     }
     /// The shot's window, as the camera would cut it, out of a recording on this device.
     static func shot(_ shot: TennisShotEvent, session: CourtSession?, recording: URL, firstPTS: Double, duration: Double) -> PlaybackExport {
@@ -28,7 +28,7 @@ struct PlaybackExport: Sendable {
         return .shot(shot, session: session, source: .cut(recording: recording, firstPTS: firstPTS, duration: duration, start: window.start, end: window.end))
     }
     static func recording(_ url: URL) -> PlaybackExport {
-        PlaybackExport(source: .file(url), name: url.lastPathComponent, what: "整段录像")
+        PlaybackExport(source: .file(url), name: url.lastPathComponent, what: courtText("整段录像"))
     }
 
     /// The file to share, under `name`. Cutting reads only a few seconds of the recording.
@@ -39,7 +39,7 @@ struct PlaybackExport: Sendable {
         case .cut(let recording, let firstPTS, let duration, let start, let end):
             let into = try VideoExport.freshFolder().appendingPathComponent(name)
             let from = max(0, start - firstPTS), to = min(duration, end - firstPTS)
-            guard to > from else { throw CourtError.message("录像里没有这一拍的画面。") }
+            guard to > from else { throw CourtError.message(courtText("录像里没有这一拍的画面。")) }
             return try await ClipExport.cut(recording, firstPTS: firstPTS, from: from, to: to, into: into).url
         }
     }
@@ -76,7 +76,7 @@ enum VideoExport {
             let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyyMMdd-HHmm"
             parts.append(formatter.string(from: session.startedAt))
             let ordered = (session.tennisEvents ?? []).sorted { $0.sourcePTS < $1.sourcePTS }
-            if let index = ordered.firstIndex(where: { $0.id == shot.id }) { parts.append("第\(index + 1)拍") }
+            if let index = ordered.firstIndex(where: { $0.id == shot.id }) { parts.append(courtFormat("第%1$@拍", "\(index + 1)")) }
         }
         parts.append(shot.stroke.courtTitle)
         if let speed = shot.validSpeedKPH { parts.append("\(Int(speed.rounded()))kmh") }
@@ -88,7 +88,7 @@ enum VideoExport {
     static func saveToPhotos(_ url: URL) async throws {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else {
-            throw CourtError.message("没有存入相册的权限。可在「设置 › Zacks Court › 照片」里选「仅添加照片」。")
+            throw CourtError.message(courtText("没有存入相册的权限。可在「设置 › Zacks Court › 照片」里选「仅添加照片」。"))
         }
         try await PHPhotoLibrary.shared().performChanges {
             let request = PHAssetCreationRequest.forAsset()

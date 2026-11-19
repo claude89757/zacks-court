@@ -6,7 +6,7 @@ import Foundation
 /// line is "close", not in or out (docs/hawk-eye.md).
 public enum HawkEyeFormat: String, Codable, CaseIterable, Sendable {
     case singles, doubles
-    public var text: String { self == .singles ? "单打" : "双打" }
+    public var text: String { self == .singles ? courtText("单打") : courtText("双打") }
 }
 
 public struct HawkEyeSettings: Codable, Equatable, Sendable {
@@ -19,13 +19,13 @@ public struct HawkEyeSettings: Codable, Equatable, Sendable {
         self.enabled = enabled; self.format = format; self.farHalf = farHalf
     }
     public static let off = HawkEyeSettings()
-    public var coverageText: String { farHalf ? "全场" : "仅近端半场" }
+    public var coverageText: String { farHalf ? courtText("全场") : courtText("仅近端半场") }
 }
 
 public enum HawkEyeCall: String, Codable, Sendable {
     case `in`, out, close
     public var text: String {
-        switch self { case .in: return "界内"; case .out: return "出界"; case .close: return "压线附近" }
+        switch self { case .in: return courtText("界内"); case .out: return courtText("出界"); case .close: return courtText("压线附近") }
     }
     public var shout: String {
         switch self { case .in: return "IN"; case .out: return "OUT"; case .close: return "CLOSE" }
@@ -36,8 +36,8 @@ public enum HawkEyeLine: String, Codable, Sendable {
     case sideline, baseline, serviceLine, centreLine
     public var text: String {
         switch self {
-        case .sideline: return "边线"; case .baseline: return "底线"
-        case .serviceLine: return "发球线"; case .centreLine: return "中线"
+        case .sideline: return courtText("边线"); case .baseline: return courtText("底线")
+        case .serviceLine: return courtText("发球线"); case .centreLine: return courtText("中线")
         }
     }
     /// Painted width, inward from the outer edge the call measures from (baselines 10 cm, the rest 5 cm).
@@ -75,9 +75,9 @@ public struct HawkEyeJudgement: Codable, Equatable, Sendable {
     public var detailText: String {
         let cm = Int(((visibleGapM ?? 0) * 100).rounded())
         switch call {
-        case .out: return "出界约 \(cm) 厘米 · \(line.text)"
-        case .in: return cm == 0 ? "界内 · 球印压在\(line.text)上" : "界内 · 距\(line.text)约 \(cm) 厘米"
-        case .close: return "离\(line.text)不到 \(Int((marginM * 100).rounded())) 厘米，无法判定"
+        case .out: return courtFormat("出界约 %1$@ 厘米 · %2$@", "\(cm)", "\(line.text)")
+        case .in: return cm == 0 ? courtFormat("界内 · 球印压在%1$@上", "\(line.text)") : courtFormat("界内 · 距%1$@约 %2$@ 厘米", "\(line.text)", "\(cm)")
+        case .close: return courtFormat("离%1$@不到 %2$@ 厘米，无法判定", "\(line.text)", "\(Int((marginM * 100).rounded()))")
         }
     }
 }
@@ -206,9 +206,9 @@ public struct HawkEyeChallenge: Codable, Equatable, Sendable {
         self.id = id; self.date = date; self.format = format; self.judgement = judgement
         self.reason = reason.map { String($0.prefix(120)) }; self.pending = pending
     }
-    public static let pendingReason = "落点还在计算，稍等片刻"
-    public static let noBounceReason = "这一拍没找到落点，无法判定界内外"
-    public static let sameHalfReason = "这一拍没有过网，不判界内外"
+    public static let pendingReason = courtText("落点还在计算，稍等片刻")
+    public static let noBounceReason = courtText("这一拍没找到落点，无法判定界内外")
+    public static let sameHalfReason = courtText("这一拍没有过网，不判界内外")
 }
 
 /// Which challenge is newest: the camera's own screen opens the replay when it changes.

@@ -1,0 +1,5 @@
+/* Permission purpose strings. Simplified Chinese in the base plist is the development language. */
+
+NSCameraUsageDescription = "Nimmt im Kameramodus auf und analysiert das Feld, oder scannt den Kopplungscode einer Anzeige.";
+NSPhotoLibraryAddUsageDescription = "Sichert eine Aufnahme oder den Clip eines Schlags in Fotos. Nur hinzufügen; die Mediathek wird nicht gelesen.";
+NSLocalNetworkUsageDescription = "Verbindet sich über ein lokales Netzwerk, einen persönlichen Hotspot oder Peer-to-Peer-WLAN mit einem anderen Gerät mit Zacks Court, oder lässt einen Browser im selben Netz die Anzeige öffnen. Überträgt Schlagdaten, eine Vorschau in niedriger Auflösung und Videoclips.";

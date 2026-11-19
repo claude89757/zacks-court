@@ -317,10 +317,10 @@ public struct IndependentShotResult: Sendable, Codable {
     /// Apply these checks to the actual endpoints chosen for display, after any serve refit.
     var speedGeometryIssue: String? {
         if let h = speedContact ?? fitHit, h.count >= 3 {
-            guard h[2] >= 0 else { return "拟合击球点低于地面，无法可信测速" }
+            guard h[2] >= 0 else { return courtText("拟合击球点低于地面，无法可信测速") }
             if stroke == "发球", let side = hitterSide {
                 let baseline = side == "near" ? 0 : IndependentCourt.length
-                guard abs(h[1] - baseline) <= IndependentStrokeRules.Serve.ownDepth else { return "测速起点偏离发球者底线" }
+                guard abs(h[1] - baseline) <= IndependentStrokeRules.Serve.ownDepth else { return courtText("测速起点偏离发球者底线") }
             }
             if bounceFound, let b = bounceGround, b.count >= 2, let tb = tBounce {
                 let net = IndependentCourt.netY, duration = tb - (speedContactTime ?? tHit)
@@ -330,7 +330,7 @@ public struct IndependentShotResult: Sendable, Codable {
                     let underNet = speedContact == nil && (fitNetZ ?? .infinity) < 0.65
                         && abs(fitNetX ?? .infinity) <= IndependentCourt.doublesHalfWidth
                     if underNet || (abs(x) <= IndependentCourt.doublesHalfWidth && z < 0.65) {
-                        return "拟合轨迹穿过球网，无法可信测速"
+                        return courtText("拟合轨迹穿过球网，无法可信测速")
                     }
                 }
             }

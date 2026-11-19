@@ -76,7 +76,7 @@ public struct CameraAutopilot: Sendable {
             log.add("zoom-set", ["applied": zoomed, "status": controller.status.zoom ?? -1,
                                  "framesIn2s": controller.counters.delivered - delivered, "error": camera.error ?? ""])
         }
-        controller.startSession(title: "AUTOPILOT 机位验证")
+        controller.startSession(title: courtText("AUTOPILOT 机位验证"))
         if camera.zoomRange != nil {
             _ = await wait(3) { camera.zoomLocked }
             camera.commitZoom(1.5)

@@ -15,7 +15,7 @@ let package = Package(
     targets: [
         .target(name: "CourtCore", resources: [.copy("Web"), .copy("Notices")]),
         .target(name: "CourtApp", dependencies: ["CourtCore"], linkerSettings: [.linkedFramework("AVKit")]),
-        .executableTarget(name: "CourtMac", dependencies: ["CourtApp"]),
+        .executableTarget(name: "CourtMac", dependencies: ["CourtApp", "CourtCore"]),
         .executableTarget(name: "CourtProbe", dependencies: ["CourtCore"]),
         .executableTarget(name: "CourtAnalyze", dependencies: ["CourtCore"]),
         .executableTarget(name: "CourtCoreChecks", dependencies: ["CourtCore"], path: "Tests/CourtCoreTests"),

@@ -67,16 +67,17 @@ public struct CameraLoadPolicy: Sendable {
         let thermalLevel = Self.thermalLevel(thermal), pressureLevel = Self.pressureLevel(pressure)
         let level = max(thermalLevel, pressureLevel, lowPower ? 1 : 0)
         // Name the actual cause: heat and camera pressure need different next steps.
+        // Fair warmth is not a level (see thermalLevel). Do not bring back the old "偏暖就降预览" sentence.
         let source = Self.cause(thermal: thermal, pressure: pressure, lowPower: lowPower)
         let heat = source == .heat
-        let cause = heat ? "机位温度偏高" : "机位相机负载高"
-        let fix = heat ? "把机位移到阴凉处、避开阳光直射，取下手机壳。" : "关掉机位上其他占用相机或耗电的 App。"
+        let cause = heat ? courtText("机位温度偏高") : courtText("机位相机负载高")
+        let fix = heat ? courtText("把机位移到阴凉处、避开阳光直射，取下手机壳。") : courtText("关掉机位上其他占用相机或耗电的 App。")
         switch level {
-        case 4: return (4, "相机负载达到上限，系统即将停止相机，记录将暂停：\(fix)然后点「开始采集」，再点「继续」。")
-        case 3: return (3, (heat ? "机位过热" : "机位相机负载过高") + "：实时分析暂停，录像继续；这段时间的拍次保持为空，结束后可在历史记录里离线补算。" + fix)
-        case 2: return (2, cause + "，预览关闭，部分击球可能缺少速度或落点。" + fix)
-        case 1: return (1, source == .lowPower ? "低电量模式下，预览降为每秒 1 张，辅助检测减少。"
-                         : "机位相机负载偏高，预览降为每秒 1 张，辅助检测减少。")
+        case 4: return (4, courtFormat("相机负载达到上限，系统即将停止相机，记录将暂停：%1$@然后点「开始采集」，再点「继续」。", "\(fix)"))
+        case 3: return (3, (heat ? courtText("机位过热") : courtText("机位相机负载过高")) + courtText("：实时分析暂停，录像继续；这段时间的拍次保持为空，结束后可在历史记录里离线补算。") + fix)
+        case 2: return (2, cause + courtText("，预览关闭，部分击球可能缺少速度或落点。") + fix)
+        case 1: return (1, source == .lowPower ? courtText("低电量模式下，预览降为每秒 1 张，辅助检测减少。")
+                         : courtText("机位相机负载偏高，预览降为每秒 1 张，辅助检测减少。"))
         default: return (0, nil)
         }
     }
@@ -84,8 +85,8 @@ public struct CameraLoadPolicy: Sendable {
     /// The reason for a level raised by analysis lag. It names lag, not heat: cooling the phone is not the fix.
     public static func lagReason(level: Int) -> String? {
         switch level {
-        case 1: return "实时分析跟不上画面：预览降为每秒 1 张、人员检测减少，让分析追上；录像不受影响。关掉机位上其他 App 也有帮助。"
-        case 2: return "实时分析仍跟不上画面：预览关闭、辅助检测再减少，结果出得慢一些，部分落点可能为空；录像不受影响。关掉机位上其他 App 也有帮助。"
+        case 1: return courtText("实时分析跟不上画面：预览降为每秒 1 张、人员检测减少，让分析追上；录像不受影响。关掉机位上其他 App 也有帮助。")
+        case 2: return courtText("实时分析仍跟不上画面：预览关闭、辅助检测再减少，结果出得慢一些，部分落点可能为空；录像不受影响。关掉机位上其他 App 也有帮助。")
         default: return nil
         }
     }
@@ -104,7 +105,7 @@ public struct CameraLoadPolicy: Sendable {
         case .pressure: return target(thermal: "nominal", pressure: name, lowPower: false).reason
         case .lowPower: return target(thermal: "nominal", pressure: nil, lowPower: true).reason
         case .heat:
-            if level == 1 { return "机位温度回落，预览暂为每秒 1 张，逐步恢复全速。" }
+            if level == 1 { return courtText("机位温度回落，预览暂为每秒 1 张，逐步恢复全速。") }
             return target(thermal: name, pressure: nil, lowPower: false).reason
         }
     }

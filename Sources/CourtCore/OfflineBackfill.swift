@@ -60,7 +60,7 @@ public enum OfflineBackfill {
     private static func analyse(url: URL, recording: StoredRecording, from start: Double, to end: Double,
                                 configuration: TennisAnalysisConfiguration, progress: (Double) -> Void) async throws -> (rows: [TennisShotEvent], frames: Int) {
         let asset = AVURLAsset(url: url)
-        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw CourtError.message("录像没有视频轨道：\(recording.filename)") }
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw CourtError.message(courtFormat("录像没有视频轨道：%1$@", "\(recording.filename)")) }
         let fps = Double(try await track.load(.nominalFrameRate))
         var config = configuration
         if fps.isFinite, fps > 0 { config.nominalFPS = fps }
@@ -69,7 +69,7 @@ public enum OfflineBackfill {
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange])
         output.alwaysCopiesSampleData = false
         reader.add(output)
-        guard reader.startReading() else { throw reader.error ?? CourtError.message("无法读取录像：\(recording.filename)") }
+        guard reader.startReading() else { throw reader.error ?? CourtError.message(courtFormat("无法读取录像：%1$@", "\(recording.filename)")) }
         let stream = recording.streamID ?? UUID()
         let from = start - warmupSeconds
         var first: Double?, rows: [UUID: TennisShotEvent] = [:], frames = 0
@@ -91,7 +91,7 @@ public enum OfflineBackfill {
             frames += 1
             if frames % 60 == 0 { progress(min(1, max(0, (pts - from) / max(0.001, end + 1 - from)))) }
         }
-        if reader.status == .failed { throw reader.error ?? CourtError.message("录像解码失败：\(recording.filename)") }
+        if reader.status == .failed { throw reader.error ?? CourtError.message(courtFormat("录像解码失败：%1$@", "\(recording.filename)")) }
         if let final = engine.finish() { keep(final) }
         return (Array(rows.values), frames)
     }

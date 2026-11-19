@@ -83,18 +83,18 @@ public struct CourtWorkspace: View {
             CourtMetricFocus(model: model, metric: metric)
         }
         #endif
-        .confirmationDialog("结束当前任务并返回模式选择？", isPresented: $confirmLeave, titleVisibility: .visible) {
-            Button("结束并返回", role: .destructive) { Task { await model.leaveRole() } }
-        } message: { Text("会先结束记录、保存录像，再断开当前连接。") }
-        .confirmationDialog("结束本次记录？", isPresented: $confirmFinish, titleVisibility: .visible) {
-            Button("结束并保存", role: .destructive) { Task { await model.finishSession() } }
-        } message: { Text("录像、逐拍结果和标记会保存在历史记录中。") }
+        .confirmationDialog(courtText("结束当前任务并返回模式选择？"), isPresented: $confirmLeave, titleVisibility: .visible) {
+            Button(courtText("结束并返回"), role: .destructive) { Task { await model.leaveRole() } }
+        } message: { Text(courtText("会先结束记录、保存录像，再断开当前连接。")) }
+        .confirmationDialog(courtText("结束本次记录？"), isPresented: $confirmFinish, titleVisibility: .visible) {
+            Button(courtText("结束并保存"), role: .destructive) { Task { await model.finishSession() } }
+        } message: { Text(courtText("录像、逐拍结果和标记会保存在历史记录中。")) }
         .disabled(model.isBusy)
         .overlay {
             if model.isBusy {
                 ZStack {
                     CourtStyle.blockingScrim.ignoresSafeArea()
-                    ProgressView("正在保存并关闭当前任务…")
+                    ProgressView(courtText("正在保存并关闭当前任务…"))
                         .padding(CourtStyle.Space.xl).background(CourtStyle.panel, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.panel))
                 }
             }
@@ -154,7 +154,7 @@ public struct CourtWorkspace: View {
                 CourtLogoMark(size: min(logoSize, 64))
                 VStack(alignment: .leading, spacing: CourtStyle.Space.xs) {
                     brand
-                    Text("把每一次上场，留下来。").font(.caption).foregroundStyle(CourtStyle.muted)
+                    Text(courtText("把每一次上场，留下来。")).font(.caption).foregroundStyle(CourtStyle.muted)
                 }
                 Spacer(minLength: CourtStyle.Space.s)
                 historyButton
@@ -173,7 +173,7 @@ public struct CourtWorkspace: View {
             // The portrait toolbar's back button and connection pill, so both orientations say the
             // connection state the same way; the pill opens pairing as well.
             HStack(spacing: CourtStyle.Space.m) {
-                CourtIconButton(systemImage: "chevron.left", label: "切换模式", action: leave)
+                CourtIconButton(systemImage: "chevron.left", label: courtText("切换模式"), action: leave)
                 connectionPill
                 Spacer(minLength: 0)
                 if !model.connected { pairingButton() }
@@ -270,7 +270,7 @@ public struct CourtWorkspace: View {
     /// Back, the connection state (tap for pairing) and history, in one row.
     private var serverToolbar: some View {
         HStack(spacing: CourtStyle.Space.s) {
-            CourtIconButton(systemImage: "chevron.left", label: "切换模式", action: leave)
+            CourtIconButton(systemImage: "chevron.left", label: courtText("切换模式"), action: leave)
             connectionPill
             Spacer(minLength: 0)
             if model.canChallenge { ChallengeButton(model: model).fixedSize() }
@@ -292,12 +292,12 @@ public struct CourtWorkspace: View {
                 if !dynamicTypeSize.isAccessibilitySize { Image(systemName: "qrcode").font(.callout).foregroundStyle(CourtStyle.muted) }
             }.frame(minHeight: 44).contentShape(Rectangle())
         }.buttonStyle(.plain)
-            .accessibilityLabel("配对与连接，" + connectionTitle)
+            .accessibilityLabel(courtText("配对与连接，") + connectionTitle)
             .accessibilityIdentifier("court.server.connection")
     }
 
     private var connectionTitle: String {
-        model.isLive ? "机位实时" : model.connected ? "已连接 · 等待采集" : "未连接机位"
+        model.isLive ? courtText("机位实时") : model.connected ? courtText("已连接 · 等待采集") : courtText("未连接机位")
     }
 
     /// The only thing a display without a camera shows besides the record panel: no empty panels.
@@ -306,12 +306,12 @@ public struct CourtWorkspace: View {
             Image(systemName: "qrcode.viewfinder").font(.system(size: 36, weight: .light)).foregroundStyle(CourtStyle.green)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: CourtStyle.Space.s) {
-                Text("连接机位").font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
-                Text("点「连接机位」显示这台看板的二维码，再在机位上点「连接」→「扫码连接 App 看板」。连上后，这里显示实时画面、球速、落点和逐拍记录。")
+                Text(courtText("连接机位")).font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                Text(courtText("点「连接机位」显示这台看板的二维码，再在机位上点「连接」→「扫码连接 App 看板」。连上后，这里显示实时画面、球速、落点和逐拍记录。"))
                     .font(.callout).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
             Button { sheet = .pairing } label: {
-                Label("连接机位", systemImage: "qrcode").frame(maxWidth: .infinity)
+                Label(courtText("连接机位"), systemImage: "qrcode").frame(maxWidth: .infinity)
             }.buttonStyle(CourtButton(primary: true)).accessibilityIdentifier("court.server.connect")
             Text(model.serverStatus).font(.caption).foregroundStyle(CourtStyle.muted)
         }
@@ -328,7 +328,7 @@ public struct CourtWorkspace: View {
                         .frame(width: 44, height: 44)
                         .background(CourtStyle.scrim, in: Circle()).contentShape(Circle())
                 }.buttonStyle(.plain).padding(CourtStyle.Space.s)
-                    .accessibilityLabel("实时画面")
+                    .accessibilityLabel(courtText("实时画面"))
                     .accessibilityIdentifier("court.live-video.open")
             }
     }
@@ -338,7 +338,7 @@ public struct CourtWorkspace: View {
 
     private var healthCard: some View {
         CameraHealthCard(model: model, showPeople: $showPeople) {
-            Button { sheet = .handedness } label: { Label("持拍手", systemImage: "hand.raised").frame(maxWidth: .infinity) }
+            Button { sheet = .handedness } label: { Label(courtText("持拍手"), systemImage: "hand.raised").frame(maxWidth: .infinity) }
                 .buttonStyle(CourtButton()).accessibilityIdentifier("court.handedness.open")
         }
     }
@@ -366,25 +366,25 @@ public struct CourtWorkspace: View {
     private func roleSelection(wide: Bool) -> some View {
         VStack(alignment: .leading, spacing: 28) {
             VStack(alignment: .leading, spacing: 12) {
-                Text("你的球场。\n你的视角。")
+                Text(courtText("你的球场。n你的视角。"))
                     .font(.largeTitle.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                Text("连接场边机位，记录球速、落点与击球动作。")
+                Text(courtText("连接场边机位，记录球速、落点与击球动作。"))
                     .font(.body).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
             }.padding(.vertical, 16)
             let columns = Array(repeating: GridItem(.flexible(), spacing: 18), count: wide ? 2 : 1)
             LazyVGrid(columns: columns, spacing: 18) {
-                roleCard(.camera, title: "机位", subtitle: "留在场边，录像并实时分析", icon: "video", number: "01",
-                         details: "用这台手机的后置摄像头录像，并在本机实时分析球速、落点与动作。录像和逐拍结果保存在机位上，没有看板也能单独记录。",
+                roleCard(.camera, title: courtText("机位"), subtitle: courtText("留在场边，录像并实时分析"), icon: "video", number: "01",
+                         details: courtText("用这台手机的后置摄像头录像，并在本机实时分析球速、落点与动作。录像和逐拍结果保存在机位上，没有看板也能单独记录。"),
                          warning: CameraModel.isSupportedDevice ? nil : CameraModel.unsupportedReason)
-                roleCard(.server, title: "看板", subtitle: "实时看数据，远程控制", icon: "viewfinder", number: "02",
-                         details: "实时查看机位发来的球速、落点与动作，远程开始、暂停和结束记录。逐拍结果同步保存一份，方便回看。")
+                roleCard(.server, title: courtText("看板"), subtitle: courtText("实时看数据，远程控制"), icon: "viewfinder", number: "02",
+                         details: courtText("实时查看机位发来的球速、落点与动作，远程开始、暂停和结束记录。逐拍结果同步保存一份，方便回看。"))
             }
             CourtPanel {
                 HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "wifi").foregroundStyle(CourtStyle.green).font(.title3)
                     VStack(alignment: .leading, spacing: 7) {
-                        Text("两台设备，一个球场").font(.headline)
-                        Text("一台选择机位，点「连接」显示二维码；另一台设备（安卓、iPhone、平板或电脑都行）用相机或浏览器扫码就成了看板，两台设备连同一 Wi-Fi 或机位的个人热点。需要加密传输时，也可以在 iPhone 或 Mac 上选择「看板」，让机位扫它的二维码配对，开启点对点直连后不必在同一网络。机位需要 iPhone 13 或更新的 iPhone。断网时机位继续录像和分析，重连后自动补齐。")
+                        Text(courtText("两台设备，一个球场")).font(.headline)
+                        Text(courtText("一台选择机位，点「连接」显示二维码；另一台设备（安卓、iPhone、平板或电脑都行）用相机或浏览器扫码就成了看板，两台设备连同一 Wi-Fi 或机位的个人热点。需要加密传输时，也可以在 iPhone 或 Mac 上选择「看板」，让机位扫它的二维码配对，开启点对点直连后不必在同一网络。机位需要 iPhone 13 或更新的 iPhone。断网时机位继续录像和分析，重连后自动补齐。"))
                             .font(.callout).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -396,10 +396,10 @@ public struct CourtWorkspace: View {
                     videoImportModel = makeVideoImportModel()
                     sheet = .importVideo
                 } label: {
-                    Label("导入视频分析", systemImage: "film.stack").frame(maxWidth: .infinity)
+                    Label(courtText("导入视频分析"), systemImage: "film.stack").frame(maxWidth: .infinity)
                 }.buttonStyle(CourtButton())
                     .accessibilityIdentifier("court.import.open")
-                Text("不在球场也能试：从相册或文件选一段网球视频，用机位同一套模型逐拍分析，结果存进历史记录。")
+                Text(courtText("不在球场也能试：从相册或文件选一段网球视频，用机位同一套模型逐拍分析，结果存进历史记录。"))
                     .font(.callout).foregroundStyle(CourtStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -411,16 +411,16 @@ public struct CourtWorkspace: View {
                     independentVideoModel = IndependentVideoLabModel()
                     sheet = .independentVideo
                 } label: {
-                    Label("本地视频实验", systemImage: "film").frame(maxWidth: .infinity)
+                    Label(courtText("本地视频实验"), systemImage: "film").frame(maxWidth: .infinity)
                 }.buttonStyle(CourtButton())
                     .accessibilityIdentifier("court.independent.open")
-                Text("实验功能：导入本机视频，逐帧查看自研模型找到的球和没找到球的帧。")
+                Text(courtText("实验功能：导入本机视频，逐帧查看自研模型找到的球和没找到球的帧。"))
                     .font(.callout).foregroundStyle(CourtStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             #endif
             Button { openHistory() } label: {
-                Label("查看历史记录", systemImage: "clock.arrow.circlepath").frame(maxWidth: .infinity)
+                Label(courtText("查看历史记录"), systemImage: "clock.arrow.circlepath").frame(maxWidth: .infinity)
             }.buttonStyle(CourtButton())
         }
     }
@@ -433,15 +433,15 @@ public struct CourtWorkspace: View {
 
     /// S家 / 自研 switch, for comparing the two chains during the beta.
     private var analysisBackendPanel: some View {
-        CourtPanel("分析模型") {
+        CourtPanel(courtText("分析模型")) {
             CourtSegment(options: model.bundledBackends,
                          selection: Binding(get: { model.analysisBackend }, set: { model.setAnalysisBackend($0) }),
                          title: \.title, identifier: { "court.analysis.backend.\($0.rawValue)" })
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("court.analysis.backend")
             Text(model.analysisBackend == .sjia
-                 ? "S家模型（默认）：机位在记录中实时分析球速、落点与动作。"
-                 : "自研模型：机位在记录中实时分析球速、落点与动作，球场从画面白线自动识别（约需 7 秒以上）。结果是模型估计，精度仍在和 S家对照；自研模式下不提供记录后的离线补算。")
+                 ? courtText("S家模型（默认）：机位在记录中实时分析球速、落点与动作。")
+                 : courtText("自研模型：机位在记录中实时分析球速、落点与动作，球场从画面白线自动识别（约需 7 秒以上）。结果是模型估计，精度仍在和 S家对照；自研模式下不提供记录后的离线补算。"))
                 .font(.callout).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("court.analysis.backend.note")
         }
@@ -467,7 +467,7 @@ public struct CourtWorkspace: View {
                             .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
                     }
                 }
-                HStack { Text("进入模式").font(.callout.weight(.semibold)); Spacer(); Image(systemName: "arrow.up.right") }
+                HStack { Text(courtText("进入模式")).font(.callout.weight(.semibold)); Spacer(); Image(systemName: "arrow.up.right") }
                     .padding(.top, 8)
             }.padding(dynamicTypeSize.isAccessibilitySize ? CourtStyle.Space.l : 26).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .background(CourtStyle.panel, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.panel))
@@ -479,19 +479,19 @@ public struct CourtWorkspace: View {
 
     private func pairingButton(fill: Bool = false) -> some View {
         Button { sheet = .pairing } label: {
-            Label(model.connected ? "配对与连接" : "连接机位", systemImage: "qrcode").frame(maxWidth: fill ? .infinity : nil)
+            Label(model.connected ? courtText("配对与连接") : courtText("连接机位"), systemImage: "qrcode").frame(maxWidth: fill ? .infinity : nil)
         }.buttonStyle(CourtButton(primary: !model.connected))
     }
     private func liveVideoButton(fill: Bool = false) -> some View {
         Button { sheet = .liveVideo } label: {
-            Label("实时画面", systemImage: "video").frame(maxWidth: fill ? .infinity : nil)
+            Label(courtText("实时画面"), systemImage: "video").frame(maxWidth: fill ? .infinity : nil)
         }.buttonStyle(CourtButton()).accessibilityIdentifier("court.live-video.open")
     }
 
     /// Starting a record, or the running record. On a phone in portrait the running record's
     /// buttons move to `sessionControlBar`; at accessibility sizes and in landscape they stay here.
     private func sessionPanel(inlineControls: Bool) -> some View {
-        CourtPanel(model.hasControllableSession ? "正在记录" : nil) {
+        CourtPanel(model.hasControllableSession ? courtText("正在记录") : nil) {
             if model.hasControllableSession, let session = model.session {
                 // Name and clock side by side; at accessibility sizes (or a narrow column) the clock goes
                 // under the name, so a long name never breaks a few letters per line.
@@ -506,7 +506,7 @@ public struct CourtWorkspace: View {
                         recordClock(session)
                     }
                 }
-                Label(model.isRecording ? "机位正在录像" : model.cameraOwnsSession ? "机位当前未录像" : "等待机位加入 · 机位连接后开始录像与分析", systemImage: model.isRecording ? "record.circle.fill" : "video.slash")
+                Label(model.isRecording ? courtText("机位正在录像") : model.cameraOwnsSession ? courtText("机位当前未录像") : courtText("等待机位加入 · 机位连接后开始录像与分析"), systemImage: model.isRecording ? "record.circle.fill" : "video.slash")
                     .font(.caption).foregroundStyle(model.isRecording ? CourtStyle.green : CourtStyle.muted)
                 if inlineControls {
                     // Pause and finish come before the markers, so a short landscape column shows them
@@ -515,9 +515,9 @@ public struct CourtWorkspace: View {
                         ? AnyLayout(VStackLayout(spacing: CourtStyle.Space.s)) : AnyLayout(HStackLayout(spacing: CourtStyle.Space.s))
                     controlLayout {
                         Button(action: model.pauseOrResume) {
-                            Label(session.state == .active ? "暂停" : "继续", systemImage: session.state == .active ? "pause.fill" : "play.fill").frame(maxWidth: .infinity)
+                            Label(session.state == .active ? courtText("暂停") : courtText("继续"), systemImage: session.state == .active ? "pause.fill" : "play.fill").frame(maxWidth: .infinity)
                         }.buttonStyle(CourtButton(primary: model.connected))
-                        Button { confirmFinish = true } label: { Label("结束", systemImage: "stop.fill") }
+                        Button { confirmFinish = true } label: { Label(courtText("结束"), systemImage: "stop.fill") }
                             .buttonStyle(CourtButton(destructive: true))
                     }.disabled(model.isSaving || model.sessionCommandsLocked)
                     if let reason = model.sessionWaitReason { ProgressView(reason).font(.caption) }
@@ -525,18 +525,18 @@ public struct CourtWorkspace: View {
                 } else {
                     markerCount(session: session)
                 }
-                if session.state == .paused { CourtNotice(text: "暂停期间机位停止录像，这段时间的击球不计入本次记录；暂停中不能标记。") }
-                if session.state == .interrupted { CourtNotice(text: "机位上的这次记录意外中断（机位曾重启）。点「继续」恢复录像，或点「结束」保存。", warning: true) }
+                if session.state == .paused { CourtNotice(text: courtText("暂停期间机位停止录像，这段时间的击球不计入本次记录；暂停中不能标记。")) }
+                if session.state == .interrupted { CourtNotice(text: courtText("机位上的这次记录意外中断（机位曾重启）。点「继续」恢复录像，或点「结束」保存。"), warning: true) }
             } else {
                 // Return closes the keyboard so the start button beneath is visible again.
-                TextField("给这次上场起个名字", text: $model.sessionTitle).courtField().submitLabel(.done)
+                TextField(courtText("给这次上场起个名字"), text: $model.sessionTitle).courtField().submitLabel(.done)
                 Button(action: model.startSession) {
-                    Label(model.isSaving ? "正在保存…" : "开始记录", systemImage: "record.circle").frame(maxWidth: .infinity)
+                    Label(model.isSaving ? courtText("正在保存…") : courtText("开始记录"), systemImage: "record.circle").frame(maxWidth: .infinity)
                 }.buttonStyle(CourtButton(primary: model.connected)).disabled(model.isSaving || model.sessionCommandsLocked)
                 if let reason = model.sessionWaitReason { ProgressView(reason).font(.caption) }
-                CourtNotice(text: model.isLive ? "机位保存录像并实时分析，看板保存逐拍数据镜像；未知数据保持为空。" : "机位尚未采集。开始记录后，机位连接并采集时才会录像与分析。")
+                CourtNotice(text: model.isLive ? courtText("机位保存录像并实时分析，看板保存逐拍数据镜像；未知数据保持为空。") : courtText("机位尚未采集。开始记录后，机位连接并采集时才会录像与分析。"))
             }
-            if model.isSaving { ProgressView("正在保存录像与记录…").font(.caption) }
+            if model.isSaving { ProgressView(courtText("正在保存录像与记录…")).font(.caption) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("court.session.panel")
@@ -544,7 +544,7 @@ public struct CourtWorkspace: View {
 
     private func recordTitle(_ session: CourtSession) -> some View {
         VStack(alignment: .leading, spacing: CourtStyle.Space.s) {
-            Text(session.title).font(.headline).fixedSize(horizontal: false, vertical: true)
+            Text(CourtCopy.stored(session.title)).font(.headline).fixedSize(horizontal: false, vertical: true)
             CourtStatus(text: session.state.courtTitle, tone: session.state.courtTone)
         }
     }
@@ -561,14 +561,14 @@ public struct CourtWorkspace: View {
             if let reason = model.sessionWaitReason { ProgressView(reason).font(.caption).frame(maxWidth: .infinity, alignment: .leading) }
             HStack(spacing: CourtStyle.Space.s) {
                 Button(action: model.pauseOrResume) {
-                    Label(session.state == .active ? "暂停" : "继续", systemImage: session.state == .active ? "pause.fill" : "play.fill")
+                    Label(session.state == .active ? courtText("暂停") : courtText("继续"), systemImage: session.state == .active ? "pause.fill" : "play.fill")
                 }.buttonStyle(CourtBarButton(primary: model.connected))
                     .disabled(model.isSaving || model.sessionCommandsLocked)
-                ForEach(["精彩", "待复核"], id: \.self) { label in
-                    Button { model.markEvent(label) } label: { Label(label, systemImage: "bookmark") }
+                ForEach(["精彩", "待复核"], id: \.self) { label in // l10n:keep
+                    Button { model.markEvent(label) } label: { Label(courtText(label), systemImage: "bookmark") }
                         .buttonStyle(CourtBarButton()).disabled(session.state != .active)
                 }
-                Button { confirmFinish = true } label: { Label("结束", systemImage: "stop.fill") }
+                Button { confirmFinish = true } label: { Label(courtText("结束"), systemImage: "stop.fill") }
                     .buttonStyle(CourtBarButton(destructive: true))
                     .disabled(model.isSaving || model.sessionCommandsLocked)
             }
@@ -582,11 +582,11 @@ public struct CourtWorkspace: View {
 
     private func trainingMarkers(session: CourtSession) -> some View {
         VStack(alignment: .leading, spacing: CourtStyle.Space.m) {
-            Text("辅助标记").font(.subheadline.weight(.semibold))
+            Text(courtText("辅助标记")).font(.subheadline.weight(.semibold))
             LazyVGrid(columns: dynamicTypeSize.isAccessibilitySize
                       ? [GridItem(.flexible())] : [GridItem(.adaptive(minimum: 110))], spacing: CourtStyle.Space.s) {
-                ForEach(["精彩", "待复核"], id: \.self) { label in
-                    Button { model.markEvent(label) } label: { Label(label, systemImage: "bookmark").frame(maxWidth: .infinity) }
+                ForEach(["精彩", "待复核"], id: \.self) { label in // l10n:keep
+                    Button { model.markEvent(label) } label: { Label(courtText(label), systemImage: "bookmark").frame(maxWidth: .infinity) }
                         .buttonStyle(CourtButton()).disabled(session.state != .active)
                 }
             }
@@ -595,7 +595,7 @@ public struct CourtWorkspace: View {
     }
 
     private func markerCount(session: CourtSession) -> some View {
-        Text("已标记 \(session.events.filter { $0.kind == .marker }.count) 个时刻")
+        Text(courtFormat("已标记 %1$@ 个时刻", "\(session.events.filter { $0.kind == .marker }.count)"))
             .font(.caption).foregroundStyle(CourtStyle.muted)
     }
 
@@ -603,12 +603,12 @@ public struct CourtWorkspace: View {
     private var dataPanels: some View {
         let finished = model.finishedRecordShots
         return TennisAnalysisOverview(events: finished?.events ?? (model.isLive ? model.tennisAnalysis?.events ?? [] : []),
-                               emptyReason: model.isLive ? "正在积累连续画面，等待可用击球样本。" : "尚未收到实时画面，暂无击球分析。",
+                               emptyReason: model.isLive ? courtText("正在积累连续画面，等待可用击球样本。") : courtText("尚未收到实时画面，暂无击球分析。"),
                                calibration: model.tennisAnalysis?.calibration,
-                               sourceNote: finished.map { "上一次记录「\($0.title)」的结果，开始新记录后清空" }
-                                   ?? (model.hasControllableSession ? "本次记录" : "未开始记录 · 最近几拍"),
+                               sourceNote: finished.map { courtFormat("上一次记录「%1$@」的结果，开始新记录后清空", "\($0.title)") }
+                                   ?? (model.hasControllableSession ? courtText("本次记录") : courtText("未开始记录 · 最近几拍")),
                                shotAccessory: { event in AnyView(ShotReplayButton(model: model, session: model.session, shot: event) { clipPlayback = $0 }) },
-                               shotNote: model.canFetchClips && model.cameraOwnsSession ? "点 ▶ 从机位取这一拍片段：" + ShotReplayButton.clipNote : nil,
+                               shotNote: model.canFetchClips && model.cameraOwnsSession ? courtText("点 ▶ 从机位取这一拍片段：") + ShotReplayButton.clipNote : nil,
                                allShotCount: model.shownEvents.count,
                                openAllShots: { sheet = .shots },
                                openSpeedBoard: { focusedMetric = .speed },
@@ -627,7 +627,7 @@ public struct CourtWorkspace: View {
     }
 
     private var footer: some View {
-        HStack { Text("ZC / 球场记录"); Spacer(); Text("视频与记录保存在本机") }
+        HStack { Text(courtText("ZC / 球场记录")); Spacer(); Text(courtText("视频与记录保存在本机")) }
             .font(.caption2).foregroundStyle(CourtStyle.muted).padding(.vertical, CourtStyle.Space.s)
     }
 }
@@ -646,9 +646,9 @@ struct ServerVideo: View {
                 VStack(spacing: 12) {
                     Image(systemName: model.connected ? "video.badge.waveform" : "qrcode.viewfinder").font(.system(size: 38, weight: .ultraLight)).foregroundStyle(CourtStyle.green)
                         .accessibilityHidden(true)
-                    Text(model.connected ? "等待机位画面" : "尚未连接机位").font(.headline)
+                    Text(model.connected ? courtText("等待机位画面") : courtText("尚未连接机位")).font(.headline)
                         .lineLimit(1).minimumScaleFactor(0.6)
-                    Text(model.connected ? "在机位上点「开始采集」" : "点「连接机位」显示二维码，再在机位上点「连接」扫码")
+                    Text(model.connected ? courtText("在机位上点「开始采集」") : courtText("点「连接机位」显示二维码，再在机位上点「连接」扫码"))
                         .font(.caption).foregroundStyle(CourtStyle.muted).lineLimit(2).minimumScaleFactor(0.7)
                 }.multilineTextAlignment(.center).padding(20)
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
@@ -656,11 +656,11 @@ struct ServerVideo: View {
             VStack {
                 HStack {
                     Text("COURT / LIVE").font(.caption2.monospaced().bold()).tracking(1).lineLimit(1).fixedSize().accessibilityHidden(true)
-                    if model.isLive { Text("低清 · 有延迟").font(.caption2).foregroundStyle(CourtStyle.muted).lineLimit(1) }
+                    if model.isLive { Text(courtText("低清 · 有延迟")).font(.caption2).foregroundStyle(CourtStyle.muted).lineLimit(1) }
                     Spacer()
                     if model.isRecording {
                         Label("REC", systemImage: "record.circle.fill").font(.caption.bold()).foregroundStyle(CourtStyle.recording)
-                            .accessibilityLabel("正在录像")
+                            .accessibilityLabel(courtText("正在录像"))
                     }
                 }
                 Spacer()

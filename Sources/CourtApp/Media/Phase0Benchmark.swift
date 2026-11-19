@@ -60,7 +60,7 @@ private final class DropCounter: @unchecked Sendable {
 final class Phase0Benchmark {
     let options: Phase0Options
     let engine = CameraEngine()
-    private(set) var status = "准备中"
+    private(set) var status = courtText("准备中")
     private(set) var elapsed = 0.0
     private(set) var finished = false
     private(set) var overlay: [String] = []
@@ -99,29 +99,29 @@ final class Phase0Benchmark {
         started = true
         UIDevice.current.isBatteryMonitoringEnabled = true
         UIApplication.shared.isIdleTimerDisabled = true
-        do { try openRun() } catch { status = "无法创建测量目录：\(error.localizedDescription)"; finished = true; return }
-        guard await AVCaptureDevice.requestAccess(for: .video) else { await stop(reason: "相机权限被拒绝"); return }
+        do { try openRun() } catch { status = courtFormat("无法创建测量目录：%1$@", "\(error.localizedDescription)"); finished = true; return }
+        guard await AVCaptureDevice.requestAccess(for: .video) else { await stop(reason: courtText("相机权限被拒绝")); return }
         let analyzer: CameraSideAnalyzer
         if options.independent {
             var live = IndependentLiveConfiguration.bundled()
             live.automaticCourt = options.automaticCourt
             if !options.automaticCourt { live.camera = .lookingAt(SIMD3(0, 11, 0), from: SIMD3(0, -6.4, 3.2), f: 1260) }   // load only
-            status = "正在加载并校验自研模型…"
+            status = courtText("正在加载并校验自研模型…")
             analyzer = CameraSideAnalyzer(configuration: nil, independent: live)
         } else {
-            guard let models = AnalysisModelLocator.directory else { await stop(reason: "App 内没有分析模型"); return }
+            guard let models = AnalysisModelLocator.directory else { await stop(reason: courtText("App 内没有分析模型")); return }
             #if targetEnvironment(simulator)
             let configuration = TennisAnalysisConfiguration(modelDirectory: models, nominalFPS: 60, computeUnits: .cpuOnly)
             #else
             let configuration = TennisAnalysisConfiguration(modelDirectory: models, nominalFPS: 60)
             #endif
-            status = "正在加载并校验模型…"
+            status = courtText("正在加载并校验模型…")
             analyzer = CameraSideAnalyzer(configuration: configuration,
                                           loadProbeInterval: options.focusInterval > 0 ? options.focusInterval : nil)
         }
         self.analyzer = analyzer
         while !analyzer.currentMetrics.ready {
-            if let error = analyzer.currentMetrics.loadError { await stop(reason: "模型加载失败：\(error)"); return }
+            if let error = analyzer.currentMetrics.loadError { await stop(reason: courtFormat("模型加载失败：%1$@", "\(error)")); return }
             try? await Task.sleep(for: .milliseconds(100))
         }
         log("models-ready", ["loadSeconds": analyzer.currentMetrics.loadSeconds ?? 0])
@@ -134,7 +134,7 @@ final class Phase0Benchmark {
         engine.onError = { [weak self] message in
             Task { @MainActor in
                 self?.log("camera-error", ["message": message])
-                await self?.stop(reason: "相机中断：\(message)")
+                await self?.stop(reason: courtFormat("相机中断：%1$@", "\(message)"))
             }
         }
         engine.pipeline.onRecording = { [weak self] result in
@@ -150,14 +150,14 @@ final class Phase0Benchmark {
         if let runDirectory { engine.startLocalRecording(directory: runDirectory, prefix: "Phase0") }
         startUptime = ProcessInfo.processInfo.systemUptime
         batteryStart = (UIDevice.current.batteryLevel, Self.batteryState())
-        status = "测量中"
+        status = courtText("测量中")
         log("started", ["screen": options.screen, "brightness": options.brightness, "focusInterval": options.focusInterval])
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, !self.finished else { return }
                 await self.sample()
-                if self.elapsed >= self.options.duration { await self.stop(reason: "到达设定时长"); return }
+                if self.elapsed >= self.options.duration { await self.stop(reason: courtText("到达设定时长")); return }
             }
         }
     }
@@ -169,7 +169,7 @@ final class Phase0Benchmark {
         else { restoreBrightness(); log("scene-inactive", [:]) }
     }
 
-    func requestStop() { Task { await stop(reason: "用户长按提前结束") } }
+    func requestStop() { Task { await stop(reason: courtText("用户长按提前结束")) } }
 
     private func sample() async {
         guard let analyzer else { return }
@@ -227,14 +227,14 @@ final class Phase0Benchmark {
         ]
         write(row, to: samplesFile)
         overlay = [
-            String(format: "Phase 0 · %@ · %d:%02d / %d 分", options.screen, Int(elapsed) / 60, Int(elapsed) % 60, Int(options.duration / 60)),
-            String(format: "帧对 p50 %.1f ms · 最大 %.0f ms · 分析占用 %.0f%%", Self.percentile(timings.pair, 0.5), timings.pair.max() ?? 0, utilization * 100),
-            String(format: "滞后 %.2f s · 待处理 %d · 重置 %d · 缓冲满 %d", lag, metrics.pendingFrames, max(0, metrics.restarts - 1), metrics.poolExhausted),
-            "采集 \(counters.0) 帧 · 丢帧 \(counters.1) · 录像 \(counters.3) 帧",
-            "热状态 \(thermal) · 相机压力 \(pressureLevel) · 电量 \(Self.percent(UIDevice.current.batteryLevel)) · CPU \(String(format: "%.1f", cores)) 核"
+            courtPrintf("Phase 0 · %@ · %d:%02d / %d 分", options.screen, Int(elapsed) / 60, Int(elapsed) % 60, Int(options.duration / 60)),
+            courtPrintf("帧对 p50 %.1f ms · 最大 %.0f ms · 分析占用 %.0f%%", Self.percentile(timings.pair, 0.5), timings.pair.max() ?? 0, utilization * 100),
+            courtPrintf("滞后 %.2f s · 待处理 %d · 重置 %d · 缓冲满 %d", lag, metrics.pendingFrames, max(0, metrics.restarts - 1), metrics.poolExhausted),
+            courtFormat("采集 %1$@ 帧 · 丢帧 %2$@ · 录像 %3$@ 帧", "\(counters.0)", "\(counters.1)", "\(counters.3)"),
+            courtFormat("热状态 %1$@ · 相机压力 %2$@ · 电量 %3$@ · CPU %4$@ 核", "\(thermal)", "\(pressureLevel)", "\(Self.percent(UIDevice.current.batteryLevel))", "\(String(format: "%.1f", cores))")
         ]
         if Int(elapsed) % 60 == 0 || minuteLine.isEmpty {
-            minuteLine = "测量中 \(Int(elapsed) / 60) 分 · 热状态 \(thermal) · 电量 \(Self.percent(UIDevice.current.batteryLevel))"
+            minuteLine = courtFormat("测量中 %1$@ 分 · 热状态 %2$@ · 电量 %3$@", "\(Int(elapsed) / 60)", "\(thermal)", "\(Self.percent(UIDevice.current.batteryLevel))")
         }
     }
 
@@ -242,7 +242,7 @@ final class Phase0Benchmark {
         guard !finished, stopReason == nil else { return }
         stopReason = reason
         loop?.cancel(); loop = nil
-        status = "正在结束：\(reason)"
+        status = courtFormat("正在结束：%1$@", "\(reason)")
         log("stopping", ["reason": reason])
         if started, analyzer != nil { await sample() }
         // finish() closes admission; frames still arriving from the camera queue are ignored.
@@ -271,7 +271,7 @@ final class Phase0Benchmark {
         UIApplication.shared.isIdleTimerDisabled = false
         writeSummary(reason: reason, metrics: metrics, shots: events.count, gaps: gaps, recordingBytes: recordingBytes)
         try? samplesFile?.close(); try? logFile?.close()
-        finished = true; status = "测量完成：\(reason)"
+        finished = true; status = courtFormat("测量完成：%1$@", "\(reason)")
     }
 
     private func writeSummary(reason: String, metrics: CameraSideAnalyzer.Metrics?, shots: Int,
@@ -340,11 +340,11 @@ final class Phase0Benchmark {
             }
         }
         summaryLines = [
-            "结束原因：\(reason) · \(Int(elapsed / 60)) 分 \(Int(elapsed) % 60) 秒",
-            String(format: "帧对 p50 %.1f / p95 %.1f / 最大 %.0f ms", Self.percentile(all.pair, 0.5), Self.percentile(all.pair, 0.95), all.pair.max() ?? 0),
-            String(format: "触地探针 p50 %.0f / 最大 %.0f ms · %d 次", Self.percentile(all.probe, 0.5), all.probe.max() ?? 0, all.probe.count),
-            "时序重置 \(restarts) · 缓冲满 \(metrics?.poolExhausted ?? 0) · 采集丢帧 \(lastCounters.drops) · 录像缺口 \(gaps?.count ?? -1)",
-            "电量 \(Self.percent(batteryStart?.level ?? -1)) → \(Self.percent(batteryEnd)) · 结束热状态 \(Self.thermalName(ProcessInfo.processInfo.thermalState))"
+            courtFormat("结束原因：%1$@ · %2$@ 分 %3$@ 秒", "\(reason)", "\(Int(elapsed / 60))", "\(Int(elapsed) % 60)"),
+            courtPrintf("帧对 p50 %.1f / p95 %.1f / 最大 %.0f ms", Self.percentile(all.pair, 0.5), Self.percentile(all.pair, 0.95), all.pair.max() ?? 0),
+            courtPrintf("触地探针 p50 %.0f / 最大 %.0f ms · %d 次", Self.percentile(all.probe, 0.5), all.probe.max() ?? 0, all.probe.count),
+            courtFormat("时序重置 %1$@ · 缓冲满 %2$@ · 采集丢帧 %3$@ · 录像缺口 %4$@", "\(restarts)", "\(metrics?.poolExhausted ?? 0)", "\(lastCounters.drops)", "\(gaps?.count ?? -1)"),
+            courtFormat("电量 %1$@ → %2$@ · 结束热状态 %3$@", "\(Self.percent(batteryStart?.level ?? -1))", "\(Self.percent(batteryEnd))", "\(Self.thermalName(ProcessInfo.processInfo.thermalState))")
         ]
     }
 
@@ -358,7 +358,7 @@ final class Phase0Benchmark {
         runDirectory = directory
         for name in ["samples.jsonl", "log.jsonl"] {
             guard FileManager.default.createFile(atPath: directory.appendingPathComponent(name).path, contents: nil) else {
-                throw CourtError.message("无法创建 \(name)")
+                throw CourtError.message(courtFormat("无法创建 %1$@", "\(name)"))
             }
         }
         samplesFile = try FileHandle(forWritingTo: directory.appendingPathComponent("samples.jsonl"))
@@ -466,7 +466,7 @@ public struct Phase0Root: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(benchmark.status).font(.headline)
                     ForEach(benchmark.summaryLines, id: \.self) { Text($0).font(.caption.monospacedDigit()) }
-                    Text("结果在 App 文稿的 Phase0 目录。").font(.caption).foregroundStyle(.secondary)
+                    Text(courtText("结果在 App 文稿的 Phase0 目录。")).font(.caption).foregroundStyle(.secondary)
                 }.padding(24).foregroundStyle(.white)
             } else if benchmark.options.screen == "bright" {
                 CameraPreview(session: benchmark.engine.session).ignoresSafeArea()

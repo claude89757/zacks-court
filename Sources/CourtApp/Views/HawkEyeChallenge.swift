@@ -99,7 +99,7 @@ struct HawkEyeChallengeView: View {
                 footer(current.shot)
             } else {
                 Spacer()
-                CourtNotice(text: "还没有判过界内外或挑战过的拍。点「挑战」判最近一拍；开启界内外后，判过的拍也会出现在这里。")
+                CourtNotice(text: courtText("还没有判过界内外或挑战过的拍。点「挑战」判最近一拍；开启界内外后，判过的拍也会出现在这里。"))
                     .padding(CourtStyle.Space.xl)
                 Spacer()
             }
@@ -115,24 +115,25 @@ struct HawkEyeChallengeView: View {
 
     private var header: some View {
         HStack(spacing: CourtStyle.Space.s) {
-            Text(current?.shot.challenge != nil ? "挑战" : "界内外回放").font(.headline)
-            if let current { Text("第 \(current.number) 拍").font(.headline.monospacedDigit()).foregroundStyle(CourtStyle.muted) }
+            Text(current?.shot.challenge != nil ? courtText("挑战") : courtText("界内外回放")).font(.headline)
+            if let current { Text(courtFormat("第 %1$@ 拍", "\(current.number)")).font(.headline.monospacedDigit()).foregroundStyle(CourtStyle.muted) }
             Spacer(minLength: 8)
-            iconButton("chevron.left", "上一个") { index = max(0, index - 1); started = Date() }
+            iconButton("chevron.left", courtText("上一个"), "court.replay.previous") { index = max(0, index - 1); started = Date() }
                 .disabled(index <= 0)
-            iconButton("chevron.right", "下一个") { index = min(shots.count - 1, index + 1); started = Date() }
+            iconButton("chevron.right", courtText("下一个")) { index = min(shots.count - 1, index + 1); started = Date() }
                 .disabled(index >= shots.count - 1)
-            iconButton("arrow.counterclockwise", "重播") { started = Date() }
-            iconButton("xmark", "关闭") { close() }
+            iconButton("arrow.counterclockwise", courtText("重播")) { started = Date() }
+            iconButton("xmark", courtText("关闭"), "court.replay.close") { close() }
         }
         .buttonStyle(.plain)
         .padding(.horizontal, CourtStyle.Space.l).padding(.vertical, CourtStyle.Space.s)
     }
 
-    private func iconButton(_ image: String, _ label: String, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ image: String, _ label: String, _ identifier: String? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: image).frame(width: 44, height: 44).background(CourtStyle.raised, in: Circle()).contentShape(Circle())
         }.accessibilityLabel(label)
+            .accessibilityIdentifier(identifier ?? image)
     }
 
     private func replay(_ scene: HawkEyeReplayScene, number: Int, challenged: Bool) -> some View {
@@ -153,14 +154,14 @@ struct HawkEyeChallengeView: View {
             if !Task.isCancelled { stillAt = start }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("第 \(number) 拍\(challenged ? "挑战" : "界内外回放")：\(scene.judgement.call.text)，\(scene.judgement.detailText)")
+        .accessibilityLabel(courtFormat("第 %1$@ 拍%2$@：%3$@，%4$@", "\(number)", "\(challenged ? "挑战" : "界内外回放")", "\(scene.judgement.call.text)", "\(scene.judgement.detailText)"))
         .accessibilityIdentifier("court.hawkeye.replay")
     }
 
     private func titleCard(number: Int, challenged: Bool) -> some View {
         VStack(spacing: 6) {
             Text(challenged ? "CHALLENGE" : "REPLAY").font(.system(size: 44, weight: .heavy, design: .rounded)).tracking(4)
-            Text((challenged ? "挑战" : "界内外回放") + " · 第 \(number) 拍").font(.title3).foregroundStyle(CourtStyle.muted)
+            Text((challenged ? courtText("挑战") : courtText("界内外回放")) + courtFormat(" · 第 %1$@ 拍", "\(number)")).font(.title3).foregroundStyle(CourtStyle.muted)
         }
         .padding(.horizontal, 32).padding(.vertical, 20)
         .background(CourtStyle.panel.opacity(0.92), in: RoundedRectangle(cornerRadius: CourtStyle.Radius.card))
@@ -172,7 +173,7 @@ struct HawkEyeChallengeView: View {
         return VStack(spacing: CourtStyle.Space.l) {
             Spacer()
             Text("CHALLENGE").font(.system(size: 44, weight: .heavy, design: .rounded)).tracking(4)
-            Text("挑战 · 第 \(number) 拍").font(.title3).foregroundStyle(CourtStyle.muted)
+            Text(courtFormat("挑战 · 第 %1$@ 拍", "\(number)")).font(.title3).foregroundStyle(CourtStyle.muted)
             HStack(spacing: 10) {
                 if c?.pending == true { ProgressView().tint(.white) }
                 Text(c?.reason ?? HawkEyeChallenge.noBounceReason).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
@@ -192,11 +193,11 @@ struct HawkEyeChallengeView: View {
         // (macos-15) gave up type-checking this view
         var headline = j.detailText
         if j.call == .close { headline = j.call.text + " · " + headline }
-        if j.serve { headline += " · 发球" }
-        if challenged { headline += " · " + j.format.text + "边线" }
+        if j.serve { headline += courtText(" · 发球") }
+        if challenged { headline += " · " + j.format.text + courtText("边线") }
         let marginCm = Int((j.marginM * 100).rounded())
-        var caption = "模型估计，不是判罚 · 误差范围 ±\(marginCm) 厘米"
-        if j.farHalf { caption = "远端半场，误差较大 · " + caption }
+        var caption = courtFormat("模型估计，不是判罚 · 误差范围 ±%1$@ 厘米", "\(marginCm)")
+        if j.farHalf { caption = courtText("远端半场，误差较大 · ") + caption }
         let shoutColor: Color = j.call == .out ? .white : CourtStyle.background
         return VStack {
             HStack(spacing: 14) {
@@ -224,7 +225,7 @@ struct HawkEyeChallengeView: View {
     @ViewBuilder private func previousButton(_ shot: TennisShotEvent) -> some View {
         if shot.challenge != nil, model.canChallenge, let previous = HawkEye.previousBounced(before: shot.id, in: model.challengeEvents) {
             Button { model.challenge(shot: previous.id) } label: {
-                Label("不是这一拍？挑战上一拍", systemImage: "arrow.uturn.backward")
+                Label(courtText("不是这一拍？挑战上一拍"), systemImage: "arrow.uturn.backward")
                     .font(.callout.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 44)
                     .background(CourtStyle.raised, in: Capsule()).contentShape(Capsule())
             }
@@ -241,7 +242,7 @@ struct HawkEyeChallengeView: View {
             Spacer(minLength: 0)
             if shot.lineCall != nil {
                 Text(HawkEyeReplayScene(event: shot, judgement: shot.challenge?.judgement)?.flight == nil
-                     ? "这条链没有可用的击球点，只回放落点" : "轨迹按击球点和落点估算").font(.caption).foregroundStyle(CourtStyle.muted)
+                     ? courtText("这条链没有可用的击球点，只回放落点") : courtText("轨迹按击球点和落点估算")).font(.caption).foregroundStyle(CourtStyle.muted)
             }
         }
         .padding(.horizontal, CourtStyle.Space.l).padding(.bottom, CourtStyle.Space.m)
@@ -296,7 +297,7 @@ struct ChallengeButton: View {
             else if model.challengeFormat == nil { askFormat = true }
             else { model.challenge() }
         } label: {
-            Label("挑战", systemImage: "flag.fill")
+            Label(courtText("挑战"), systemImage: "flag.fill")
                 .font(large ? .title3.weight(.bold) : .callout.weight(.semibold)).lineLimit(1)
                 .padding(.horizontal, 14).frame(minWidth: 44, minHeight: 44)
                 .foregroundStyle(CourtStyle.background)
@@ -304,15 +305,15 @@ struct ChallengeButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("挑战最近一拍")
+        .accessibilityLabel(courtText("挑战最近一拍"))
         .accessibilityIdentifier("court.challenge")
-        .confirmationDialog("挑战：按单打还是双打边线判？", isPresented: $askFormat, titleVisibility: .visible) {
+        .confirmationDialog(courtText("挑战：按单打还是双打边线判？"), isPresented: $askFormat, titleVisibility: .visible) {
             ForEach(HawkEyeFormat.allCases, id: \.self) { format in
                 Button(format.text) { model.challenge(format: format) }
             }
-            Button("取消", role: .cancel) {}
+            Button(courtText("取消"), role: .cancel) {}
         } message: {
-            Text("机位重新判最近一拍，所有屏幕一起播放回放。本场只问一次。")
+            Text(courtText("机位重新判最近一拍，所有屏幕一起播放回放。本场只问一次。"))
         }
     }
 }
@@ -521,9 +522,9 @@ struct HawkEyeReplayPainter {
             var bar = Path(); bar.move(to: a); bar.addLine(to: b)
             for q in [a, b] { bar.move(to: CGPoint(x: q.x - nx, y: q.y - ny)); bar.addLine(to: CGPoint(x: q.x + nx, y: q.y + ny)) }
             gc.stroke(bar, with: .color(.white), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            label("约 \(Int((gap.metres * 100).rounded())) 厘米", right: Double(min(a.x, bFull.x)) - 12, y: Double(a.y + bFull.y) / 2, size: 20)
+            label(courtFormat("约 %1$@ 厘米", "\(Int((gap.metres * 100).rounded()))"), right: Double(min(a.x, bFull.x)) - 12, y: Double(a.y + bFull.y) / 2, size: 20)
         } else if let p = project(scene.bounce + side) {
-            let text = j.call == .close ? "误差 ±\(Int((j.marginM * 100).rounded())) 厘米" : "球印压线"
+            let text = j.call == .close ? courtFormat("误差 ±%1$@ 厘米", "\(Int((j.marginM * 100).rounded()))") : courtText("球印压线")
             label(text, right: Double(p.x) - 6, y: Double(p.y) - 30, size: 17)   // above the line it sits on
         }
     }

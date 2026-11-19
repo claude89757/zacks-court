@@ -1,0 +1,3 @@
+{
+  "whatsNew": "• The app and the browser display follow the system language: Simplified Chinese, Traditional Chinese, English, Japanese, German, and French. The US and UK stores share the English UI\n• Simplified Chinese wording matches 1.3. Any other system language still shows Simplified Chinese\n• Ball speed stays a kilometres-per-hour model estimate. Missing evidence is still \"—\"\n• The spoken call is still the English \"Out!\". Connections stay on your local network, Personal Hotspot, or peer-to-peer Wi-Fi. No new permissions\n• A ball followed to the ground can now keep a landing. The same recording's serve, speed, and near-side line call can differ from 1.3. These are still single-camera estimates"
+}

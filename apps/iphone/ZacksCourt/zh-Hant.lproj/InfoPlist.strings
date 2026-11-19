@@ -1,0 +1,5 @@
+/* Permission purpose strings. Simplified Chinese in the base plist is the development language. */
+
+NSCameraUsageDescription = "在機位模式錄影並分析球場畫面，或掃描看板的配對碼。";
+NSPhotoLibraryAddUsageDescription = "把錄影或某一拍的影片片段存到照片。只加入，不讀取相簿裡的照片。";
+NSLocalNetworkUsageDescription = "在區域網路、個人熱點或點對點 Wi-Fi 中，連接另一台執行 Zacks Court 的裝置，或讓同一網路裡的瀏覽器打開看板，傳輸逐拍分析資料、低清預覽與錄影片段。";

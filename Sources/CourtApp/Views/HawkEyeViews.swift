@@ -21,7 +21,7 @@ struct HawkEyeButton: View {
     @State private var showSettings = false
 
     private var settings: HawkEyeSettings { model.hawkEyePending ?? model.hawkEyeSettings }
-    private var title: String { settings.enabled ? "界内外 · " + settings.format.text : "界内外" }
+    private var title: String { settings.enabled ? courtText("界内外 · ") + settings.format.text : courtText("界内外") }
 
     var body: some View {
         Button {
@@ -38,15 +38,15 @@ struct HawkEyeButton: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(settings.enabled ? "界内外已开启，\(settings.format.text)，\(settings.coverageText)" : "开启界内外")
+        .accessibilityLabel(settings.enabled ? courtFormat("界内外已开启，%1$@，%2$@", "\(settings.format.text)", "\(settings.coverageText)") : courtText("开启界内外"))
         .accessibilityIdentifier("court.hawkeye.toggle")
-        .confirmationDialog("开启界内外：本场是单打还是双打？", isPresented: $askFormat, titleVisibility: .visible) {
+        .confirmationDialog(courtText("开启界内外：本场是单打还是双打？"), isPresented: $askFormat, titleVisibility: .visible) {
             ForEach(HawkEyeFormat.allCases, id: \.self) { format in
                 Button(format.text) { model.setHawkEye(HawkEyeSettings(enabled: true, format: format, farHalf: false)) }
             }
-            Button("取消", role: .cancel) {}
+            Button(courtText("取消"), role: .cancel) {}
         } message: {
-            Text("单打和双打的边线不同。默认只判近端半场（远端看得斜，误差大），可在界内外设置里打开远端。")
+            Text(courtText("单打和双打的边线不同。默认只判近端半场（远端看得斜，误差大），可在界内外设置里打开远端。"))
         }
         .sheet(isPresented: $showSettings) { HawkEyeSettingsSheet(model: model) }
     }
@@ -69,16 +69,16 @@ struct HawkEyeSettingsSheet: View {
                     CourtSegment(options: HawkEyeFormat.allCases,
                                  selection: Binding(get: { settings.format }, set: { f in update { $0.format = f } }),
                                  title: \.text, identifier: { "court.hawkeye.format.\($0.rawValue)" })
-                    Toggle("也判远端半场", isOn: Binding(get: { settings.farHalf }, set: { v in update { $0.farHalf = v } }))
+                    Toggle(courtText("也判远端半场"), isOn: Binding(get: { settings.farHalf }, set: { v in update { $0.farHalf = v } }))
                         .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.far")
                 } footer: {
-                    Text(settings.farHalf ? "远端落点看得斜，误差是近端的几倍，远端的判定更常显示「压线附近」。"
-                                          : "只判近端半场：远端的落点误差大，默认不判。")
+                    Text(settings.farHalf ? courtText("远端落点看得斜，误差是近端的几倍，远端的判定更常显示「压线附近」。")
+                                          : courtText("只判近端半场：远端的落点误差大，默认不判。"))
                 }
                 Section {
-                    Toggle("出界时语音播报 Out!", isOn: Binding(get: { model.hawkEyeSound }, set: { model.hawkEyeSound = $0 }))
+                    Toggle(courtText("出界时语音播报 Out!"), isOn: Binding(get: { model.hawkEyeSound }, set: { model.hawkEyeSound = $0 }))
                         .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.sound")
-                    Picker("语音", selection: Binding(get: { model.hawkEyeVoice }, set: { model.hawkEyeVoice = $0 })) {
+                    Picker(courtText("语音"), selection: Binding(get: { model.hawkEyeVoice }, set: { model.hawkEyeVoice = $0 })) {
                         ForEach(LineCallVoice.Gender.allCases, id: \.self) { gender in
                             Section(gender.text) {
                                 ForEach(LineCallVoice.all.filter { $0.gender == gender }) { voice in
@@ -88,26 +88,26 @@ struct HawkEyeSettingsSheet: View {
                         }
                     }
                     .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.voice")
-                    Button { model.previewHawkEyeVoice() } label: { Label("试听", systemImage: "speaker.wave.2") }
+                    Button { model.previewHawkEyeVoice() } label: { Label(courtText("试听"), systemImage: "speaker.wave.2") }
                         .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.preview")
                 } footer: {
-                    Text("只在明确出界、挑战回放给出结论时播报。语音由 AI 合成（OpenAI），不是真人录音。")
+                    Text(courtText("只在明确出界、挑战回放给出结论时播报。语音由 AI 合成（OpenAI），不是真人录音。"))
                 }
                 if model.hawkEyePending != nil {
-                    Section { Label("等待机位确认…", systemImage: "hourglass").foregroundStyle(CourtStyle.muted) }
+                    Section { Label(courtText("等待机位确认…"), systemImage: "hourglass").foregroundStyle(CourtStyle.muted) }
                 }
                 Section {
-                    Button("关闭界内外", role: .destructive) { update { $0.enabled = false }; dismiss() }
+                    Button(courtText("关闭界内外"), role: .destructive) { update { $0.enabled = false }; dismiss() }
                         .frame(minHeight: 44).accessibilityIdentifier("court.hawkeye.off")
                 } footer: {
-                    Text("界内外是单机位模型估计，不是判罚。落点离线不到误差范围时显示「压线附近」，不报出界；只有明确出界才播报 Out!。")
+                    Text(courtText("界内外是单机位模型估计，不是判罚。落点离线不到误差范围时显示「压线附近」，不报出界；只有明确出界才播报 Out!。"))
                 }
             }
-            .navigationTitle("界内外")
+            .navigationTitle(courtText("界内外"))
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button(courtText("完成")) { dismiss() } } }
         }
         .preferredColorScheme(.dark)
         #if os(macOS)
@@ -135,7 +135,7 @@ struct HawkEyeCallBanner: View {
                     .background(color, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.control))
                     .lineLimit(1).fixedSize()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("界内外 · " + j.call.text + (j.serve ? " · 发球" : ""))
+                    Text(courtText("界内外 · ") + j.call.text + (j.serve ? courtText(" · 发球") : ""))
                         .font(large ? .title2.weight(.bold) : .headline)
                     Text(j.detailText).font(large ? .body : .caption).foregroundStyle(CourtStyle.muted)
                 }
@@ -151,8 +151,8 @@ struct HawkEyeCallBanner: View {
         .buttonStyle(.plain)
         .foregroundStyle(.white)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("界内外：\(j.call.text)，\(j.detailText)")
-        .accessibilityHint("轻点关闭")
+        .accessibilityLabel(courtFormat("界内外：%1$@，%2$@", "\(j.call.text)", "\(j.detailText)"))
+        .accessibilityHint(courtText("轻点关闭"))
         .accessibilityIdentifier("court.hawkeye.call")
         .transition(.move(edge: .top).combined(with: .opacity))
     }

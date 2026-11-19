@@ -6467,3 +6467,73 @@ Mac 用 `court-analyze independent-live … auto` 从录像开头跑全片，以
 **按源时钟复核负载。** 从 380 秒重新找场，在 Mac 上按录像帧的实际时间间隔送入 v37，到片尾用时 99.1 秒。处理 5,840 帧，采集 487 组人框、971 帧区域姿态，执行 78 批局部球推理。最高积压 13 帧，溢出、池耗尽、因积压跳过姿态均为 0。这次从中途起跑报出 5 条发球，对上参照的 4 条，其中 3 条给速，2 条与参照相差在 20% 以内。实时发送速率与起始画面都会影响结果。以上为同片软件对照，球速与落点的物理精度、手机连续运行时的温升和电量消耗仍待真机实测。
 
 **构建与测试。** macOS 26.6.2、Xcode 27.0。最终的 `swift build` 通过，`court-check` 的 3 项检查全部通过，其中 120 帧合成 1080p 录像对应 30 帧成功解码的 640×360 预览。`swift test` 共 360 项，342 项通过、18 项跳过、0 项失败。覆盖了偏暖持续及进出过程、真实相机压力值、持续积压、低电量模式、恢复期和机位到看板的实际预览。需要真机、另行启用的参照或本地素材的可选用例计入跳过。iPhone 17 Pro Max、iOS 26.1 模拟器上的偏暖机位界面用例 1 项通过。已编译真实 iPhone 目标的未签名 Release 构建，核对包内 v37 标识和 FP16、FP32 两套自研模型文件摘要，S家链为 `off`。当时无已连接的实体 iPhone，未进行真机安装或现场温升测量。
+## 2026-11-13 六种界面语言与商店素材流程（未编译 iOS，未录屏）
+
+环境：云端 Linux，没有 Xcode，没有 iOS 模拟器。基于 main `fef6439082e604dfb7ac82ba0f11fd9ac064b656` 开分支，没有改那台未推送的 Mac mini 工程，没有调用 App Store Connect，没有上传。
+
+**做了什么**：
+
+- 界面文案以简体中文为键。`courtText` 在简体中文下原样返回，所以现有中文句子和依赖这些句子的测试在不调用 `activate()` 时不变。App 启动时才按系统语言或 `COURT_LANGUAGE` 切换。不支持的语言回到简体中文。
+- 词表覆盖简体中文、繁体中文、英语、日语、德语、法语。en-US 与 en-GB 共用 `en`。浏览器看板读同一份 `Web/l10n.json`，用 `?lang=` 或浏览器语言。
+- 权限用途文字写成六份 `InfoPlist.strings`。司线语音文件没换，仍是 Out! / In.。
+- 发球流程里用来比较的「发球」等内部记号没有包进翻译，避免非中文环境下不再认出发球。
+- 商店截图脚本在缺少该语言的真实模拟器截图时直接退出，不再把简体中文界面填进其他语言。创意素材不再画假的 149 km/h 和 OUT 卡片。
+- 营销版本号在工程里改为 1.4 (1)，只作下一版建议。1.3 的元数据文件没有改。
+
+**跑了什么**：
+
+- `python3 scripts/l10n-check.py --self-test`
+- `python3 scripts/l10n-check.py`（词表与未包裹的中文）
+- `node --check` 检查 `app.js` 与 `l10n.js`
+
+**没有验证**：`swift build`、`swift test`、`court-check`、iOS 编译、模拟器截图、预览视频、任何精度。数字格式的德文逗号只写在 `CourtCopyTests` 里，这台机器跑不了。
+
+## 2026-11-13 修复 Mac 编译与不支持语言回退（仍未跑 iOS 测试）
+
+Mac mini / Xcode 27 对 `d6eb59ac60884be6213e4cf323533661986e7d33` 的 debug、release 和无签名 iOS Simulator 构建都失败。根因是 `courtText` 在 CourtCore，同一模块的其他文件不会自动看见它；报错的文件都没有 `import CourtCore`。值守屏那一长串同时报了类型检查超时，已拆开。CourtMac 目标补上了对 CourtCore 的依赖。
+
+不支持的语言、且优先列表里没有下一项支持的语言时，激活后用英语。简体和繁体仍按标签选择。`activate()` 之前仍是简体中文，避免现有测试改口；App 在创建模型之前就激活。
+
+演示记录的标题、机位名、模型名和「精彩」标记仍以简体键写入，界面按当前语言显示，译文写明不是实测。`render-store-screens.sh` 仍要 Chrome 无界面渲染，这一轮没有改成别的浏览器，也没有跑。
+
+**本环境跑了**：`python3 scripts/l10n-check.py`、`node --check`。**没有跑** `swift build`、`swift test`、`court-check`、iOS 编译、截图和录屏。
+
+## 2026-11-13 权限说明进包、预览水印与宣传帧（仍未在本机编 iOS）
+
+Mac 对 `ad213773` 的编译、355 项测试、court-check、模拟器构建和六语截图/录屏已通过。生成的 Xcode 工程没有把六个 `InfoPlist.strings` 放进 Copy Bundle Resources：XcodeGen 把路径以 `.lproj` 结尾的源当成没有构建阶段的文件。`project.yml` 改为从上级目录按组收录 `*.lproj/InfoPlist.strings`。`generate-ios.sh` 生成后检查 `knownRegions` 和资源阶段。本环境没有 xcodegen，没有生成工程，也没有重新编 iOS。
+
+`CourtCopy.swift` 文件头已改成：没有支持的语言时用英语。启动前仍是简体中文键。
+
+预览水印按语言写明演示、不是实测。录屏在测试写下结束标记后先停，测试不再转回竖屏。已录好的视频不在这台机器上，没有重剪。
+
+测速牌状态行最多两行，法语等改短，拍号、有效球速和动作仍在。没有跑界面测试。
+
+`scripts/render-store-frames.py` 用 Pillow 把真实截图贴进 1320×2868 文案框，不打开浏览器。`--self-test` 通过。仓库里没有这次采集的原图，正式渲染退出码 2，没有画出假界面。
+
+## 2026-11-13 宣传帧换首图、补日德法文案、预览时钟与字体（仍未编 iOS）
+
+Mac 对 `c4b23daf` 的编译、355 项测试、court-check 和模拟器构建已通过，六个 `InfoPlist.strings` 已在 App 里。90 张原图已有。Pillow 只出了简体、繁体、en-US、en-GB 各 5 张，因为 `captions.json` 没有日语、德语、法语。简体预览两次没过时钟检查（录像约 48 秒，墙钟约 83 秒）；另外五种约 26 秒通过。这台 Mac 上没有 `Hiragino Sans CNS.ttc` 和 `Hiragino Sans.ttc`，繁体和日语是靠 `COURT_PREVIEW_FONT` 指到 `Hiragino Sans GB.ttc` 才画出水印的。
+
+**时钟**：录屏在 `marks.txt` 出现 `end` 时就已经停了。检查却用测试进程退出的时刻当墙钟。简体的 `tearDown` 会去找「结束」「历史记录」「切换模式」，另外五种对不上这些中文标签，所以只有简体多出大约半分钟。检查改为对照录屏进程从开始到被打断的时间，相差超过 10% 仍然失败；测试进程退出和每个标记的偏移写进 `timing.txt`。预览这条测试不再做那段收尾，免得录到主屏幕，也免得简体单独拖很久。阈值没有放宽。
+
+**首图**：`01-scene` 不再贴 `00-home.png`。那张是模拟器首页，上面有 “The Simulator has no camera and can’t be used as a camera.”，这句是真的，没有涂掉，也没有改发行界面。首图改为已采集的历史记录页 `01-history.png`，演示标记还在文案里。回看帧改贴记录详情顶部，隐私帧改贴落点页，五张用的原图互不重复。文案仍说明一台机位、一台看板。两台设备同时入画的首页留给以后的真机采集。日语、德语、法语各补了 5 条功能说明，不写精度承诺。
+
+**字体**：按字库 cmap 找已安装、且能画出该水印全部字符的字体。本机没有的 Hiragino 路径直接跳过。`COURT_PREVIEW_FONT` 仍可指定，但盖不住这些字就失败。
+
+**本环境跑了**：`python3 scripts/store_preview_tools.py --self-test`、`python3 scripts/render-store-frames.py --self-test`。正式渲染没有原图，没有产出可上传的宣传帧。**没有跑** `swift build`、`swift test`、`court-check`、iOS 编译、截图和录屏。
+
+**Mac 需要再验证**（准备，不发布）：
+
+1. 简体预览重录一次：`./scripts/record-store-preview.sh <UDID> <目录> zh-Hans`。应写出 `timing.txt`，`ratio_raw_over_alive` 在 0.9–1.1，成片仍是 App 内画面，水印是「画面为演示数据，不是实测」。不要用上次被拒的编码。另外五种如果只改了脚本的计时口径，也建议各抽查一次；它们上次已经通过，不是必须六段全重录才能看这一处。
+2. 不设 `COURT_PREVIEW_FONT` 再录繁体或日语，脚本应自己选到已安装且能画出水印的字体（这台机器上是 Hiragino Sans GB 即可）。
+3. `COURT_STORE_RAW` 指向已有六语原图，跑 `python3 scripts/render-store-frames.py`。应得到 7 个语言目录各 5 张。`01-scene` 的画面是该语言的历史记录页，不是带模拟器警告的首页。缺图就停。
+
+## 2026-11-13 落点原因匹配键不随界面语言改写（未在本机跑 Swift）
+
+机位在降载、定位队列忙、定位失败时写进落点的句子，以及 `TennisReason` 表里的四条引擎原句，被 `courtText` 包过。简体下原文不变，分类正确。其他语言会先译成该语言，再拿去和简体原句比较，对不上就记成 `.other`。用户看到的短句仍走 `TennisReason.text`。球速和界内外算法没有改。
+
+**本环境跑了** `python3 scripts/l10n-check.py`。**没有跑** `swift test`。归档用的工程必须是不带 `COURT_CODE_ONLY` 的默认 `./scripts/generate-ios.sh`（`independent`），不能用模拟器那份不能分析的工程。
+
+## 2026-11-19 1.5 准备：室内发球与六语合在同一分支（未归档）
+
+远端 main `bd08d279` 有室内找场、浅色背景续球和偏暖不降载，没有已上线 1.4 的六语。已上线源是 `9dd718df`。这一分支以 main 为底并入那五个提交。营销版本改为 1.5 (1)。偏暖不再单独触发降载；落点原因的匹配键仍是简体原文。没有写室内对照的比例。没有跑 Swift，没有归档。

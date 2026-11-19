@@ -6,7 +6,7 @@ public enum CourtMetricKind: String, Identifiable {
     case speed, placement, strokes
     public var id: String { rawValue }
     var title: String {
-        switch self { case .speed: return "球速"; case .placement: return "落点"; case .strokes: return "动作" }
+        switch self { case .speed: return courtText("球速"); case .placement: return courtText("落点"); case .strokes: return courtText("动作") }
     }
 }
 
@@ -33,7 +33,7 @@ extension TennisStrokeKind {
 
 struct TennisSpeedChart: View {
     let events: [TennisShotEvent]
-    var xAxisTitle = "拍次"
+    var xAxisTitle = courtText("拍次")
     private struct Point: Identifiable {
         let id: UUID
         let index: Int
@@ -47,7 +47,7 @@ struct TennisSpeedChart: View {
         if points.isEmpty {
             VStack(spacing: CourtStyle.Space.s) {
                 Image(systemName: "chart.dots.scatter").font(.title3).foregroundStyle(CourtStyle.muted)
-                Text("有效球速出现后，这里显示逐拍趋势").font(.caption).foregroundStyle(CourtStyle.muted)
+                Text(courtText("有效球速出现后，这里显示逐拍趋势")).font(.caption).foregroundStyle(CourtStyle.muted)
             }
             .frame(maxWidth: .infinity, minHeight: 120)
             .background(CourtStyle.inset, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.card))
@@ -57,8 +57,8 @@ struct TennisSpeedChart: View {
             let kinds = TennisStrokeKind.allCases.filter { kind in points.contains { $0.kind == kind } }
             Chart(points) { point in
                 PointMark(x: .value(xAxisTitle, point.index), y: .value("km/h", point.speed))
-                    .foregroundStyle(by: .value("动作", point.kind.courtTitle))
-                    .symbol(by: .value("动作", point.kind.courtTitle))
+                    .foregroundStyle(by: .value(courtText("动作"), point.kind.courtTitle))
+                    .symbol(by: .value(courtText("动作"), point.kind.courtTitle))
                     .symbolSize(60)
             }
             .chartForegroundStyleScale(domain: kinds.map(\.courtTitle), range: kinds.map(\.courtColor))
@@ -66,7 +66,7 @@ struct TennisSpeedChart: View {
             .chartLegend(position: .bottom, alignment: .leading, spacing: CourtStyle.Space.s)
             .chartYScale(domain: 0...max(100, (points.map(\.speed).max() ?? 0) * 1.15))
             .chartXAxisLabel(xAxisTitle).chartYAxisLabel("km/h")
-            .frame(height: 175).accessibilityLabel("逐拍球速趋势，仅包含有可用球速的拍次")
+            .frame(height: 175).accessibilityLabel(courtText("逐拍球速趋势，仅包含有可用球速的拍次"))
         }
     }
 }
@@ -89,24 +89,24 @@ struct LiveSpeedReadout: View {
                     Text("--")
                         .font(.system(size: fontSize * 0.5, weight: .light).monospacedDigit())
                         .foregroundStyle(CourtStyle.muted).lineLimit(1)
-                        .accessibilityLabel("暂无有效球速")
+                        .accessibilityLabel(courtText("暂无有效球速"))
                         .accessibilityIdentifier("court.speed.readout")
                 }
                 Text("km/h").font(.title3).foregroundStyle(CourtStyle.muted)
             }
             if let latest {
-                Text("最近有效球速" + (summary.latestValidSpeed.map { " · " + $0.stroke.courtTitle } ?? " · 等待样本")).font(.callout)
+                Text(courtText("最近有效球速") + (summary.latestValidSpeed.map { " · " + $0.stroke.courtTitle } ?? courtText(" · 等待样本"))).font(.callout)
                 if latest.validSpeedKPH == nil {
-                    Text("最近一拍暂无球速" + (summary.latestValidSpeed == nil ? "" : "，保留上一有效值")).font(.caption).foregroundStyle(CourtStyle.muted)
-                    Text(latest.speedReasonText ?? "还在分析").font(.caption).foregroundStyle(CourtStyle.muted)
+                    Text(courtText("最近一拍暂无球速") + (summary.latestValidSpeed == nil ? "" : courtText("，保留上一有效值"))).font(.caption).foregroundStyle(CourtStyle.muted)
+                    Text(latest.speedReasonText ?? courtText("还在分析")).font(.caption).foregroundStyle(CourtStyle.muted)
                 }
-            } else { Text("等待可用击球").font(.callout).foregroundStyle(CourtStyle.muted) }
+            } else { Text(courtText("等待可用击球")).font(.callout).foregroundStyle(CourtStyle.muted) }
             if summary.count > 0 {
                 HStack(spacing: CourtStyle.Space.xl) {
-                    Label("平均 " + courtSpeed(summary.averageSpeed), systemImage: "chart.bar")
-                    Label("最高 " + courtSpeed(summary.maximumSpeed), systemImage: "arrow.up")
+                    Label(courtText("平均 ") + courtSpeed(summary.averageSpeed), systemImage: "chart.bar")
+                    Label(courtText("最高 ") + courtSpeed(summary.maximumSpeed), systemImage: "arrow.up")
                 }.font(.callout.monospacedDigit()).foregroundStyle(CourtStyle.muted)
-                Text("\(summary.speedCount) / \(summary.count) 拍有球速 · 模型估算")
+                Text(courtFormat("%1$@ / %2$@ 拍有球速 · 模型估算", "\(summary.speedCount)", "\(summary.count)"))
                     .font(.caption).foregroundStyle(CourtStyle.muted)
             }
         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -162,19 +162,19 @@ public struct CourtMetricFocus: View {
     private var strokesFocus: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: CourtStyle.Space.xl) {
-                focusHeader("动作分布", systemImage: "figure.tennis") {
+                focusHeader(courtText("动作分布"), systemImage: "figure.tennis") {
                     #if os(iOS)
-                    CourtTextButton("完成") { dismiss() }
+                    CourtTextButton(courtText("完成")) { dismiss() }
                     #endif
                 }
                 CourtStatus(text: model.shownEventsStatus.text, tone: model.shownEventsStatus.tone)
                 let events = model.shownEvents
                 if events.isEmpty {
-                    CourtNotice(text: "出现击球候选后，按动作类别统计拍数。")
+                    CourtNotice(text: courtText("出现击球候选后，按动作类别统计拍数。"))
                 } else {
-                    Text("\(events.count) 拍 · 最近一拍 " + (events.last?.stroke.courtTitle ?? "—")).font(.title2.monospacedDigit())
+                    Text(courtFormat("%1$@ 拍 · 最近一拍 ", "\(events.count)") + (events.last?.stroke.courtTitle ?? "—")).font(.title2.monospacedDigit())
                     TennisStrokeDistribution(events: events)
-                    Toggle("显示逐拍明细", isOn: $showDetails).frame(minHeight: 44)
+                    Toggle(courtText("显示逐拍明细"), isOn: $showDetails).frame(minHeight: 44)
                     if showDetails { RecentShotRows(events: events, selected: $selected) }
                 }
             }.padding(pagePadding).frame(maxWidth: 900).frame(maxWidth: .infinity)
@@ -185,24 +185,24 @@ public struct CourtMetricFocus: View {
         GeometryReader { geometry in
             ScrollView {
                 VStack(alignment: .leading, spacing: CourtStyle.Space.xl) {
-                    focusHeader("落点看板", systemImage: "scope") {
+                    focusHeader(courtText("落点看板"), systemImage: "scope") {
                         Button { scale = max(0.6, scale - 0.15) } label: { Image(systemName: "minus.magnifyingglass").frame(width: 44, height: 44).contentShape(Rectangle()) }
-                            .disabled(scale <= 0.6).accessibilityLabel("缩小球场图").help("缩小球场图")
+                            .disabled(scale <= 0.6).accessibilityLabel(courtText("缩小球场图")).help(courtText("缩小球场图"))
                         Button { scale = min(1.6, scale + 0.15) } label: { Image(systemName: "plus.magnifyingglass").frame(width: 44, height: 44).contentShape(Rectangle()) }
-                            .disabled(scale >= 1.6).accessibilityLabel("放大球场图").help("放大球场图")
+                            .disabled(scale >= 1.6).accessibilityLabel(courtText("放大球场图")).help(courtText("放大球场图"))
                         #if os(iOS)
-                        CourtTextButton("完成") { dismiss() }
+                        CourtTextButton(courtText("完成")) { dismiss() }
                         #endif
                     }
                     CourtStatus(text: model.shownEventsStatus.text, tone: model.shownEventsStatus.tone)
                     TennisCourtMap(events: model.shownEvents, selected: $selected)
                         .frame(height: min(850, max(250, geometry.size.height * 0.64 * scale)))
                     CourtStrokeLegend(events: model.shownEvents, placementsOnly: true, symbols: true)
-                    Text("\(TennisEventSummary(events: model.shownEvents).placementCount) 拍有落点")
+                    Text(courtFormat("%1$@ 拍有落点", "\(TennisEventSummary(events: model.shownEvents).placementCount)"))
                         .font(.title2.monospacedDigit())
-                    Text("点落点查看对应拍次（读屏：上下轻扫逐拍）；仅显示有位置依据的数据。")
+                    Text(courtText("点落点查看对应拍次（读屏：上下轻扫逐拍）；仅显示有位置依据的数据。"))
                         .font(.caption).foregroundStyle(CourtStyle.muted)
-                    Toggle("显示逐拍明细", isOn: $showDetails).frame(minHeight: 44)
+                    Toggle(courtText("显示逐拍明细"), isOn: $showDetails).frame(minHeight: 44)
                     if showDetails {
                         RecentShotRows(events: model.shownEvents, selected: $selected)
                     }
@@ -226,7 +226,7 @@ struct RecentShotRows: View {
                         Spacer()
                         Text(courtSpeed(event.validSpeedKPH) + " km/h").monospacedDigit()
                         Image(systemName: event.hasCourtPlacement ? "scope" : "minus").foregroundStyle(CourtStyle.muted)
-                            .accessibilityLabel(event.hasCourtPlacement ? "有落点" : "暂无落点")
+                            .accessibilityLabel(event.hasCourtPlacement ? courtText("有落点") : courtText("暂无落点"))
                     }.padding(CourtStyle.Space.m).frame(minHeight: 46)
                         .background(selected == event.id ? CourtStyle.selectedFill : CourtStyle.raised, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.control))
                         .contentShape(RoundedRectangle(cornerRadius: CourtStyle.Radius.control))
@@ -280,24 +280,24 @@ struct CourtDesktopDashboard: View {
 
     /// The same words as the iPhone display's connection pill.
     private var connectionTitle: String {
-        model.isLive ? "机位实时" : model.connected ? "已连接 · 等待采集" : "未连接机位"
+        model.isLive ? courtText("机位实时") : model.connected ? courtText("已连接 · 等待采集") : courtText("未连接机位")
     }
 
     private var header: some View {
         HStack(spacing: CourtStyle.Space.m) {
             CourtLogoMark(size: 30)
-            Text("球场工作台").font(.title2.weight(.semibold)).lineLimit(1).accessibilityAddTraits(.isHeader)
+            Text(courtText("球场工作台")).font(.title2.weight(.semibold)).lineLimit(1).accessibilityAddTraits(.isHeader)
             CourtStatus(text: connectionTitle, tone: model.isLive ? .live : .idle)
             Spacer(minLength: 0)
             if model.connected {
-                Button { openWindow(id: "court.live-video") } label: { Label("实时画面", systemImage: "video") }
+                Button { openWindow(id: "court.live-video") } label: { Label(courtText("实时画面"), systemImage: "video") }
                     .accessibilityIdentifier("court.live-video.open")
             }
-            Button(action: history) { Label("历史记录", systemImage: "clock.arrow.circlepath") }
+            Button(action: history) { Label(courtText("历史记录"), systemImage: "clock.arrow.circlepath") }
             // While no camera is connected the connect prompt carries the one primary button.
-            Button(action: pairing) { Label(model.connected ? "配对与连接" : "连接机位", systemImage: "qrcode") }
-            Menu { Button("切换模式", action: leave) } label: { Image(systemName: "ellipsis").frame(width: 24) }
-                .accessibilityLabel("更多").help("切换设备角色")
+            Button(action: pairing) { Label(model.connected ? courtText("配对与连接") : courtText("连接机位"), systemImage: "qrcode") }
+            Menu { Button(courtText("切换模式"), action: leave) } label: { Image(systemName: "ellipsis").frame(width: 24) }
+                .accessibilityLabel(courtText("更多")).help(courtText("切换设备角色"))
         }.buttonStyle(CourtButton()).lineLimit(1)
     }
 
@@ -328,11 +328,11 @@ struct CourtDesktopDashboard: View {
             Image(systemName: "qrcode.viewfinder").font(.system(size: 36, weight: .light)).foregroundStyle(CourtStyle.green)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: CourtStyle.Space.s) {
-                Text("连接机位").font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
-                Text("点「连接机位」显示这台看板的二维码，再在机位上点「连接」→「扫码连接 App 看板」。连上后，这里显示实时画面、球速、落点和逐拍记录。")
+                Text(courtText("连接机位")).font(.title2.weight(.semibold)).accessibilityAddTraits(.isHeader)
+                Text(courtText("点「连接机位」显示这台看板的二维码，再在机位上点「连接」→「扫码连接 App 看板」。连上后，这里显示实时画面、球速、落点和逐拍记录。"))
                     .font(.callout).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
             }
-            Button(action: pairing) { Label("连接机位", systemImage: "qrcode").frame(maxWidth: .infinity) }
+            Button(action: pairing) { Label(courtText("连接机位"), systemImage: "qrcode").frame(maxWidth: .infinity) }
                 .buttonStyle(CourtButton(primary: true)).accessibilityIdentifier("court.server.connect")
             Text(model.serverStatus).font(.caption).foregroundStyle(CourtStyle.muted)
         }
@@ -345,29 +345,29 @@ struct CourtDesktopDashboard: View {
             .accessibilityIdentifier(identifier)
     }
     private var speedCard: some View {
-        CourtPanel("球速", fillHeight: true, accessory: {
-            cardLink("打开测速牌", identifier: "court.speedboard.open") { openWindow(id: "court.speedboard") }
+        CourtPanel(courtText("球速"), fillHeight: true, accessory: {
+            cardLink(courtText("打开测速牌"), identifier: "court.speedboard.open") { openWindow(id: "court.speedboard") }
         }) {
             Button { openWindow(id: "court.speedboard") } label: {
                 LiveSpeedReadout(events: model.shownEvents, fontSize: 88)
                     .contentShape(Rectangle())
-            }.buttonStyle(.plain).help("点击打开大字测速牌")
-                .accessibilityLabel("放大球速，打开测速牌")
+            }.buttonStyle(.plain).help(courtText("点击打开大字测速牌"))
+                .accessibilityLabel(courtText("放大球速，打开测速牌"))
                 .accessibilityIdentifier("court.focus.speed.open")
             TennisSpeedChart(events: model.shownEvents)
         }
     }
     private var placementCard: some View {
-        CourtPanel("落点分布", fillHeight: true, accessory: {
-            cardLink("放大落点", identifier: "court.focus.placement.open") { openWindow(id: "court.placement") }
+        CourtPanel(courtText("落点分布"), fillHeight: true, accessory: {
+            cardLink(courtText("放大落点"), identifier: "court.focus.placement.open") { openWindow(id: "court.placement") }
         }) {
             TennisCourtMap(events: model.shownEvents, selected: $selected).frame(height: 330)
             let mapped = TennisEventSummary(events: model.shownEvents).placementCount
             if mapped > 0 {
                 CourtStrokeLegend(events: model.shownEvents, placementsOnly: true, symbols: true)
-                Text("\(mapped) 拍有落点 · 点落点查看是哪一拍").font(.caption).foregroundStyle(CourtStyle.muted)
+                Text(courtFormat("%1$@ 拍有落点 · 点落点查看是哪一拍", "\(mapped)")).font(.caption).foregroundStyle(CourtStyle.muted)
             } else {
-                Text("出现击球后，落点会画在球场图上。").font(.caption).foregroundStyle(CourtStyle.muted)
+                Text(courtText("出现击球后，落点会画在球场图上。")).font(.caption).foregroundStyle(CourtStyle.muted)
             }
         }
     }
@@ -376,22 +376,22 @@ struct CourtDesktopDashboard: View {
     /// and the 「全部 N 拍」 list; selecting a shot also marks it on the court map.
     private var shotsPanel: some View {
         let events = model.shownEvents
-        return CourtPanel("最近击球", accessory: {
+        return CourtPanel(courtText("最近击球"), accessory: {
             if events.count > TennisAnalysisOverview.liveRowLimit {
-                CourtLinkButton(title: "全部 \(events.count) 拍", systemImage: "list.bullet") { showAllShots = true }
+                CourtLinkButton(title: courtFormat("全部 %1$@ 拍", "\(events.count)"), systemImage: "list.bullet") { showAllShots = true }
                     .accessibilityIdentifier("court.analysis.all-shots")
             }
         }) {
             if events.isEmpty {
-                CourtNotice(text: model.isLive ? "出现击球候选后，逐拍列出动作、球速与落点。" : "机位开始采集后，逐拍球速与落点会实时显示在这里。")
+                CourtNotice(text: model.isLive ? courtText("出现击球候选后，逐拍列出动作、球速与落点。") : courtText("机位开始采集后，逐拍球速与落点会实时显示在这里。"))
             } else {
                 VStack(alignment: .leading, spacing: CourtStyle.Space.xs) {
                     if let finished = model.finishedRecordShots {
-                        Text("上一次记录「\(finished.title)」的结果，开始新记录后清空").font(.caption).foregroundStyle(CourtStyle.muted)
+                        Text(courtFormat("上一次记录「%1$@」的结果，开始新记录后清空", "\(CourtCopy.stored(finished.title))")).font(.caption).foregroundStyle(CourtStyle.muted)
                     }
-                    Text("\(events.count) 个击球候选 · 点一拍在球场图上标出并看详情").font(.caption).foregroundStyle(CourtStyle.muted)
+                    Text(courtFormat("%1$@ 个击球候选 · 点一拍在球场图上标出并看详情", "\(events.count)")).font(.caption).foregroundStyle(CourtStyle.muted)
                     if model.canFetchClips, model.cameraOwnsSession {
-                        Label("点 ▶ 从机位取这一拍片段：" + ShotReplayButton.clipNote, systemImage: "play.circle")
+                        Label(courtText("点 ▶ 从机位取这一拍片段：") + ShotReplayButton.clipNote, systemImage: "play.circle")
                             .font(.caption).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -419,7 +419,7 @@ struct CourtDesktopDashboard: View {
                 // The iPhone's 「机位与分析」 card: key values, what needs attention, setup actions, and
                 // the full camera status, recognition and people detection folded underneath.
                 CameraHealthCard(model: model, showPeople: $showPeople) {
-                    Button(action: handedness) { Label("持拍手", systemImage: "hand.raised").frame(maxWidth: .infinity) }
+                    Button(action: handedness) { Label(courtText("持拍手"), systemImage: "hand.raised").frame(maxWidth: .infinity) }
                         .buttonStyle(CourtButton()).accessibilityIdentifier("court.handedness.open")
                 }
             }
@@ -427,11 +427,11 @@ struct CourtDesktopDashboard: View {
     }
 
     private var previewPanel: some View {
-        CourtPanel("实时画面", accessory: {
+        CourtPanel(courtText("实时画面"), accessory: {
             Button { openWindow(id: "court.live-video") } label: {
                 Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 44, height: 44).contentShape(Rectangle())
             }.buttonStyle(.plain).foregroundStyle(CourtStyle.green)
-                .accessibilityLabel("放大实时画面").help("在独立窗口中放大实时画面")
+                .accessibilityLabel(courtText("放大实时画面")).help(courtText("在独立窗口中放大实时画面"))
         }) {
             ServerVideo(model: model, showPeople: showPeople)
             Text(model.deviceName).font(.caption).foregroundStyle(CourtStyle.muted).lineLimit(2)
@@ -445,40 +445,40 @@ private struct DesktopSessionControls: View {
     @Bindable var model: WorkspaceModel
     let finish: () -> Void
     var body: some View {
-        CourtPanel(model.hasControllableSession ? "正在记录" : "准备记录") {
+        CourtPanel(model.hasControllableSession ? courtText("正在记录") : courtText("准备记录")) {
             if model.hasControllableSession, let session = model.session {
-                Text(session.title).font(.headline)
+                Text(CourtCopy.stored(session.title)).font(.headline)
                 Text(courtDuration(session.elapsed(at: model.now))).font(.largeTitle.monospacedDigit())
                 CourtStatus(text: session.state.courtTitle, tone: session.state.courtTone)
-                Label(model.isRecording ? "机位正在录像" : model.cameraOwnsSession ? "机位当前未录像" : "等待机位加入 · 机位连接后开始录像与分析",
+                Label(model.isRecording ? courtText("机位正在录像") : model.cameraOwnsSession ? courtText("机位当前未录像") : courtText("等待机位加入 · 机位连接后开始录像与分析"),
                       systemImage: model.isRecording ? "record.circle.fill" : "video.slash")
                     .font(.caption).foregroundStyle(model.isRecording ? CourtStyle.green : CourtStyle.muted)
                 HStack {
                     Button(action: model.pauseOrResume) {
-                        Label(session.state == .active ? "暂停" : "继续", systemImage: session.state == .active ? "pause.fill" : "play.fill").frame(maxWidth: .infinity)
+                        Label(session.state == .active ? courtText("暂停") : courtText("继续"), systemImage: session.state == .active ? "pause.fill" : "play.fill").frame(maxWidth: .infinity)
                     }.buttonStyle(CourtButton(primary: model.connected))
-                    Button(action: finish) { Label("结束", systemImage: "stop.fill") }.buttonStyle(CourtButton(destructive: true))
+                    Button(action: finish) { Label(courtText("结束"), systemImage: "stop.fill") }.buttonStyle(CourtButton(destructive: true))
                 }.disabled(model.isSaving || model.sessionCommandsLocked)
                 if let reason = model.sessionWaitReason { ProgressView(reason).font(.caption) }
-                if session.state == .paused { CourtNotice(text: "暂停期间机位停止录像，这段时间的击球不计入本次记录；暂停中不能标记。") }
-                if session.state == .interrupted { CourtNotice(text: "机位上的这次记录意外中断（机位曾重启）。点「继续」恢复录像，或点「结束」保存。", warning: true) }
+                if session.state == .paused { CourtNotice(text: courtText("暂停期间机位停止录像，这段时间的击球不计入本次记录；暂停中不能标记。")) }
+                if session.state == .interrupted { CourtNotice(text: courtText("机位上的这次记录意外中断（机位曾重启）。点「继续」恢复录像，或点「结束」保存。"), warning: true) }
                 HStack {
-                    ForEach(["精彩", "待复核"], id: \.self) { label in
-                        Button { model.markEvent(label) } label: { Label(label, systemImage: "bookmark").frame(maxWidth: .infinity) }
+                    ForEach(["精彩", "待复核"], id: \.self) { label in // l10n:keep
+                        Button { model.markEvent(label) } label: { Label(courtText(label), systemImage: "bookmark").frame(maxWidth: .infinity) }
                             .buttonStyle(CourtButton()).disabled(session.state != .active)
                     }
                 }
-                Text("已标记 \(session.events.filter { $0.kind == .marker }.count) 个时刻")
+                Text(courtFormat("已标记 %1$@ 个时刻", "\(session.events.filter { $0.kind == .marker }.count)"))
                     .font(.caption).foregroundStyle(CourtStyle.muted)
             } else {
-                TextField("给这次上场起个名字", text: $model.sessionTitle).courtField()
-                    .accessibilityLabel("记录名称")
-                Button(action: model.startSession) { Label("开始记录", systemImage: "record.circle").frame(maxWidth: .infinity) }
+                TextField(courtText("给这次上场起个名字"), text: $model.sessionTitle).courtField()
+                    .accessibilityLabel(courtText("记录名称"))
+                Button(action: model.startSession) { Label(courtText("开始记录"), systemImage: "record.circle").frame(maxWidth: .infinity) }
                     .buttonStyle(CourtButton(primary: model.connected)).disabled(model.isSaving || model.sessionCommandsLocked)
                 if let reason = model.sessionWaitReason { ProgressView(reason).font(.caption) }
-                CourtNotice(text: model.isLive ? "机位保存录像并实时分析，看板保存逐拍数据镜像；未知数据保持为空。" : "机位尚未采集。开始记录后，机位连接并采集时才会录像与分析。")
+                CourtNotice(text: model.isLive ? courtText("机位保存录像并实时分析，看板保存逐拍数据镜像；未知数据保持为空。") : courtText("机位尚未采集。开始记录后，机位连接并采集时才会录像与分析。"))
             }
-            if model.isSaving { ProgressView("正在保存录像与记录…").font(.caption) }
+            if model.isSaving { ProgressView(courtText("正在保存录像与记录…")).font(.caption) }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("court.session.panel")

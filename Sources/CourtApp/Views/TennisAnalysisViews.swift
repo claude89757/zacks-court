@@ -10,9 +10,9 @@ struct TennisAnalysisNavigation: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
         LazyVGrid(columns: dynamicTypeSize.isAccessibilitySize ? [GridItem(.flexible())] : Array(repeating: GridItem(.flexible(), spacing: CourtStyle.Space.s), count: 3), spacing: CourtStyle.Space.s) {
-            shortcut("球速", value: courtSpeed(events.last { $0.validSpeedKPH != nil }?.validSpeedKPH), caption: "km/h · 最近有效", target: .speed)
-            shortcut("落点", value: events.isEmpty ? "—" : "\(events.filter { $0.bounce?.courtPosition != nil }.count)", caption: "拍有落点", target: .placement)
-            shortcut("动作", value: events.last?.stroke.courtTitle ?? "—", caption: "最近一拍", target: .strokes)
+            shortcut(courtText("球速"), value: courtSpeed(events.last { $0.validSpeedKPH != nil }?.validSpeedKPH), caption: courtText("km/h · 最近有效"), target: .speed)
+            shortcut(courtText("落点"), value: events.isEmpty ? "—" : "\(events.filter { $0.bounce?.courtPosition != nil }.count)", caption: courtText("拍有落点"), target: .placement)
+            shortcut(courtText("动作"), value: events.last?.stroke.courtTitle ?? "—", caption: courtText("最近一拍"), target: .strokes)
         }
     }
     private func shortcut(_ title: String, value: String, caption: String, target: Target) -> some View {
@@ -30,7 +30,7 @@ struct TennisAnalysisNavigation: View {
                 .background(CourtStyle.panel, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.card))
                 .overlay(RoundedRectangle(cornerRadius: CourtStyle.Radius.card).strokeBorder(CourtStyle.border))
                 .contentShape(RoundedRectangle(cornerRadius: CourtStyle.Radius.card))
-        }.buttonStyle(.plain).accessibilityLabel("放大" + title + "，" + value + "，" + caption)
+        }.buttonStyle(.plain).accessibilityLabel(courtText("放大") + title + "，" + value + "，" + caption)
             .accessibilityIdentifier("court.analysis.\(target.rawValue).open")
     }
 }
@@ -38,14 +38,14 @@ struct TennisAnalysisNavigation: View {
 extension TennisStrokeKind {
     var courtTitle: String {
         switch self {
-        case .groundstroke: return "落地击球"
-        case .forehand: return "正手"
-        case .backhand: return "反手"
-        case .serve: return "发球"
-        case .volley: return "截击"
-        case .overhead: return "高压"
-        case .feed: return "喂球"
-        case .unknown: return "待确认"
+        case .groundstroke: return courtText("落地击球")
+        case .forehand: return courtText("正手")
+        case .backhand: return courtText("反手")
+        case .serve: return courtText("发球")
+        case .volley: return courtText("截击")
+        case .overhead: return courtText("高压")
+        case .feed: return courtText("喂球")
+        case .unknown: return courtText("待确认")
         }
     }
     /// Categorical stroke colors, validated for the dark panel surface (#131A16):
@@ -80,34 +80,34 @@ struct TennisAnalysisStatus: View {
             if embedded {
                 VStack(alignment: .leading, spacing: 14) { content }
             } else {
-                CourtPanel("分析状态") { content }
+                CourtPanel(courtText("分析状态")) { content }
             }
         }.accessibilityElement(children: .contain).accessibilityIdentifier("court.analysis.status")
     }
     @ViewBuilder private var content: some View {
-            CourtStatus(text: error == nil ? status : "分析暂不可用",
+            CourtStatus(text: error == nil ? status : courtText("分析暂不可用"),
                         tone: error != nil || !modelsAvailable ? .warning : isLive ? .live : .idle)
             if !modelsAvailable {
-                CourtNotice(text: "分析模型尚未就绪。可以采集与保存录像，球速、落点和动作不会生成占位结果。", warning: true)
+                CourtNotice(text: courtText("分析模型尚未就绪。可以采集与保存录像，球速、落点和动作不会生成占位结果。"), warning: true)
             }
             if let error { CourtNotice(text: error, warning: true).textSelection(.enabled) }
             if let recognition {
                 RecognitionRows(status: recognition)
             } else if let calibration {
-                Label(calibration.isAvailable ? "球场映射可用" : "球场映射未就绪", systemImage: calibration.isAvailable ? "checkmark.viewfinder" : "viewfinder")
+                Label(calibration.isAvailable ? courtText("球场映射可用") : courtText("球场映射未就绪"), systemImage: calibration.isAvailable ? "checkmark.viewfinder" : "viewfinder")
                     .font(.callout.weight(.medium)).foregroundStyle(calibration.isAvailable ? CourtStyle.green : CourtStyle.warning)
                 if !calibration.isAvailable || (calibration.reason ?? "").isEmpty {
-                    Text("\(calibration.landmarkCount) 个场地参考点").font(.caption).foregroundStyle(CourtStyle.muted)
+                    Text(courtFormat("%1$@ 个场地参考点", "\(calibration.landmarkCount)")).font(.caption).foregroundStyle(CourtStyle.muted)
                 }
                 if let reason = calibration.reason, !reason.isEmpty { CourtNotice(text: reason, warning: !calibration.isAvailable) }
             } else {
-                CourtNotice(text: isLive ? "正在等待场地地标；缺少球场映射时不在球场图上绘制落点。" : "连接固定机位后检查球场地标与分析质量。")
+                CourtNotice(text: isLive ? courtText("正在等待场地地标；缺少球场映射时不在球场图上绘制落点。") : courtText("连接固定机位后检查球场地标与分析质量。"))
             }
-            DisclosureGroup("数据口径") {
+            DisclosureGroup(courtText("数据口径")) {
                 VStack(alignment: .leading, spacing: 8) {
-                    CourtNotice(text: "球速与落点为模型估算，球场映射可用不等于物理测速已校准。分类模型分数不是准确率，不确定的动作保留为待确认。")
+                    CourtNotice(text: courtText("球速与落点为模型估算，球场映射可用不等于物理测速已校准。分类模型分数不是准确率，不确定的动作保留为待确认。"))
                     if let residual = calibration?.validationErrorMeters, residual.isFinite {
-                        CourtNotice(text: String(format: "球场映射拟合残差 %.2f m；这不是球速或落点的实测误差。", residual))
+                        CourtNotice(text: courtPrintf("球场映射拟合残差 %.2f m；这不是球速或落点的实测误差。", residual))
                     }
                     ForEach(Array(Set(limitations)).sorted(), id: \.self) { CourtNotice(text: $0) }
                 }.padding(.top, 8)
@@ -117,7 +117,7 @@ struct TennisAnalysisStatus: View {
 
 struct TennisAnalysisOverview: View {
     let events: [TennisShotEvent]
-    var emptyReason = "等待可用击球样本"
+    var emptyReason = courtText("等待可用击球样本")
     var calibration: TennisCourtCalibrationState?
     var historical = false
     /// Where the shots come from when that is not obvious (「上一次记录「…」」, 「未开始记录 · 最近几拍」).
@@ -148,7 +148,7 @@ struct TennisAnalysisOverview: View {
         VStack(spacing: CourtStyle.Space.l) {
             if historical && events.isEmpty {
                 // A saved record without shots: say so once, not in four empty panels.
-                CourtPanel("击球分析") { CourtNotice(text: emptyReason) }
+                CourtPanel(courtText("击球分析")) { CourtNotice(text: emptyReason) }
                     .accessibilityElement(children: .contain).accessibilityIdentifier("court.analysis.empty")
             } else {
                 speedPanel
@@ -160,32 +160,32 @@ struct TennisAnalysisOverview: View {
     }
 
     private var speedPanel: some View {
-        CourtPanel("球速", accessory: {
+        CourtPanel(courtText("球速"), accessory: {
             if let openSpeedBoard {
-                CourtLinkButton(title: "测速牌", systemImage: "arrow.up.left.and.arrow.down.right", action: openSpeedBoard)
+                CourtLinkButton(title: courtText("测速牌"), systemImage: "arrow.up.left.and.arrow.down.right", action: openSpeedBoard)
                     .accessibilityIdentifier("court.speedboard.open")
             }
         }) {
             CourtMetricGrid {
-                CourtMetric(title: "最近一拍", value: speedText(latest?.speedKPH), unit: "km/h")
-                CourtMetric(title: "有效平均", value: speedText(speeds.isEmpty ? nil : speeds.reduce(0, +) / Double(speeds.count)), unit: "km/h")
-                CourtMetric(title: "最高估算", value: speedText(speeds.max()), unit: "km/h")
+                CourtMetric(title: courtText("最近一拍"), value: speedText(latest?.speedKPH), unit: "km/h")
+                CourtMetric(title: courtText("有效平均"), value: speedText(speeds.isEmpty ? nil : speeds.reduce(0, +) / Double(speeds.count)), unit: "km/h")
+                CourtMetric(title: courtText("最高估算"), value: speedText(speeds.max()), unit: "km/h")
             }
             if events.isEmpty { CourtNotice(text: emptyReason) }
             else {
                 if let sourceNote { Text(sourceNote).font(.caption).foregroundStyle(CourtStyle.muted) }
-                Text("\(speeds.count) 拍有球速 · \(events.count - speeds.count) 拍暂无球速")
+                Text(courtFormat("%1$@ 拍有球速 · %2$@ 拍暂无球速", "\(speeds.count)", "\(events.count - speeds.count)"))
                     .font(.caption).foregroundStyle(CourtStyle.muted)
-                if let reason = latest?.speedReasonText { CourtNotice(text: "最近一拍：" + reason) }
+                if let reason = latest?.speedReasonText { CourtNotice(text: courtText("最近一拍：") + reason) }
             }
-            CourtNotice(text: "模型估算 · 未完成物理准确率验证。平均与最高仅统计有效值，缺失值不按 0 计算。")
+            CourtNotice(text: courtText("模型估算 · 未完成物理准确率验证。平均与最高仅统计有效值，缺失值不按 0 计算。"))
         }.accessibilityElement(children: .contain).accessibilityIdentifier("court.analysis.speed").id("court.analysis.speed")
     }
 
     private var placementPanel: some View {
-        CourtPanel("球场落点", accessory: {
+        CourtPanel(courtText("球场落点"), accessory: {
             if let openPlacement {
-                CourtLinkButton(title: "放大", systemImage: "arrow.up.left.and.arrow.down.right", action: openPlacement)
+                CourtLinkButton(title: courtText("放大"), systemImage: "arrow.up.left.and.arrow.down.right", action: openPlacement)
                     .accessibilityIdentifier("court.focus.placement.open")
             }
         }) {
@@ -193,35 +193,35 @@ struct TennisAnalysisOverview: View {
                 .frame(maxHeight: 420)
             let mapped = events.filter { $0.bounce?.courtPosition != nil }.count
             if events.isEmpty {
-                Text(panelEmptyText("出现击球后，落点会画在球场图上。")).font(.caption).foregroundStyle(CourtStyle.muted)
+                Text(panelEmptyText(courtText("出现击球后，落点会画在球场图上。"))).font(.caption).foregroundStyle(CourtStyle.muted)
             } else if mapped == 0 {
                 CourtNotice(text: unavailableBounceReason)
             } else {
                 CourtStrokeLegend(events: events, placementsOnly: true, symbols: true)
-                Text("\(mapped) 拍有落点 · \(events.count - mapped) 拍暂无落点")
+                Text(courtFormat("%1$@ 拍有落点 · %2$@ 拍暂无落点", "\(mapped)", "\(events.count - mapped)"))
                     .font(.caption).foregroundStyle(CourtStyle.muted)
             }
-            CourtNotice(text: "俯视参考图，上方为远端。只画模型估计的落点；没有落点的击球不画点。界内外只在打开「界内外」后给出，也是模型估计，不是判罚。")
+            CourtNotice(text: courtText("俯视参考图，上方为远端。只画模型估计的落点；没有落点的击球不画点。界内外只在打开「界内外」后给出，也是模型估计，不是判罚。"))
         }.accessibilityElement(children: .contain).accessibilityIdentifier("court.analysis.placement").id("court.analysis.placement")
     }
 
     /// Each panel says what it will show; the shared reason appears once, in the speed panel.
-    private func panelEmptyText(_ live: String) -> String { historical ? "本次记录没有可用的击球候选。" : live }
+    private func panelEmptyText(_ live: String) -> String { historical ? courtText("本次记录没有可用的击球候选。") : live }
 
     private var unavailableBounceReason: String {
-        if let calibration, !calibration.isAvailable { return "还没识别出球场，暂不画落点。" }
-        return latest?.placementReasonText.map { "最近一拍：" + $0 } ?? "还没有落点。"
+        if let calibration, !calibration.isAvailable { return courtText("还没识别出球场，暂不画落点。") }
+        return latest?.placementReasonText.map { courtText("最近一拍：") + $0 } ?? courtText("还没有落点。")
     }
 
     private var strokePanel: some View {
-        CourtPanel("动作类别", accessory: {
+        CourtPanel(courtText("动作类别"), accessory: {
             if let configureHandedness {
-                CourtLinkButton(title: "持拍手", systemImage: "hand.raised", action: configureHandedness)
+                CourtLinkButton(title: courtText("持拍手"), systemImage: "hand.raised", action: configureHandedness)
                     .accessibilityIdentifier("court.handedness.open")
             }
         }) {
             if events.isEmpty {
-                Text(panelEmptyText("出现击球候选后，按动作类别统计拍数。")).font(.caption).foregroundStyle(CourtStyle.muted)
+                Text(panelEmptyText(courtText("出现击球候选后，按动作类别统计拍数。"))).font(.caption).foregroundStyle(CourtStyle.muted)
             } else {
                 TennisStrokeDistribution(events: events)
             }
@@ -229,17 +229,17 @@ struct TennisAnalysisOverview: View {
     }
 
     private var timelinePanel: some View {
-        CourtPanel(historical ? "逐拍回看" : "最近击球", accessory: {
+        CourtPanel(historical ? courtText("逐拍回看") : courtText("最近击球"), accessory: {
             if !historical, let openAllShots, (allShotCount ?? events.count) > Self.liveRowLimit {
-                CourtLinkButton(title: "全部 \(allShotCount ?? events.count) 拍", systemImage: "list.bullet", action: openAllShots)
+                CourtLinkButton(title: courtFormat("全部 %1$@ 拍", "\(allShotCount ?? events.count)"), systemImage: "list.bullet", action: openAllShots)
                     .accessibilityIdentifier("court.analysis.all-shots")
             }
         }) {
             if events.isEmpty {
-                Text(panelEmptyText("出现击球候选后，逐拍列出动作、球速与落点。")).font(.caption).foregroundStyle(CourtStyle.muted)
+                Text(panelEmptyText(courtText("出现击球候选后，逐拍列出动作、球速与落点。"))).font(.caption).foregroundStyle(CourtStyle.muted)
             } else {
                 VStack(alignment: .leading, spacing: CourtStyle.Space.xs) {
-                    Text("\(events.count) 个击球候选 · 点一拍在球场图上标出并看详情").font(.caption).foregroundStyle(CourtStyle.muted)
+                    Text(courtFormat("%1$@ 个击球候选 · 点一拍在球场图上标出并看详情", "\(events.count)")).font(.caption).foregroundStyle(CourtStyle.muted)
                         .accessibilityIdentifier("court.analysis.shot-count")
                     if let shotNote {
                         Label(shotNote, systemImage: "play.circle").font(.caption).foregroundStyle(CourtStyle.muted)
@@ -284,7 +284,7 @@ struct TennisStrokeDistribution: View {
                         HStack {
                             CourtStrokeTag(kind: kind)
                             Spacer()
-                            Text("\(count) 拍").font(.callout.monospacedDigit()).foregroundStyle(CourtStyle.muted)
+                            Text(courtFormat("%1$@ 拍", "\(count)")).font(.callout.monospacedDigit()).foregroundStyle(CourtStyle.muted)
                         }
                         GeometryReader { geometry in
                             RoundedRectangle(cornerRadius: 3).fill(CourtStyle.raised)
@@ -294,7 +294,7 @@ struct TennisStrokeDistribution: View {
                     }.accessibilityElement(children: .combine)
                 }
             }
-            CourtNotice(text: "来自动作模型的分类候选。落地击球尚未区分正反手时，保留原类别；待确认样本计入总数。")
+            CourtNotice(text: courtText("来自动作模型的分类候选。落地击球尚未区分正反手时，保留原类别；待确认样本计入总数。"))
         }
     }
 }
@@ -312,7 +312,7 @@ struct TennisShotRow: View {
     private var hasPlacement: Bool { event.bounce?.courtPosition != nil }
     /// Plain wording for what this shot lacks, or nil when it has both values.
     private var missing: String? {
-        let parts = [event.speedReasonText.map { "球速：" + $0 }, event.placementReasonText.map { "落点：" + $0 }].compactMap { $0 }
+        let parts = [event.speedReasonText.map { courtText("球速：") + $0 }, event.placementReasonText.map { courtText("落点：") + $0 }].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
@@ -323,7 +323,7 @@ struct TennisShotRow: View {
                     summary.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
                 }.buttonStyle(.plain)
                     .accessibilityLabel(spokenSummary)
-                    .accessibilityHint(isSelected ? "收起" : "在球场图上标出这一拍，并显示详情")
+                    .accessibilityHint(isSelected ? courtText("收起") : courtText("在球场图上标出这一拍，并显示详情"))
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 if let accessory { accessory(event) }
             }
@@ -362,8 +362,8 @@ struct TennisShotRow: View {
 
     private var details: some View {
         VStack(alignment: .leading, spacing: CourtStyle.Space.xs) {
-            if event.origin == "offline" { Label("离线补算", systemImage: "wand.and.stars") }
-            if hasPlacement { Label("落点已标在球场图", systemImage: "scope").foregroundStyle(CourtStyle.green) }
+            if event.origin == "offline" { Label(courtText("离线补算"), systemImage: "wand.and.stars") }
+            if hasPlacement { Label(courtText("落点已标在球场图"), systemImage: "scope").foregroundStyle(CourtStyle.green) }
             // Model score and the engine's own wording, for the selected shot only.
             Text(shotDetails(event)).font(.caption2)
         }.font(.caption).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
@@ -373,9 +373,9 @@ struct TennisShotRow: View {
     private var spokenSummary: String {
         var parts = [event.stroke.courtTitle]
         if let time { parts.append(time) }
-        if event.origin == "offline" { parts.append("离线补算") }
-        parts.append(event.speedReasonText.map { "暂无球速，" + $0 } ?? (speedText(event.speedKPH) + " 千米每小时"))
-        parts.append(event.placementReasonText.map { "暂无落点，" + $0 } ?? (hasPlacement ? "落点已标在球场图" : "暂无落点"))
+        if event.origin == "offline" { parts.append(courtText("离线补算")) }
+        parts.append(event.speedReasonText.map { courtText("暂无球速，") + $0 } ?? (speedText(event.speedKPH) + courtText(" 千米每小时")))
+        parts.append(event.placementReasonText.map { courtText("暂无落点，") + $0 } ?? (hasPlacement ? courtText("落点已标在球场图") : courtText("暂无落点")))
         return parts.joined(separator: "，")
     }
 }
@@ -387,9 +387,9 @@ private func speedText(_ value: Double?) -> String {
 private func scoreText(_ value: Double) -> String { value.isFinite ? String(format: "%.2f", min(1, max(0, value))) : "—" }
 /// The selected shot's details: the classifier score (not an accuracy) and the engine's wording.
 private func shotDetails(_ event: TennisShotEvent) -> String {
-    var parts = ["分类模型分数 \(scoreText(event.confidence)) · \(event.sampleCount) 个样本"]
-    if event.validSpeedKPH == nil, let detail = event.speedReason { parts.append("球速：" + detail) }
-    if !event.hasCourtPlacement, let detail = event.bounce?.reason { parts.append("落点：" + detail) }
+    var parts = [courtFormat("分类模型分数 %1$@ · %2$@ 个样本", "\(scoreText(event.confidence))", "\(event.sampleCount)")]
+    if event.validSpeedKPH == nil, let detail = event.speedReason { parts.append(courtText("球速：") + detail) }
+    if !event.hasCourtPlacement, let detail = event.bounce?.reason { parts.append(courtText("落点：") + detail) }
     return parts.joined(separator: "\n")
 }
 
@@ -413,7 +413,7 @@ struct TennisCourtMap: View {
     }
     var body: some View {
         VStack(spacing: 8) {
-            Text("远端").font(.caption2).foregroundStyle(CourtStyle.muted)
+            Text(courtText("远端")).font(.caption2).foregroundStyle(CourtStyle.muted)
             Canvas { context, size in
                 guard size.width > 36, size.height > 36 else { return }
                 let margin = 18.0
@@ -460,14 +460,14 @@ struct TennisCourtMap: View {
                 }
             }.aspectRatio(0.65, contentMode: .fit)
                 .background(CourtStyle.inset, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.card))
-            Text("近端").font(.caption2).foregroundStyle(CourtStyle.muted)
+            Text(courtText("近端")).font(.caption2).foregroundStyle(CourtStyle.muted)
         }.frame(maxWidth: .infinity)
             // One element that VoiceOver steps through shot by shot (swipe up / down), selecting each
             // bounce the way a tap does, so the shot list and details follow.
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("球场落点参考图，\(placed.count) 拍有落点")
+            .accessibilityLabel(courtFormat("球场落点参考图，%1$@ 拍有落点", "\(placed.count)"))
             .accessibilityValue(spokenSelection)
-            .accessibilityHint(placed.isEmpty ? "" : "上下轻扫切换上一拍、下一拍")
+            .accessibilityHint(placed.isEmpty ? "" : courtText("上下轻扫切换上一拍、下一拍"))
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: step(1)
@@ -480,7 +480,7 @@ struct TennisCourtMap: View {
 
     private var spokenSelection: String {
         guard let selected, let entry = placed.first(where: { $0.event.id == selected }) else {
-            return placed.isEmpty ? "" : "未选择"
+            return placed.isEmpty ? "" : courtText("未选择")
         }
         return entry.event.courtMapSpokenDescription(number: entry.number)
     }

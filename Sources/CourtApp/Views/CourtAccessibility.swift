@@ -19,10 +19,27 @@ struct CourtIconButton: View {
     }
 }
 
+public enum CourtAppLaunch {
+    /// Reads the system language, unless `COURT_LANGUAGE` is set (screenshots and UI tests).
+    public static func activate() { CourtCopy.activate() }
+}
+
+extension View {
+    /// Dates and decimals follow the resolved language. Simplified Chinese keeps the system locale,
+    /// so an existing Chinese device does not change number or date formatting.
+    @ViewBuilder public func courtLanguage() -> some View {
+        if CourtCopy.language == .zhHans { self }
+        else { self.environment(\.locale, CourtCopy.formatLocale) }
+    }
+}
+
 /// 历史记录 as an icon button (home, display toolbar, landscape header).
 struct CourtHistoryIconButton: View {
     let action: () -> Void
-    var body: some View { CourtIconButton(systemImage: "clock.arrow.circlepath", label: "历史记录", action: action) }
+    var body: some View {
+        CourtIconButton(systemImage: "clock.arrow.circlepath", label: courtText("历史记录"), action: action)
+            .accessibilityIdentifier("court.history.open")
+    }
 }
 
 /// A text-only button (a sheet's 完成 / 取消, a small 取消 beside progress) whose 44-point hit area
@@ -107,11 +124,11 @@ extension TennisShotEvent {
     /// What VoiceOver says for one bounce on the court map: shot number, stroke, speed when known and
     /// roughly where it landed. Placement is a model estimate, so it is rounded and said with 「约」.
     func courtMapSpokenDescription(number: Int) -> String {
-        var parts = ["第 \(number) 拍", stroke.courtTitle]
-        if let speed = validSpeedKPH { parts.append("约 " + courtSpeed(speed) + " 千米每小时") } else { parts.append("暂无球速") }
+        var parts = [courtFormat("第 %1$@ 拍", "\(number)"), stroke.courtTitle]
+        if let speed = validSpeedKPH { parts.append(courtText("约 ") + courtSpeed(speed) + courtText(" 千米每小时")) } else { parts.append(courtText("暂无球速")) }
         if let position = bounce?.courtPosition {
             parts.append(Self.courtZone(x: position.x, y: position.y))
-            parts.append(String(format: "约横 %.1f 米、纵 %.1f 米", position.x, position.y))
+            parts.append(courtPrintf("约横 %.1f 米、纵 %.1f 米", position.x, position.y))
         }
         return parts.joined(separator: "，")
     }
@@ -120,11 +137,11 @@ extension TennisShotEvent {
     static func courtZone(x: Double, y: Double) -> String {
         let length = 23.77, width = 10.97, net = length / 2, serviceDepth = 6.40
         let inside = x >= 0 && x <= width && y >= 0 && y <= length
-        guard inside else { return "场外" }
-        let half = y < net ? "近端半场" : "远端半场"
+        guard inside else { return courtText("场外") }
+        let half = y < net ? courtText("近端半场") : courtText("远端半场")
         let fromNet = abs(y - net)
         let singles = x >= 1.37 && x <= width - 1.37
-        let area = !singles ? "双打边线区" : fromNet <= serviceDepth ? "发球区" : "后场"
+        let area = !singles ? courtText("双打边线区") : fromNet <= serviceDepth ? courtText("发球区") : courtText("后场")
         return half + area
     }
 }

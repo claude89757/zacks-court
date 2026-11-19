@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import CourtCore
 #if os(iOS)
 import UIKit
 #endif
@@ -22,7 +23,7 @@ final class CameraStandby {
     enum Delay: Int, CaseIterable, Identifiable {
         case ten = 10, twenty = 20, thirty = 30, sixty = 60, never = 0
         var id: Int { rawValue }
-        var title: String { self == .never ? "从不" : "\(rawValue) 秒" }
+        var title: String { self == .never ? courtText("从不") : courtFormat("%1$@ 秒", "\(rawValue)") }
     }
     static let peekSeconds: TimeInterval = 15
     static let dimBrightness = 0.1

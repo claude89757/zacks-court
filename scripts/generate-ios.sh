@@ -2,6 +2,31 @@
 set -eu
 COURT_SCRIPTS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$COURT_SCRIPTS_DIR/../apps/iphone"
+
+# InfoPlist.strings must be one variant group in Copy Bundle Resources. XcodeGen treats a
+# source path ending in .lproj as a file with no build phase, so those strings never ship.
+court_check_lproj_resources() {
+    python3 - <<'PY'
+import re, sys
+from pathlib import Path
+text = Path("ZacksCourt.xcodeproj/project.pbxproj").read_text()
+regions = re.search(r"knownRegions = \((.*?)\);", text, re.S)
+resources = re.search(r"isa = PBXResourcesBuildPhase;.*?files = \((.*?)\);", text, re.S)
+variant = "PBXVariantGroup" in text and "InfoPlist.strings" in text
+missing = []
+blob = regions.group(1) if regions else ""
+for lang in ("zh-Hans", "zh-Hant", "en", "ja", "de", "fr"):
+    if lang not in blob:
+        missing.append(lang)
+if missing or resources is None or "InfoPlist.strings" not in resources.group(1) or not variant:
+    sys.exit(
+        "Xcode project did not copy localized InfoPlist.strings "
+        f"(missing regions: {', '.join(missing) or 'none'}; "
+        "resources or variant group incomplete)"
+    )
+print("Localized InfoPlist.strings are in Copy Bundle Resources.")
+PY
+}
 # independent (default): in-house models only, no S家 resources.
 # both: S家 and in-house sets, switchable in the App; sjia: S家 only. Both need the S家 models you
 # keep locally in .local/s-models (never in Git, see scripts/prepare-analysis-models.sh).
@@ -42,6 +67,7 @@ Path(sys.argv[1]).write_text(source.replace(resource, "").replace("        Court
 PY
     echo "COURT_CODE_ONLY=1: generating without analysis model resources; this build cannot analyze tennis." >&2
     xcodegen generate --spec "$COURT_CODE_SPEC"
+    court_check_lproj_resources
 elif [ "$COURT_MODEL_SET" = independent ]; then
     "$COURT_SCRIPTS_DIR/prepare-independent-app-models.sh" >/dev/null
     COURT_INDEPENDENT_SPEC=$(mktemp "$PWD/.independent-project.XXXXXX")
@@ -69,6 +95,7 @@ Path(sys.argv[1]).write_text(source)
 PY
     echo "COURT_MODEL_SET=independent: bundling only the independent research model; no S家 model resources." >&2
     xcodegen generate --spec "$COURT_INDEPENDENT_SPEC"
+    court_check_lproj_resources
 elif [ "$COURT_MODEL_SET" = both ]; then
     "$COURT_SCRIPTS_DIR/prepare-analysis-models.sh" >/dev/null
     "$COURT_SCRIPTS_DIR/prepare-independent-app-models.sh" >/dev/null
@@ -96,7 +123,9 @@ Path(sys.argv[1]).write_text(source)
 PY
     echo "COURT_MODEL_SET=both: bundling the S家 and in-house model sets; the App switches between them (default S家)." >&2
     xcodegen generate --spec "$COURT_BOTH_SPEC"
+    court_check_lproj_resources
 else
     "$COURT_SCRIPTS_DIR/prepare-analysis-models.sh" >/dev/null
     xcodegen generate --spec project.yml
+    court_check_lproj_resources
 fi

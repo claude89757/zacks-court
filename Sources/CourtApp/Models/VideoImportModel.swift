@@ -36,7 +36,7 @@ import CourtCore
     init(storageDirectory: URL, bundle: Bundle = .main) {
         self.storageDirectory = storageDirectory
         unavailableReason = CourtAnalysisBackend.bundled(in: bundle).contains(.independent)
-            ? nil : "这个安装包没有自研分析模型，不能分析导入的视频。"
+            ? nil : courtText("这个安装包没有自研分析模型，不能分析导入的视频。")
         live = { IndependentLiveConfiguration.bundled(bundle) }
     }
 
@@ -94,7 +94,7 @@ import CourtCore
             } catch {
                 guard generation == id else { return }
                 phase = .ready
-                message = error is CancellationError ? (cancelReason ?? "已取消，没有保存记录。") : Self.text(error)
+                message = error is CancellationError ? (cancelReason ?? courtText("已取消，没有保存记录。")) : Self.text(error)
             }
             task = nil
         }
