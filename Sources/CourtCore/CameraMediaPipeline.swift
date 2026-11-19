@@ -158,7 +158,7 @@ public final class CameraMediaPipeline: @unchecked Sendable {
     private func startRecordingOnQueue(directory: URL, prefix: String, owner: UUID?) {
         guard running, let stream = currentStream else { requested = (directory, prefix, owner); return }
         guard active == nil else { return }
-        guard finishing == 0 else { onError?("录像未启动：上一段录像仍在保存，请稍后再继续。"); return }
+        guard finishing == 0 else { onError?(courtText("录像未启动：上一段录像仍在保存，请稍后再继续。")); return }
         do {
             let recorder = try MovieRecorder(directory: directory, prefix: prefix)
             let encoder = try H264Encoder(width: width, height: height, fps: fps, streamID: stream)
@@ -322,7 +322,7 @@ public final class CameraMediaPipeline: @unchecked Sendable {
         if previewTransfer == nil {
             var session: VTPixelTransferSession?
             guard VTPixelTransferSessionCreate(allocator: kCFAllocatorDefault, pixelTransferSessionOut: &session) == noErr, let session else {
-                throw CourtError.message("无法创建预览缩放会话。")
+                throw CourtError.message(courtText("无法创建预览缩放会话。"))
             }
             VTSessionSetProperty(session, key: kVTPixelTransferPropertyKey_ScalingMode, value: kVTScalingMode_Letterbox)
             previewTransfer = session
@@ -332,14 +332,14 @@ public final class CameraMediaPipeline: @unchecked Sendable {
                 kCVPixelBufferIOSurfacePropertiesKey: [:]]
             guard CVPixelBufferPoolCreate(nil, [kCVPixelBufferPoolMinimumBufferCountKey: 3] as CFDictionary,
                                           attributes as CFDictionary, &previewPool) == kCVReturnSuccess else {
-                throw CourtError.message("无法创建预览缓冲池。")
+                throw CourtError.message(courtText("无法创建预览缓冲池。"))
             }
         }
         var output: CVPixelBuffer?
         guard let previewPool, let previewTransfer,
               CVPixelBufferPoolCreatePixelBuffer(nil, previewPool, &output) == kCVReturnSuccess, let output,
               VTPixelTransferSessionTransferImage(previewTransfer, from: source, to: output) == noErr else {
-            throw CourtError.message("预览缩放失败。")
+            throw CourtError.message(courtText("预览缩放失败。"))
         }
         return output
     }

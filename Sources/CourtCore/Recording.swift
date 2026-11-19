@@ -32,24 +32,24 @@ public final class MovieRecorder {
     }
 
     public func append(_ sample: CMSampleBuffer, header: StreamHeader) throws {
-        guard !ended else { throw CourtError.message("录像已经结束。") }
+        guard !ended else { throw CourtError.message(courtText("录像已经结束。")) }
         if writer == nil {
             guard header.keyframe == true, let format = CMSampleBufferGetFormatDescription(sample) else { return }
             let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
             let input = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: format)
             input.expectsMediaDataInRealTime = true
-            guard writer.canAdd(input) else { throw CourtError.message("无法建立录像文件。") }
+            guard writer.canAdd(input) else { throw CourtError.message(courtText("无法建立录像文件。")) }
             writer.add(input)
-            guard writer.startWriting() else { throw writer.error ?? CourtError.message("录像启动失败。") }
+            guard writer.startWriting() else { throw writer.error ?? CourtError.message(courtText("录像启动失败。")) }
             writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sample))
             self.writer = writer; self.input = input
             let logURL = url.deletingPathExtension().appendingPathExtension("jsonl")
-            guard FileManager.default.createFile(atPath: logURL.path, contents: nil) else { throw CourtError.message("无法创建时间戳记录。") }
+            guard FileManager.default.createFile(atPath: logURL.path, contents: nil) else { throw CourtError.message(courtText("无法创建时间戳记录。")) }
             log = try FileHandle(forWritingTo: logURL)
         }
         guard let writer, let input else { return }
-        guard input.isReadyForMoreMediaData else { throw CourtError.message("磁盘写入跟不上视频，录像已停止。") }
-        guard input.append(sample) else { throw writer.error ?? CourtError.message("录像帧写入失败。") }
+        guard input.isReadyForMoreMediaData else { throw CourtError.message(courtText("磁盘写入跟不上视频，录像已停止。")) }
+        guard input.append(sample) else { throw writer.error ?? CourtError.message(courtText("录像帧写入失败。")) }
         let pts = CMSampleBufferGetPresentationTimeStamp(sample).seconds
         if firstPTS == nil { firstPTS = pts }
         lastPTS = pts; lastDuration = CMSampleBufferGetDuration(sample).seconds; frames += 1
@@ -58,18 +58,18 @@ public final class MovieRecorder {
     }
 
     public func finish(_ completion: @escaping (Result<RecordingResult, Error>) -> Void) {
-        guard !ended else { completion(.failure(CourtError.message("录像已关闭。"))); return }
+        guard !ended else { completion(.failure(CourtError.message(courtText("录像已关闭。")))); return }
         ended = true
         try? log?.close(); log = nil
         guard let writer, let input, frames > 0 else {
             self.writer?.cancelWriting()
-            completion(.failure(CourtError.message("没有收到可保存的视频帧。"))); return
+            completion(.failure(CourtError.message(courtText("没有收到可保存的视频帧。")))); return
         }
         input.markAsFinished()
         let result = RecordingResult(url: url, frames: frames, duration: max(0, (lastPTS ?? 0) - (firstPTS ?? 0) + lastDuration))
         writer.finishWriting {
             if writer.status == .completed { completion(.success(result)) }
-            else { completion(.failure(writer.error ?? CourtError.message("录像未完成。"))) }
+            else { completion(.failure(writer.error ?? CourtError.message(courtText("录像未完成。")))) }
         }
     }
 }

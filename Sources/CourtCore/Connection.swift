@@ -6,7 +6,7 @@ import Network
 public final class CourtConnection {
     /// Close reason when the other end hung up. Role-agnostic: each side shows its own wording
     /// (「机位已断开」 on the display, 「看板已断开」 on the camera).
-    public static let peerClosed = "对端已断开"
+    public static let peerClosed = courtText("对端已断开")
     public let queue: DispatchQueue
     public var onPacket: ((StreamPacket) -> Void)?
     public var onReady: (() -> Void)?
@@ -47,18 +47,18 @@ public final class CourtConnection {
                 self.isReady = true; self.wasReady = true
                 // After onReady, so a display adopting this connection there also takes its path.
                 self.onReady?(); self.reportPath(self.connection.currentPath); self.receive()
-            case .failed(let error): self.onFailure?(error); self.close("连接失败：\(error.localizedDescription)")
+            case .failed(let error): self.onFailure?(error); self.close(courtFormat("连接失败：%1$@", "\(error.localizedDescription)"))
             // Refused or unreachable: report instead of letting Network.framework wait silently,
             // so the camera's own backoff (and address/Bonjour alternation) runs.
             case .waiting(let error) where !self.wasReady:
-                if self.waitingGrace <= 0 { self.onFailure?(error); self.close("无法连接：\(error.localizedDescription)"); break }
+                if self.waitingGrace <= 0 { self.onFailure?(error); self.close(courtFormat("无法连接：%1$@", "\(error.localizedDescription)")); break }
                 guard self.waitingSince == nil else { break }
                 self.waitingSince = Date()
                 self.queue.asyncAfter(deadline: .now() + self.waitingGrace) { [weak self] in
                     guard let self, !self.ended, !self.isReady, self.waitingSince != nil else { return }
-                    self.onFailure?(error); self.close("无法连接：\(error.localizedDescription)")
+                    self.onFailure?(error); self.close(courtFormat("无法连接：%1$@", "\(error.localizedDescription)"))
                 }
-            case .cancelled: self.close("连接已断开")
+            case .cancelled: self.close(courtText("连接已断开"))
             default: break
             }
         }
@@ -71,7 +71,7 @@ public final class CourtConnection {
         timer.schedule(deadline: .now() + 1, repeating: 1)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            if Date().timeIntervalSince(self.lastReceive) > 12 { self.close("连接超时，请重新连接。") }
+            if Date().timeIntervalSince(self.lastReceive) > 12 { self.close(courtText("连接超时，请重新连接。")) }
             else if self.isReady { self.send(StreamPacket(header: StreamHeader(kind: "status"))) }
         }
         timer.resume(); self.timer = timer
@@ -82,7 +82,7 @@ public final class CourtConnection {
         do {
             let data = try packet.encoded()
             guard pendingBytes + data.count <= 2 * PacketDecoder.maximumBody else {
-                close("网络发送积压，连接已重置，重连后补发数据。"); return
+                close(courtText("网络发送积压，连接已重置，重连后补发数据。")); return
             }
             pendingBytes += data.count
             connection.send(content: data, completion: .contentProcessed { [weak self] error in
@@ -102,7 +102,7 @@ public final class CourtConnection {
         onPath?(LinkPath(interface: name), name)
     }
 
-    public func close(_ reason: String = "已断开") {
+    public func close(_ reason: String = courtText("已断开")) {
         guard !ended else { return }
         ended = true; isReady = false
         timer?.cancel(); timer = nil
@@ -211,9 +211,9 @@ public final class CourtServer {
                 // A stale socket of the same camera ignores this; a second camera stops retrying.
                 old.onClose = nil; old.onPacket = nil
                 if let notice = try? StreamPacket.message(.control, WireControl(.superseded)) { old.send(notice) }
-                self.queue.asyncAfter(deadline: .now() + 0.3) { old.close("机位已重新连接") }
+                self.queue.asyncAfter(deadline: .now() + 0.3) { old.close(courtText("机位已重新连接")) }
                 self.client = client
-                self.onDisconnected?("机位已重新连接")
+                self.onDisconnected?(courtText("机位已重新连接"))
             }
             self.client = client
             self.onConnected?()
@@ -293,8 +293,8 @@ public final class CameraLink: @unchecked Sendable {
                          chunkSize: Int = RecordingTransfer.chunkSize, backlogLimit: Int = RecordingTransfer.backlogLimit,
                          completion: @escaping @Sendable (String?) -> Void) {
         queue.async { [self] in
-            finishFile("新的回传开始，上一份回传已取消。")
-            guard let connection, connection.isReady else { completion("看板未连接。"); return }
+            finishFile(courtText("新的回传开始，上一份回传已取消。"))
+            guard let connection, connection.isReady else { completion(courtText("看板未连接。")); return }
             do {
                 let handle = try FileHandle(forReadingFrom: url)
                 try handle.seek(toOffset: UInt64(max(0, offset)))
@@ -304,14 +304,14 @@ public final class CameraLink: @unchecked Sendable {
             } catch { completion(error.localizedDescription) }
         }
     }
-    public func cancelFile() { queue.async { [self] in finishFile("回传已取消。") } }
+    public func cancelFile() { queue.async { [self] in finishFile(courtText("回传已取消。")) } }
 
     private func pump() {
         guard let job = file, let connection, connection.isReady else { return }
         do {
             while connection.pendingBytes < job.backlogLimit, job.offset < job.total {
                 let data = try job.handle.read(upToCount: job.chunkSize) ?? Data()
-                guard !data.isEmpty else { throw CourtError.message("录像文件在回传中变短了。") }
+                guard !data.isEmpty else { throw CourtError.message(courtText("录像文件在回传中变短了。")) }
                 var header = job.header
                 header.offset = job.offset
                 connection.send(StreamPacket(header: header, payload: data))
@@ -341,7 +341,7 @@ public final class CameraLink: @unchecked Sendable {
         queue.async { [self] in
             running = false; retry?.cancel(); retry = nil
             let old = connection; connection = nil
-            old?.onClose = nil; old?.close("已断开")
+            old?.onClose = nil; old?.close(courtText("已断开"))
             onState?(.stopped)
         }
     }
@@ -358,7 +358,7 @@ public final class CameraLink: @unchecked Sendable {
 
     private func connect() {
         guard running else { return }
-        guard ticket.expires > Date() else { running = false; onState?(.failed("配对已过期，请在看板上刷新配对码后重新扫码。")); return }
+        guard ticket.expires > Date() else { running = false; onState?(.failed(courtText("配对已过期，请在看板上刷新配对码后重新扫码。"))); return }
         attempt += 1
         // Attempts alternate between the ticket's address and a Bonjour lookup, which finds the
         // display when its listener moved to another port, or over peer-to-peer Wi-Fi when the two
@@ -385,8 +385,8 @@ public final class CameraLink: @unchecked Sendable {
             guard let self, let connection, self.connection === connection else { return }
             if packet.wireKind == .control, (try? packet.decode(WireControl.self))?.command == .superseded {
                 self.running = false; self.connection = nil
-                connection.onClose = nil; connection.close("已被另一台机位取代")
-                self.onState?(.failed("另一台机位已连接到这个看板，本机停止重连。要换用本机，先在看板上断开那台机位，再点「重连」。")); return
+                connection.onClose = nil; connection.close(courtText("已被另一台机位取代"))
+                self.onState?(.failed(courtText("另一台机位已连接到这个看板，本机停止重连。要换用本机，先在看板上断开那台机位，再点「重连」。"))); return
             }
             self.onPacket?(packet)
         }
@@ -397,7 +397,7 @@ public final class CameraLink: @unchecked Sendable {
         connection.onClose = { [weak self, weak connection] reason in
             guard let self, let connection, self.connection === connection else { return }
             self.connection = nil
-            self.finishFile("连接中断：\(reason)")
+            self.finishFile(courtFormat("连接中断：%1$@", "\(reason)"))
             if connection.incompatible { self.running = false; self.onState?(.failed(reason)); return }
             self.scheduleRetry(reason)
         }

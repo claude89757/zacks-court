@@ -29,6 +29,20 @@ final class TennisReasonTests: XCTestCase {
         XCTAssertEqual(TennisReason.classify("一条以后才有的原因"), .other)
     }
 
+    /// The table is a match key. An English UI still has to recognise the engine's Chinese wording,
+    /// then show the short reason through `text`.
+    func testEngineMatchKeysIgnoreTheDisplayLanguage() {
+        CourtCopy.withLanguage("en") {
+            XCTAssertEqual(TennisReason.classify("设备降载期间未做触地定位"), .cameraCooling)
+            XCTAssertEqual(TennisReason.classify("触地定位队列繁忙，未定位"), .cameraBusy)
+            XCTAssertEqual(TennisReason.classify("触地定位失败：内存不足"), .failed)
+            XCTAssertEqual(TennisReason.classify("缺少击球轨迹样本"), .ballNotSeen)
+            XCTAssertEqual(TennisReason.classify("等待首弹地及连续三维轨迹"), .pending)
+            XCTAssertEqual(TennisReason.classify("下一段击球前没有可靠首弹地证据"), .noBounceSeen)
+            XCTAssertEqual(TennisReason.classify("Focus球位置缺失、低分或存在竞争目标"), .ballNotSeen)
+        }
+    }
+
     func testEventsCarryTheCodeAndExplainMissingValues() {
         let stream = UUID()
         var shot = TennisShotEvent(streamID: stream, sourcePTS: 1, stroke: .forehand, confidence: 0.9, speedReason: "等待首弹地及连续三维轨迹")

@@ -31,14 +31,14 @@ public final class FileFrameSource: @unchecked Sendable {
     public init(pipeline: CameraMediaPipeline, video: URL, outputSize: (width: Int, height: Int)? = nil) async throws {
         self.pipeline = pipeline
         let asset = AVURLAsset(url: video)
-        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw CourtError.message("回放文件没有视频轨道。") }
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw CourtError.message(courtText("回放文件没有视频轨道。")) }
         let size = try await track.load(.naturalSize)
         let transform = try await track.load(.preferredTransform)
         let rate = Double(try await track.load(.nominalFrameRate))
         let duration = try await asset.load(.duration).seconds
-        guard rate.isFinite, rate > 0, rate <= 120, duration.isFinite, duration > 0 else { throw CourtError.message("回放视频的帧率或时长无效。") }
+        guard rate.isFinite, rate > 0, rate <= 120, duration.isFinite, duration > 0 else { throw CourtError.message(courtText("回放视频的帧率或时长无效。")) }
         let displayed = CGRect(origin: .zero, size: size).applying(transform)
-        guard displayed.width.isFinite, displayed.height.isFinite, displayed.width > 0, displayed.height > 0 else { throw CourtError.message("回放视频方向或尺寸无效。") }
+        guard displayed.width.isFinite, displayed.height.isFinite, displayed.width > 0, displayed.height > 0 else { throw CourtError.message(courtText("回放视频方向或尺寸无效。")) }
         if let outputSize {
             width = max(2, outputSize.width / 2 * 2); height = max(2, outputSize.height / 2 * 2)
         } else {
@@ -59,9 +59,9 @@ public final class FileFrameSource: @unchecked Sendable {
                     kCVPixelBufferIOSurfacePropertiesKey as String: [:]
                 ])
                 output.alwaysCopiesSampleData = false
-                guard reader.canAdd(output) else { throw CourtError.message("无法建立回放视频解码器。") }
+                guard reader.canAdd(output) else { throw CourtError.message(courtText("无法建立回放视频解码器。")) }
                 reader.add(output)
-                guard reader.startReading() else { throw reader.error ?? CourtError.message("无法读取回放视频。") }
+                guard reader.startReading() else { throw reader.error ?? CourtError.message(courtText("无法读取回放视频。")) }
                 self.reader = reader; self.output = output
                 pipeline.begin(width: width, height: height, fps: max(1, Int(nominalFPS.rounded())))
                 scheduleNext()
@@ -74,10 +74,10 @@ public final class FileFrameSource: @unchecked Sendable {
     private func scheduleNext() {
         guard !ended else { return }
         guard let sample = output?.copyNextSampleBuffer() else {
-            finish(reader?.status == .completed ? nil : reader?.error?.localizedDescription ?? "回放视频读取未完成。"); return
+            finish(reader?.status == .completed ? nil : reader?.error?.localizedDescription ?? courtText("回放视频读取未完成。")); return
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(sample).seconds
-        guard pts.isFinite, pts >= 0, previousPTS.map({ pts > $0 }) ?? true else { finish("回放视频源时间戳无效或未递增。"); return }
+        guard pts.isFinite, pts >= 0, previousPTS.map({ pts > $0 }) ?? true else { finish(courtText("回放视频源时间戳无效或未递增。")); return }
         previousPTS = pts; readFrames += 1
         if firstPTS == nil { firstPTS = pts; wallStart = .now() }
         if isReady != nil { deliverWhenReady(sample); return }
@@ -95,7 +95,7 @@ public final class FileFrameSource: @unchecked Sendable {
         guard !ended else { return }
         autoreleasepool {
             guard let image = CMSampleBufferGetImageBuffer(sample), let upright = render(image) else {
-                finish("回放视频缺少图像缓冲。"); return
+                finish(courtText("回放视频缺少图像缓冲。")); return
             }
             pipeline.submit(upright, pts: CMSampleBufferGetPresentationTimeStamp(sample))
             scheduleNext()

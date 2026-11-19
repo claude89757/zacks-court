@@ -66,6 +66,20 @@ final class CameraPhase2Tests: XCTestCase {
         XCTAssertEqual(pressure.cause, .pressure)
     }
 
+    /// The 1.5 merge keeps both sides: mild warmth stays at full cadence, and the
+    /// bounce reasons the camera stores stay matchable after the UI language changes.
+    func testMildHeatAndBounceMatchKeysSurviveTogether() {
+        CourtCopy.withLanguage("en") {
+            var policy = CameraLoadPolicy()
+            XCTAssertFalse(policy.update(thermal: "fair", pressure: "nominal", lowPower: false, analysisLag: 0.2, now: 10))
+            XCTAssertEqual(policy.level, 0)
+            XCTAssertNil(policy.reason)
+            XCTAssertEqual(TennisReason.classify("设备降载期间未做触地定位"), .cameraCooling)
+            XCTAssertEqual(TennisReason.classify("触地定位队列繁忙，未定位"), .cameraBusy)
+            XCTAssertEqual(TennisReason.classify("触地定位失败：内存不足"), .failed)
+        }
+    }
+
     func testMildTemperatureAloneKeepsNormalCadence() {
         var policy = CameraLoadPolicy()
         for second in 0..<180 {

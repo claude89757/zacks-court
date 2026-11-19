@@ -1,4 +1,5 @@
 import SwiftUI
+import CourtCore
 
 /// The 「识别状态」 rows: a symbol and color per state (never color alone), title, value and a
 /// one-line reason. Stacks vertically at accessibility sizes so values never wrap per character.
@@ -8,9 +9,9 @@ struct RecognitionRows: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 8 : 10) {
-            Text("识别状态").font(.caption.weight(.semibold)).foregroundStyle(CourtStyle.muted)
+            Text(courtText("识别状态")).font(.caption.weight(.semibold)).foregroundStyle(CourtStyle.muted)
             ForEach(status.rows) { row in rowView(row) }
-            Text("按最近 \(RecognitionStatus.window) 拍统计；还在等待结果的拍不计入。")
+            Text(courtFormat("按最近 %1$@ 拍统计；还在等待结果的拍不计入。", "\(RecognitionStatus.window)"))
                 .font(.caption2).foregroundStyle(CourtStyle.muted).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain).accessibilityIdentifier("court.recognition")

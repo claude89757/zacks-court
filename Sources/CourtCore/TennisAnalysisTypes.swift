@@ -10,7 +10,7 @@ public struct TennisCourtCalibrationState: Codable, Equatable, Sendable {
     public var landmarkCount: Int
     public var validationErrorMeters: Double?
     public var reason: String?
-    public init(isAvailable: Bool = false, landmarkCount: Int = 0, validationErrorMeters: Double? = nil, reason: String? = "等待场地地标") {
+    public init(isAvailable: Bool = false, landmarkCount: Int = 0, validationErrorMeters: Double? = nil, reason: String? = courtText("等待场地地标")) {
         self.isAvailable = isAvailable; self.landmarkCount = landmarkCount; self.validationErrorMeters = validationErrorMeters; self.reason = reason
     }
 }

@@ -50,70 +50,70 @@ struct RecognitionStatus: Equatable {
     // MARK: Rows
 
     static func court(_ input: Input) -> Row {
-        let id = "court.recognition.court", title = "球场"
-        guard input.isLive else { return Row(id: id, title: title, value: "—", detail: "收到实时画面后检查球场识别。", tone: .idle) }
+        let id = "court.recognition.court", title = courtText("球场")
+        guard input.isLive else { return Row(id: id, title: title, value: "—", detail: courtText("收到实时画面后检查球场识别。"), tone: .idle) }
         guard let calibration = input.calibration else {
-            return Row(id: id, title: title, value: "球场映射未就绪", detail: "正在等待场地地标；缺少球场映射时不在球场图上绘制落点。", tone: .idle)
+            return Row(id: id, title: title, value: courtText("球场映射未就绪"), detail: courtText("正在等待场地地标；缺少球场映射时不在球场图上绘制落点。"), tone: .idle)
         }
         guard calibration.isAvailable else {
-            let reason = calibration.reason.flatMap { $0.isEmpty ? nil : $0 } ?? "没有找到足够的场地地标"
-            return Row(id: id, title: title, value: "球场映射未就绪", detail: reason + "。识别出球场前不画落点、不判界内外。", tone: .warning)
+            let reason = calibration.reason.flatMap { $0.isEmpty ? nil : $0 } ?? courtText("没有找到足够的场地地标")
+            return Row(id: id, title: title, value: courtText("球场映射未就绪"), detail: reason + courtText("。识别出球场前不画落点、不判界内外。"), tone: .warning)
         }
         // The in-house court says how it was found in `reason` (lines and pixel error); S家 leaves it empty.
-        let found = calibration.reason.flatMap { $0.isEmpty ? nil : $0 } ?? "自动识别 · \(calibration.landmarkCount) 个场地参考点"
+        let found = calibration.reason.flatMap { $0.isEmpty ? nil : $0 } ?? courtFormat("自动识别 · %1$@ 个场地参考点", "\(calibration.landmarkCount)")
         var parts = [found]
-        if let residual = calibration.validationErrorMeters, residual.isFinite { parts.append(String(format: "拟合残差 %.2f m", residual)) }
-        return Row(id: id, title: title, value: "球场映射可用", detail: parts.joined(separator: " · "), tone: .good)
+        if let residual = calibration.validationErrorMeters, residual.isFinite { parts.append(courtPrintf("拟合残差 %.2f m", residual)) }
+        return Row(id: id, title: title, value: courtText("球场映射可用"), detail: parts.joined(separator: " · "), tone: .good)
     }
 
     static func people(_ input: Input) -> Row {
-        let id = "court.recognition.people", title = "人员"
+        let id = "court.recognition.people", title = courtText("人员")
         guard input.isLive else { return Row(id: id, title: title, value: "—", tone: .idle) }
         if input.shed >= 1, input.inHouse {
-            return Row(id: id, title: title, value: "已放慢", detail: "机位降载：自研模型的人员检测放慢到每秒 \(input.shed >= 2 ? 2 : 3) 次，部分击球可能认不出击球人和动作。",
+            return Row(id: id, title: title, value: courtText("已放慢"), detail: courtFormat("机位降载：自研模型的人员检测放慢到每秒 %1$@ 次，部分击球可能认不出击球人和动作。", "\(input.shed >= 2 ? 2 : 3)"),
                        tone: .warning)
         }
         if input.shed >= 1 {
-            return Row(id: id, title: title, value: "已暂停", detail: "机位降载时暂停人员检测；击球、球速和落点照常分析。", tone: .idle)
+            return Row(id: id, title: title, value: courtText("已暂停"), detail: courtText("机位降载时暂停人员检测；击球、球速和落点照常分析。"), tone: .idle)
         }
         guard let people = input.people, people.streamID == input.streamID,
               let latest = input.latestPTS, latest - people.pts <= staleSeconds else {
-            return Row(id: id, title: title, value: "—", detail: "暂无人员检测结果。", tone: .idle)
+            return Row(id: id, title: title, value: "—", detail: courtText("暂无人员检测结果。"), tone: .idle)
         }
-        return Row(id: id, title: title, value: "\(people.count) 人",
-                   detail: "画面里检测到的所有人，可能包括场外的人；只作辅助显示，不参与击球、球速和落点计算。",
+        return Row(id: id, title: title, value: courtFormat("%1$@ 人", "\(people.count)"),
+                   detail: courtText("画面里检测到的所有人，可能包括场外的人；只作辅助显示，不参与击球、球速和落点计算。"),
                    tone: people.count > 0 ? .good : .idle)
     }
 
     /// Shots found while the picture moved would be false flights, so none are counted then.
-    static let movingDetail = "画面在动，暂不记击球；机位架稳后自动继续。"
+    static let movingDetail = courtText("画面在动，暂不记击球；机位架稳后自动继续。")
 
     static func shots(_ input: Input) -> Row {
-        let id = "court.recognition.shots", title = "击球"
+        let id = "court.recognition.shots", title = courtText("击球")
         if input.isLive, input.pictureMoving {
-            return Row(id: id, title: title, value: input.events.isEmpty ? "尚无击球" : "\(input.events.count) 拍",
+            return Row(id: id, title: title, value: input.events.isEmpty ? courtText("尚无击球") : courtFormat("%1$@ 拍", "\(input.events.count)"),
                        detail: movingDetail, tone: .warning)
         }
         guard let last = input.events.last else {
-            return Row(id: id, title: title, value: "尚无击球", detail: input.isLive ? "等待第一拍。" : nil, tone: .idle)
+            return Row(id: id, title: title, value: courtText("尚无击球"), detail: input.isLive ? courtText("等待第一拍。") : nil, tone: .idle)
         }
         var detail: String?
         if input.isLive, last.streamID == input.streamID, let latest = input.latestPTS, latest >= last.sourcePTS {
-            detail = "最近一拍 " + Self.ago(latest - last.sourcePTS)
+            detail = courtText("最近一拍 ") + Self.ago(latest - last.sourcePTS)
         }
-        return Row(id: id, title: title, value: "\(input.events.count) 拍", detail: detail, tone: input.isLive ? .good : .idle)
+        return Row(id: id, title: title, value: courtFormat("%1$@ 拍", "\(input.events.count)"), detail: detail, tone: input.isLive ? .good : .idle)
     }
 
     static func speed(_ input: Input) -> Row {
         let settled = Array(input.events.filter { $0.speedReasonKind?.isPending != true }.suffix(window))
         let missing = settled.compactMap(\.speedReasonText)
-        return counted(id: "court.recognition.speed", title: "球速", settled: settled.count, missing: missing, anyShots: !input.events.isEmpty)
+        return counted(id: "court.recognition.speed", title: courtText("球速"), settled: settled.count, missing: missing, anyShots: !input.events.isEmpty)
     }
 
     static func landing(_ input: Input) -> Row {
-        let id = "court.recognition.landing", title = "落点"
+        let id = "court.recognition.landing", title = courtText("落点")
         if input.isLive, input.shed >= 2, !input.inHouse {
-            return Row(id: id, title: title, value: "已暂停", detail: "机位负载高，暂不定位落点；动作与球速照常。", tone: .warning)
+            return Row(id: id, title: title, value: courtText("已暂停"), detail: courtText("机位负载高，暂不定位落点；动作与球速照常。"), tone: .warning)
         }
         let settled = Array(input.events.filter { $0.placementReasonKind?.isPending != true }.suffix(window))
         let missing = settled.compactMap(\.placementReasonText)
@@ -124,16 +124,16 @@ struct RecognitionStatus: Equatable {
 
     /// "found / settled 拍", and the most common reason among the shots without a value.
     private static func counted(id: String, title: String, settled: Int, missing: [String], anyShots: Bool) -> Row {
-        guard settled > 0 else { return Row(id: id, title: title, value: "—", detail: anyShots ? "还在分析已检出的击球。" : nil, tone: .idle) }
+        guard settled > 0 else { return Row(id: id, title: title, value: "—", detail: anyShots ? courtText("还在分析已检出的击球。") : nil, tone: .idle) }
         let found = settled - missing.count
         let top = Dictionary(grouping: missing, by: { $0 }).max { ($0.value.count, $1.key) < ($1.value.count, $0.key) }
         let tone: Tone = found > 0 ? .good : settled >= 5 ? .warning : .idle
-        return Row(id: id, title: title, value: "\(found) / \(settled) 拍",
-                   detail: top.map { "未给出的主要原因：\($0.key)（\($0.value.count) 拍）" }, tone: tone)
+        return Row(id: id, title: title, value: courtFormat("%1$@ / %2$@ 拍", "\(found)", "\(settled)"),
+                   detail: top.map { courtFormat("未给出的主要原因：%1$@（%2$@ 拍）", "\($0.key)", "\($0.value.count)") }, tone: tone)
     }
 
     static func ago(_ seconds: Double) -> String {
         let value = max(0, Int(seconds.rounded()))
-        return value < 60 ? "\(value) 秒前" : "\(value / 60) 分 \(value % 60) 秒前"
+        return value < 60 ? courtFormat("%1$@ 秒前", "\(value)") : courtFormat("%1$@ 分 %2$@ 秒前", "\(value / 60)", "\(value % 60)")
     }
 }

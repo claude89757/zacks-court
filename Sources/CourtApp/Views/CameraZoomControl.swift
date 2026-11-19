@@ -37,8 +37,8 @@ struct CameraZoomControl: View {
                     dragStart = nil
                 }, including: camera.canZoom ? .all : .subviews)
             .accessibilityElement(children: .contain)
-            .accessibilityLabel("镜头倍率")
-            .accessibilityValue(CameraZoomRange.title(camera.zoomFactor) + (camera.zoomLocked ? "，记录中已锁定" : ""))
+            .accessibilityLabel(courtText("镜头倍率"))
+            .accessibilityValue(CameraZoomRange.title(camera.zoomFactor) + (camera.zoomLocked ? courtText("，记录中已锁定") : ""))
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: camera.commitZoom(range.stepped(camera.zoomFactor, by: 0.25))
@@ -75,7 +75,7 @@ struct CameraZoomControl: View {
         .buttonStyle(.plain)
         .disabled(!camera.canZoom)
         .accessibilityLabel(CameraZoomRange.title(preset))
-        .accessibilityValue(upscaled ? "数码放大，画面变软" : "")
+        .accessibilityValue(upscaled ? courtText("数码放大，画面变软") : "")
         .accessibilityAddTraits(active ? .isSelected : [])
         .accessibilityIdentifier("court.camera.zoom.\(name)")
     }

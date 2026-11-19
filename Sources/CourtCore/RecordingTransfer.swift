@@ -84,10 +84,10 @@ public final class TransferReceiver: @unchecked Sendable {
         }
         let part = Self.partURL(directory: expected.directory, filename: expected.filename)
         do {
-            guard offset == current.received else { throw CourtError.message("录像分块偏移不连续（期望 \(current.received)，收到 \(offset)）。") }
+            guard offset == current.received else { throw CourtError.message(courtFormat("录像分块偏移不连续（期望 %1$@，收到 %2$@）。", "\(current.received)", "\(offset)")) }
             if handle == nil {
                 if !FileManager.default.fileExists(atPath: part.path) {
-                    guard FileManager.default.createFile(atPath: part.path, contents: nil) else { throw CourtError.message("无法创建回传文件。") }
+                    guard FileManager.default.createFile(atPath: part.path, contents: nil) else { throw CourtError.message(courtText("无法创建回传文件。")) }
                 }
                 handle = try FileHandle(forWritingTo: part)
                 try handle?.seek(toOffset: UInt64(offset))
@@ -102,7 +102,7 @@ public final class TransferReceiver: @unchecked Sendable {
                 let digest = try RecordingTransfer.sha256(of: part)
                 guard let wanted = packet.header.sha256, digest == wanted else {
                     try? FileManager.default.removeItem(at: part)
-                    throw CourtError.message("回传的录像校验不一致，已删除不完整文件，请重新回传。")
+                    throw CourtError.message(courtText("回传的录像校验不一致，已删除不完整文件，请重新回传。"))
                 }
                 let final = expected.directory.appendingPathComponent(expected.filename)
                 if FileManager.default.fileExists(atPath: final.path) { try FileManager.default.removeItem(at: final) }

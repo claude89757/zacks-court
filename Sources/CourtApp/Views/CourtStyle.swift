@@ -286,7 +286,7 @@ struct CourtErrorBanner: View {
             CourtNotice(text: text, warning: true).textSelection(.enabled)
             Button(action: dismiss) {
                 Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel("关闭错误提示")
+            }.buttonStyle(.plain).accessibilityLabel(courtText("关闭错误提示"))
         }
         .padding(.leading, 16).padding(.vertical, 6).padding(.trailing, 6)
         .background(CourtStyle.warningFill, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.card))
@@ -303,7 +303,7 @@ struct CourtNoticeBanner: View {
             CourtNotice(text: text).textSelection(.enabled)
             Button(action: dismiss) {
                 Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain).foregroundStyle(CourtStyle.muted).accessibilityLabel("关闭提示")
+            }.buttonStyle(.plain).foregroundStyle(CourtStyle.muted).accessibilityLabel(courtText("关闭提示"))
         }
         .padding(.leading, CourtStyle.Space.l).padding(.vertical, 6).padding(.trailing, 6)
         .background(CourtStyle.raised, in: RoundedRectangle(cornerRadius: CourtStyle.Radius.card))
@@ -354,7 +354,7 @@ struct CourtStrokeLegend: View {
                 ForEach(kinds, id: \.self) { CourtStrokeTag(kind: $0, font: .caption, symbol: symbols).foregroundStyle(CourtStyle.muted) }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("图例：" + kinds.map(\.courtTitle).joined(separator: "、"))
+            .accessibilityLabel(courtText("图例：") + kinds.map(\.courtTitle).joined(separator: "、"))
         }
     }
 }
@@ -392,7 +392,7 @@ func courtDuration(_ seconds: Double) -> String {
 
 extension SessionState {
     var courtTitle: String {
-        switch self { case .active: return "进行中"; case .paused: return "已暂停"; case .completed: return "已完成"; case .interrupted: return "意外中断" }
+        switch self { case .active: return courtText("进行中"); case .paused: return courtText("已暂停"); case .completed: return courtText("已完成"); case .interrupted: return courtText("意外中断") }
     }
     var courtTone: CourtStatus.Tone {
         switch self { case .active, .completed: return .live; case .paused, .interrupted: return .warning }

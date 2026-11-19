@@ -4,12 +4,15 @@ import UIKit
 import OSLog
 
 @main struct ZacksCourtApp: App {
+    // Before any model init, so the first screen already uses the system language.
+    private let languageReady: Void = CourtAppLaunch.activate()
     @UIApplicationDelegateAdaptor(CourtOrientationDelegate.self) private var orientation
     // Developer-only feasibility measurement, opted in through the launch environment. It must not
     // create WorkspaceModel: that model's 1 Hz tick re-enables the idle timer and the screen would lock.
     private let phase0 = Phase0Options.requested
     var body: some Scene {
         WindowGroup {
+            let _ = languageReady
             if let phase0 { Phase0Root(options: phase0) } else { WorkspaceRoot(orientation: orientation) }
         }
     }
@@ -22,6 +25,7 @@ private struct WorkspaceRoot: View {
     @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         CourtWorkspace(model: workspace)
+            .courtLanguage()
             .preferredColorScheme(.dark)
             .onOpenURL { workspace.handleURL($0) }
             .task { if let autopilot = CameraAutopilot.requested { await autopilot.start(workspace) } }

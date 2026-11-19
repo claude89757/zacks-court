@@ -44,7 +44,7 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                     // before Start shows an error the user never caused.
                     guard let self, self.running else { return }
                     self.stopOnQueue()
-                    self.onError?("相机被系统中断，已停止采集，记录已暂停。回到 App 后点「开始采集」，再点「继续」。")
+                    self.onError?(courtText("相机被系统中断，已停止采集，记录已暂停。回到 App 后点「开始采集」，再点「继续」。"))
                 }
             })
         }
@@ -61,7 +61,7 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                       let capture = output.connection(with: .video),
                       (rotationAngle == 0 || rotationAngle == 180),
                       capture.isVideoRotationAngleSupported(rotationAngle) else {
-                    throw CourtError.message("摄像头不支持所选横向方向。请横放设备后重试。")
+                    throw CourtError.message(courtText("摄像头不支持所选横向方向。请横放设备后重试。"))
                 }
                 // VideoDataOutput physically rotates buffers. Fix the chosen
                 // horizon-level landscape direction before starting the session.
@@ -81,8 +81,8 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                 captureSequence = 0
                 begun = false
                 running = true; session.startRunning()
-                guard session.isRunning else { throw CourtError.message("相机未能开始采集。") }
-                onState?("横向采集 \(width)×\(height) / \(fps) fps", true)
+                guard session.isRunning else { throw CourtError.message(courtText("相机未能开始采集。")) }
+                onState?(courtFormat("横向采集 %1$@×%2$@ / %3$@ fps", "\(width)", "\(height)", "\(fps)"), true)
             } catch { onError?(error.localizedDescription); stopOnQueue() }
         }
     }
@@ -101,7 +101,7 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
                 device.videoZoomFactor = CGFloat(zoomRange.deviceFactor(value))
                 device.unlockForConfiguration()
                 zoomFactor = value
-            } catch { onError?("无法调整镜头倍率：\(error.localizedDescription)") }
+            } catch { onError?(courtFormat("无法调整镜头倍率：%1$@", "\(error.localizedDescription)")) }
             #endif
             onZoom?(zoomRange, zoomFactor)
         }
@@ -121,9 +121,9 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         // it has 1080p60, then the dual-wide camera, then the main camera alone (starting at 1×).
         let devices = [AVCaptureDevice.DeviceType.builtInTripleCamera, .builtInDualWideCamera, .builtInWideAngleCamera]
             .compactMap { AVCaptureDevice.default($0, for: .video, position: .back) }
-        guard !devices.isEmpty else { throw CourtError.message("没有可用的后置主摄像头。") }
+        guard !devices.isEmpty else { throw CourtError.message(courtText("没有可用的后置主摄像头。")) }
         #else
-        guard let only = AVCaptureDevice.default(for: .video) else { throw CourtError.message("没有可用的摄像头。") }
+        guard let only = AVCaptureDevice.default(for: .video) else { throw CourtError.message(courtText("没有可用的摄像头。")) }
         let devices = [only]
         #endif
         let (selectedWidth, selectedHeight, selectedFPS) = (1920, 1080, 60)
@@ -136,7 +136,7 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             }) { choice = (candidate, format); break }
         }
         guard let (device, format) = choice else {
-            throw CourtError.message("此摄像头不支持 1920×1080 / 60 fps，无法开始采集。")
+            throw CourtError.message(courtText("此摄像头不支持 1920×1080 / 60 fps，无法开始采集。"))
         }
         let input = try AVCaptureDeviceInput(device: device)
         let output = AVCaptureVideoDataOutput()
@@ -148,13 +148,13 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         #if os(iOS)
         session.sessionPreset = .inputPriority
         #endif
-        guard session.canAddInput(input), session.canAddOutput(output) else { throw CourtError.message("无法配置视频采集。") }
+        guard session.canAddInput(input), session.canAddOutput(output) else { throw CourtError.message(courtText("无法配置视频采集。")) }
         session.addInput(input); session.addOutput(output)
         #if os(macOS)
         let preset: AVCaptureSession.Preset = .hd1920x1080
         guard session.canSetSessionPreset(preset) else {
             session.removeInput(input); session.removeOutput(output)
-            throw CourtError.message("此摄像头无法输出所选分辨率。")
+            throw CourtError.message(courtText("此摄像头无法输出所选分辨率。"))
         }
         session.sessionPreset = preset
         #endif
@@ -200,14 +200,14 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         let actualWidth = CVPixelBufferGetWidth(image), actualHeight = CVPixelBufferGetHeight(image)
         if !begun {
             guard actualWidth == 1920, actualHeight == 1080 else {
-                onError?("相机没有输出 1920×1080 横向画面，采集已停止。请横放设备后重新开始。")
+                onError?(courtText("相机没有输出 1920×1080 横向画面，采集已停止。请横放设备后重新开始。"))
                 stopOnQueue(); return
             }
             width = actualWidth; height = actualHeight; begun = true
             pipeline.begin(width: width, height: height, fps: fps)
         }
         guard actualWidth == width, actualHeight == height else {
-            onError?("相机输出尺寸在采集中改变，采集已停止。")
+            onError?(courtText("相机输出尺寸在采集中改变，采集已停止。"))
             stopOnQueue(); return
         }
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
@@ -288,7 +288,7 @@ final class CameraEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             session.inputs.forEach(session.removeInput)
             session.outputs.forEach(session.removeOutput)
             session.commitConfiguration(); configured = false
-            onState?("采集已停止", false)
+            onState?(courtText("采集已停止"), false)
             let completions = stopCompletions; stopCompletions.removeAll()
             completions.forEach { $0() }
         }

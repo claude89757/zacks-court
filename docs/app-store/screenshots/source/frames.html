@@ -1,6 +1,7 @@
 <!doctype html>
-<!-- App Store screenshot template, 1320×2868 (iPhone 6.9"). Open as frames.html?frame=02-line-calls&lang=zh-Hans;
-     scripts/render-store-screens.sh renders every frame and locale. Captions live in captions.json, screens in raw/. -->
+<!-- App Store screenshot template, 1320×2868 (iPhone 6.9"). Open as frames.html?frame=02-line-calls&lang=zh-Hans.
+     The 1.4 frames are composed by scripts/render-store-frames.py from real captures.
+     01-scene pastes the history list. It does not draw a court or a second device, and it does not use 00-home.png. -->
 <html><head><meta charset="utf-8"><style>
 *{box-sizing:border-box;margin:0;padding:0}
 html{background:#060d09}
@@ -44,6 +45,8 @@ svg.abs{position:absolute;left:0;top:0}
 <script>
 const q = new URLSearchParams(location.search);
 const frameID = q.get("frame") || "01-scene", lang = q.get("lang") || "zh-Hans";
+// en-US and en-GB share one English UI. Screenshots are real captures under raw/<ui>/.
+const ui = lang === "en-US" || lang === "en-GB" ? "en" : lang;
 const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 const mark = (s) => esc(s).replace(/\[([^\]]+)\]/g, "<em>$1</em>");
 // Screens are 1320×2868 Release captures from testStoreScreens (no in-app demo banner); the
@@ -52,11 +55,11 @@ const CROP = 0;
 function phone(src, x, y, w, crop = CROP) {
   const h = Math.round(w * 2868 / 1320), s = (w - 28) / 1320, pad = Math.round(150 * s);
   return `<div class="phone" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="island"></div>
-    <div class="screen"><img src="raw/${src}" style="top:${pad - Math.round(crop * s)}px;clip-path:inset(${crop}px 0 0 0)"></div></div>`;
+    <div class="screen"><img src="raw/${ui}/${src}" style="top:${pad - Math.round(crop * s)}px;clip-path:inset(${crop}px 0 0 0)"></div></div>`;
 }
 function landscape(src, x, y, w) {
   const h = Math.round(w * 1320 / 2868);
-  return `<div class="phone land" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="island"></div><div class="screen"><img src="raw/${src}"></div></div>`;
+  return `<div class="phone land" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"><div class="island"></div><div class="screen"><img src="raw/${ui}/${src}"></div></div>`;
 }
 // A court seen from behind the near baseline, filling the lower part of a frame. Decoration only.
 function court(top, extra = "") {
@@ -71,47 +74,17 @@ function caption(c) {
   return `<div class="cap"><h1>${mark(c.title)}</h1><p>${esc(c.sub)}</p>${c.note ? `<small>${esc(c.note)}</small>` : ""}</div>`;
 }
 const frames = {
-  "01-scene": (c) => `${caption(c)}
-    <svg class="abs" width="1320" height="2868" viewBox="0 0 1320 2868">
-      <defs><linearGradient id="tr" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#C2F057" stop-opacity="0"/><stop offset="1" stop-color="#C2F057" stop-opacity=".85"/></linearGradient></defs>
-      <g transform="translate(0 660)">
-        <path d="M430 20 L890 20 L1250 740 L70 740 Z" fill="#0E2921"/>
-        <g fill="none" stroke="#ffffff8c" stroke-width="5"><path d="M430 20 L890 20 L1250 740 L70 740 Z"/><path d="M480 20 L190 740"/><path d="M840 20 L1130 740"/>
-          <path d="M375 250 L945 250"/><path d="M290 470 L1030 470"/><path d="M660 250 L660 470"/></g>
-        <path d="M330 330 L990 330" stroke="#ffffffcc" stroke-width="7" stroke-dasharray="16 10"/>
-        <path d="M330 330 L330 280 L990 280 L990 330" stroke="#ffffff55" stroke-width="3" fill="none"/>
-        <path d="M760 640 C 700 300, 600 120, 520 150" fill="none" stroke="url(#tr)" stroke-width="16" stroke-linecap="round"/>
-        <circle cx="515" cy="152" r="22" fill="#C2F057"/>
-      </g>
-      <g fill="none" stroke="#C2F057" stroke-width="6" stroke-dasharray="4 16" stroke-linecap="round">
-        <path d="M540 1680 C 500 1820, 420 1900, 400 2010"/><path d="M820 1650 C 880 1700, 950 1730, 1010 1760"/></g>
-      <g stroke="#56655d" stroke-width="12" stroke-linecap="round"><path d="M660 1680 L560 2010"/><path d="M660 1680 L760 2010"/><path d="M660 1680 L660 1970"/></g>
-    </svg>
-    <div class="phone land" style="left:400px;top:1420px;width:520px;height:260px;border-width:10px;border-radius:44px">
-      <svg width="500" height="240" viewBox="0 0 500 240"><rect width="500" height="240" fill="#16261d"/>
-        <path d="M190 40 L310 40 L430 230 L70 230 Z" fill="#1d4434"/><g fill="none" stroke="#ffffffaa" stroke-width="2.5"><path d="M190 40 L310 40 L430 230 L70 230 Z"/><path d="M150 103 L350 103" stroke-dasharray="6 4"/><path d="M125 150 L375 150"/><path d="M250 150 L250 230"/></g>
-        <circle cx="214" cy="70" r="7" fill="#C2F057"/><circle cx="214" cy="70" r="16" fill="none" stroke="#C2F057" stroke-width="2"/></svg>
-      <div style="position:absolute;left:16px;top:12px;font-size:22px;font-weight:600;padding:6px 14px;border-radius:20px;background:#000a"><span style="color:#ff4d4d">●</span> REC</div>
-      <div style="position:absolute;right:16px;top:12px;font-size:22px;font-weight:600;padding:6px 14px;border-radius:20px;background:#000a;color:#C2F057">1080p · 60 fps</div>
-      <div style="position:absolute;left:16px;bottom:12px;font-size:22px;font-weight:600;padding:6px 14px;border-radius:20px;background:#000a">${esc(c.cameraTag)}</div>
-    </div>
-    <div class="label main" style="left:50%;transform:translateX(-50%);top:1330px">${esc(c.camera)}</div>
-    <div class="tablet" style="left:50px;top:2030px;width:720px;height:500px"><img src="raw/web-board-alert.png"></div>
-    <div class="label alt" style="left:120px;top:2570px">${esc(c.browser)}</div>
-    ${phone("app-summary.png", 820, 1790, 450)}
-    <div class="label alt" style="left:850px;top:1700px">${esc(c.phone)}</div>
-    <div style="position:absolute;left:96px;top:2690px;font-size:30px;color:var(--faint)">${esc(c.foot)}</div>`,
+  "01-scene": (c) => `${caption(c)}${phone("01-history.png", 155, 720, 1010)}`,
   "02-line-calls": (c) => `${caption(c)}
     ${landscape("web-challenge.png", 40, 900, 1240)}
     <div class="voice" style="right:70px;top:820px">🔊 ${esc(c.voice)} <i>Out!</i></div>
     ${court(2330)}<div class="calls" style="top:1600px">${c.calls.map(([k, t, d]) => `<div class="call"><div class="badge ${k}">${k}</div><div><b>${esc(t)}</b><span>${esc(d)}</span></div></div>`).join("")}</div>`,
   "03-serve-speed": (c) => `${caption(c)}
-    ${court(2000, `<path d="M760 880 C 720 500, 640 250, 560 300" fill="none" stroke="url(#tr2)" stroke-width="18" stroke-linecap="round"/><circle cx="556" cy="300" r="26" fill="#C2F057"/>
-      <g transform="translate(600 210)"><rect width="300" height="76" rx="38" fill="#C2F057"/><text x="150" y="51" text-anchor="middle" font-size="40" font-weight="800" fill="#0b1912" font-family="-apple-system">149 km/h</text></g>`)}
+    ${court(2000)}
     ${landscape("web-serve.png", 30, 760, 1260)}
     <div class="points" style="top:1460px">${c.points.map((p) => `<div class="point">${esc(p)}</div>`).join("")}</div>`,
-  "04-replay": (c) => `${caption(c)}${phone("app-shots.png", 155, 760, 1010)}`,
-  "05-private": (c) => `${caption(c)}${phone("app-bounces.png", 155, 960, 1010)}
+  "04-replay": (c) => `${caption(c)}${phone("03-detail-0.png", 155, 760, 1010)}`,
+  "05-private": (c) => `${caption(c)}${phone("03-detail-1.png", 155, 960, 1010)}
     <div class="chips" style="top:800px">${c.chips.map((t) => `<div class="chip">${esc(t)}</div>`).join("")}</div>`,
 };
 fetch("captions.json").then((r) => r.json()).then((all) => {

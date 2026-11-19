@@ -19,7 +19,7 @@ public struct PairingTicket: Codable {
     public init(name: String, peerToPeer: Bool = true) throws {
         var bytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-            throw CourtError.message("无法生成配对密钥。")
+            throw CourtError.message(courtText("无法生成配对密钥。"))
         }
         service = "court-" + UUID().uuidString.lowercased().prefix(8)
         key = Data(bytes); self.name = String(name.prefix(80))
@@ -32,7 +32,7 @@ public struct PairingTicket: Codable {
         var parts = URLComponents()
         parts.scheme = "zackscourt"; parts.host = "pair"
         parts.queryItems = [URLQueryItem(name: "ticket", value: token)]
-        guard let url = parts.string else { throw CourtError.message("无法生成配对信息。") }
+        guard let url = parts.string else { throw CourtError.message(courtText("无法生成配对信息。")) }
         return url
     }
 
@@ -41,16 +41,16 @@ public struct PairingTicket: Codable {
               let parts = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
               parts.scheme == "zackscourt", parts.host == "pair",
               let token = parts.queryItems?.first(where: { $0.name == "ticket" })?.value,
-              let data = Data(base64Encoded: token) else { throw CourtError.message("这不是有效的球场配对码。") }
+              let data = Data(base64Encoded: token) else { throw CourtError.message(courtText("这不是有效的球场配对码。")) }
         let result = try JSONDecoder().decode(Self.self, from: data)
         guard result.version == 1, result.key.count == 32, result.expires > Date(),
               result.expires.timeIntervalSinceNow <= 13 * 3600,
               result.service.hasPrefix("court-"), result.service.count <= 40,
-              result.name.count <= 80 else { throw CourtError.message("配对码无效或已过期，请在看板上刷新配对码后重新扫码。") }
+              result.name.count <= 80 else { throw CourtError.message(courtText("配对码无效或已过期，请在看板上刷新配对码后重新扫码。")) }
         if let host = result.host {
             var address = in_addr()
             guard inet_pton(AF_INET, host, &address) == 1,
-                  let port = result.port, port > 0 else { throw CourtError.message("配对地址无效。") }
+                  let port = result.port, port > 0 else { throw CourtError.message(courtText("配对地址无效。")) }
         }
         return result
     }
@@ -93,10 +93,10 @@ public enum LinkPath: String, Codable, Sendable {
     }
     public var title: String {
         switch self {
-        case .peerToPeer: return "点对点直连"
-        case .localNetwork: return "局域网 / 热点"
-        case .loopback: return "本机回环"
-        case .other: return "其他网络"
+        case .peerToPeer: return courtText("点对点直连")
+        case .localNetwork: return courtText("局域网 / 热点")
+        case .loopback: return courtText("本机回环")
+        case .other: return courtText("其他网络")
         }
     }
 }

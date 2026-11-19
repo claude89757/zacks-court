@@ -56,9 +56,6 @@ fetch("captions.json").then((r) => r.json()).then((all) => {
   document.body.innerHTML = court + `<div class="scrim"></div>
     <div class="copy"><div class="brand"><img src="logo.svg" alt="">Zacks Court</div>
       <h1>${esc(c.line1)}<em>${esc(c.line2)}</em></h1><p class="sub">${esc(c.sub)}</p></div>
-    <div class="speed"><div class="row"><span class="chip">${esc(c.serve)}</span><span class="live">${esc(c.live)}</span></div>
-      <div class="num"><b>149</b><span>km/h</span></div><div class="est">${esc(c.est)}</div></div>
-    <div class="call"><div class="badge">OUT</div><div><b>${esc(c.out)}</b><i>${esc(c.outDetail)}</i></div></div>
     <div class="demo">${esc(c.demo)}</div>` +
     (q.get("guides") ? `<div class="guide" style="left:0;top:175.5px;width:2622px;height:1124px;border-color:#f0f"></div>
       <div class="guide" style="left:205.5px;top:0;width:2211px;height:1475px;border-color:#0ff"></div>` : "");

@@ -33,17 +33,17 @@ public struct IndependentCourtCalibration: Sendable, Codable {
         /// Short Chinese text for the camera screen.
         public var message: String {
             switch self {
-            case .unsupportedImage: return "需要 1920×1080 的画面"
-            case .noPlausibleCombination: return "未识别到球场：画面里没有足够的球场白线"
-            case .refinementFailed: return "未识别到球场：球场白线无法精确对齐"
-            case .fitResidualHigh: return "球场线对不齐，请调整机位"
-            case .onlyOneTransverseLine: return "近端底线和发球线都要在画面里"
-            case .tooFewLines: return "看到的球场线太少，请让整个半场进入画面"
-            case .focalLengthImplausible: return "相机参数不合理，请调整机位"
-            case .cameraHeightImplausible: return "机位高度不合理，请调整机位"
-            case .focalLengthUnstable: return "相机距离无法确定，近端底线和发球线都要在画面里"
-            case .coverageLow: return "球场线覆盖不足，请调整机位"
-            case .cameraTooFarBack: return "未识别到可信的球场，请让近端半场完整进入画面"
+            case .unsupportedImage: return courtText("需要 1920×1080 的画面")
+            case .noPlausibleCombination: return courtText("未识别到球场：画面里没有足够的球场白线")
+            case .refinementFailed: return courtText("未识别到球场：球场白线无法精确对齐")
+            case .fitResidualHigh: return courtText("球场线对不齐，请调整机位")
+            case .onlyOneTransverseLine: return courtText("近端底线和发球线都要在画面里")
+            case .tooFewLines: return courtText("看到的球场线太少，请让整个半场进入画面")
+            case .focalLengthImplausible: return courtText("相机参数不合理，请调整机位")
+            case .cameraHeightImplausible: return courtText("机位高度不合理，请调整机位")
+            case .focalLengthUnstable: return courtText("相机距离无法确定，近端底线和发球线都要在画面里")
+            case .coverageLow: return courtText("球场线覆盖不足，请调整机位")
+            case .cameraTooFarBack: return courtText("未识别到可信的球场，请让近端半场完整进入画面")
             }
         }
     }

@@ -31,7 +31,7 @@ public enum ClipExport {
     public static func validate(filename: String) throws {
         guard filename.hasPrefix("clip-"), filename.hasSuffix(".mov"),
               UUID(uuidString: String(filename.dropFirst(5).dropLast(4))) != nil else {
-            throw CourtError.message("片段文件名无效。")
+            throw CourtError.message(courtText("片段文件名无效。"))
         }
     }
 
@@ -67,15 +67,15 @@ public enum ClipExport {
     /// PTS for samples read from a MOV.
     public static func write(_ samples: [CMSampleBuffer], to url: URL, sourceOffset: Double = 0) async throws -> Result {
         guard let first = samples.first, isSync(first), let format = CMSampleBufferGetFormatDescription(first) else {
-            throw CourtError.message("这段时间没有可用的视频帧。")
+            throw CourtError.message(courtText("这段时间没有可用的视频帧。"))
         }
         try? FileManager.default.removeItem(at: url)
         let writer = try AVAssetWriter(outputURL: url, fileType: url.pathExtension.lowercased() == "mp4" ? .mp4 : .mov)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: nil, sourceFormatHint: format)
         input.expectsMediaDataInRealTime = false
-        guard writer.canAdd(input) else { throw CourtError.message("无法建立片段文件。") }
+        guard writer.canAdd(input) else { throw CourtError.message(courtText("无法建立片段文件。")) }
         writer.add(input)
-        guard writer.startWriting() else { throw writer.error ?? CourtError.message("片段写入启动失败。") }
+        guard writer.startWriting() else { throw writer.error ?? CourtError.message(courtText("片段写入启动失败。")) }
         let firstTime = CMSampleBufferGetPresentationTimeStamp(first)
         writer.startSession(atSourceTime: firstTime)
         let feed = Feed(writer: writer, input: input, samples: samples)
@@ -83,7 +83,7 @@ public enum ClipExport {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in writer.finishWriting { continuation.resume() } }
         guard writer.status == .completed else {
             try? FileManager.default.removeItem(at: url)
-            throw writer.error ?? CourtError.message("片段未写完。")
+            throw writer.error ?? CourtError.message(courtText("片段未写完。"))
         }
         let last = samples[samples.count - 1]
         let lastDuration = CMSampleBufferGetDuration(last)
@@ -95,10 +95,10 @@ public enum ClipExport {
     /// the recording's first frame (source PTS `firstPTS`).
     public static func cut(_ source: URL, firstPTS: Double, from start: Double, to end: Double, into url: URL) async throws -> Result {
         let asset = AVURLAsset(url: source)
-        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw CourtError.message("录像里没有视频轨道。") }
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw CourtError.message(courtText("录像里没有视频轨道。")) }
         let samples = try readSamples(asset: asset, track: track, from: start, to: end)
         let selected = select(samples, from: start, to: end)
-        guard !selected.isEmpty else { throw CourtError.message("录像里没有这段时间的画面。") }
+        guard !selected.isEmpty else { throw CourtError.message(courtText("录像里没有这段时间的画面。")) }
         return try await write(selected, to: url, sourceOffset: firstPTS)
     }
 
@@ -111,9 +111,9 @@ public enum ClipExport {
                                        end: CMTime(seconds: end + 0.05, preferredTimescale: 600))
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
         output.alwaysCopiesSampleData = false
-        guard reader.canAdd(output) else { throw CourtError.message("无法读取录像。") }
+        guard reader.canAdd(output) else { throw CourtError.message(courtText("无法读取录像。")) }
         reader.add(output)
-        guard reader.startReading() else { throw reader.error ?? CourtError.message("无法读取录像。") }
+        guard reader.startReading() else { throw reader.error ?? CourtError.message(courtText("无法读取录像。")) }
         var samples: [CMSampleBuffer] = []
         while let sample = output.copyNextSampleBuffer() {
             guard CMSampleBufferGetNumSamples(sample) > 0 else { continue }
@@ -121,7 +121,7 @@ public enum ClipExport {
             if CMSampleBufferGetPresentationTimeStamp(sample).seconds > end { break }
         }
         if reader.status == .reading { reader.cancelReading() }
-        else if reader.status == .failed { throw reader.error ?? CourtError.message("读取录像失败。") }
+        else if reader.status == .failed { throw reader.error ?? CourtError.message(courtText("读取录像失败。")) }
         return samples.sorted { CMSampleBufferGetPresentationTimeStamp($0) < CMSampleBufferGetPresentationTimeStamp($1) }
     }
 
@@ -140,7 +140,7 @@ public enum ClipExport {
                     while input.isReadyForMoreMediaData && index < samples.count {
                         guard input.append(samples[index]) else {
                             finished = true; input.markAsFinished()
-                            continuation.resume(throwing: writer.error ?? CourtError.message("片段帧写入失败。")); return
+                            continuation.resume(throwing: writer.error ?? CourtError.message(courtText("片段帧写入失败。"))); return
                         }
                         index += 1
                     }
