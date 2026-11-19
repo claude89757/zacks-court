@@ -60,6 +60,31 @@ final class CameraPhase2Tests: XCTestCase {
         XCTAssertEqual(heat.reason?.hasPrefix("机位偏暖"), true, heat.reason ?? "nil")
     }
 
+    func testWarmCameraKeepsServeDetailUntilAnotherLimitApplies() {
+        var policy = CameraLoadPolicy(), device = CameraDeviceState()
+        device.thermal = "fair"; device.pressure = "AVCaptureSystemPressureLevelNominal"
+        func detail(at time: Double, lag: Double = 0.02) -> Bool {
+            policy.update(thermal: device.thermal, pressure: device.pressure, lowPower: device.lowPowerMode,
+                          analysisLag: lag, now: time)
+            return policy.allowsServeDetailAtL1(on: device)
+        }
+        XCTAssertTrue(detail(at: 0)); XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .heat)
+        device.lowPowerMode = true
+        XCTAssertFalse(detail(at: 1)); XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .lowPower)
+        device.lowPowerMode = false; device.pressure = "AVCaptureSystemPressureLevelFair"
+        XCTAssertFalse(detail(at: 2)); XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .pressure)
+        device.pressure = "nominal"
+        XCTAssertTrue(detail(at: 3, lag: 1.4)); XCTAssertEqual(policy.cause, .heat)
+        XCTAssertFalse(detail(at: 8, lag: 1.4)); XCTAssertEqual(policy.lagLevel, 2)
+        XCTAssertFalse(detail(at: 9))
+        XCTAssertTrue(detail(at: 69))
+        device.thermal = "serious"
+        XCTAssertFalse(detail(at: 70)); XCTAssertEqual(policy.level, 2)
+        device.thermal = "nominal"
+        XCTAssertFalse(detail(at: 71)); XCTAssertEqual(policy.level, 2)
+        XCTAssertTrue(detail(at: 131)); XCTAssertEqual(policy.level, 1)
+    }
+
     /// Analysis lag on a cool phone (2026-11-05: about 1.3 s behind on iPhone18,2, level never moved).
     /// Lag that stays above 1 s for 5 s sheds one level, another 5 s the next, never past L2; the
     /// reason names lag, not heat; once lag is low the usual 60 s per level brings it back.

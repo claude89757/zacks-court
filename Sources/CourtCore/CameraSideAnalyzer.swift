@@ -41,7 +41,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         /// copies made for them alone, between person frames (not counted in `copies`).
         public var poseFramesLive = 0, poseRequestsLive = 0, poseSecondsLive = 0.0, poseCopies = 0
         /// In-house lane: frames on the region poses' cadence passed over because the analysis was behind (more
-        /// than `poseBacklogFrames` waiting). Under load shedding the cadence is off and nothing is counted here.
+        /// than `poseBacklogFrames` waiting). If the device policy disables poses there is no scheduled frame to count.
         public var poseSkippedBehind = 0
         /// Automatic court (in-house lane): solves, their seconds on the utility queue, frames sampled, and
         /// how often the court was found, moved or lost.
@@ -96,6 +96,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
     private var admissionEnabled = true
     private var bounceEnabled = true
     private var personEnabled = true
+    private var serveDetailAtL1 = false
     // Capture-queue confined (the caller's single serial capture queue).
     private var cadence: TennisFrameCadence
     private var restartNext = false
@@ -148,6 +149,12 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
     public var isDetectingPeople: Bool {
         get { lock.lock(); defer { lock.unlock() }; return personEnabled }
         set { lock.lock(); personEnabled = newValue; lock.unlock() }
+    }
+
+    /// A mildly warm camera can keep the in-house serve cadence while auxiliary people detection is off.
+    public var preservesServeDetailAtL1: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return serveDetailAtL1 }
+        set { lock.lock(); serveDetailAtL1 = newValue; lock.unlock() }
     }
 
     /// `loadProbeInterval` (source seconds) adds a measurement-only bounce job on recent frames,
@@ -207,7 +214,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         metrics.submittedFrames += 1; metrics.latestSubmittedPTS = pts
         let ready = metrics.ready && !closed, admitting = admissionEnabled
         let resync = resyncRequested, pending = metrics.pendingFrames, shedPeople = !personEnabled, shedBounces = !bounceEnabled
-        let receiver = receiverWindow
+        let receiver = receiverWindow, keepServeDetail = serveDetailAtL1
         if ready && admitting { resyncRequested = false }
         if !ready { metrics.warmupFrames += 1 } else if !admitting { metrics.pausedFrames += 1 }
         if ready && admitting && resync { metrics.resyncs += 1 }
@@ -218,10 +225,10 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             // L1 3 Hz, L2 2 Hz with rule updates once a second (docs/model-replacement-design.md §3.4).
             let base = liveConfiguration.personInterval
             let interval = shedBounces ? max(base, 30) : shedPeople ? max(base, 20) : base
-            // the frames copied only for the region poses are the first thing shed: under L1 and L2 the poses
-            // are read on person frames alone
+            let warm = shedPeople && !shedBounces && keepServeDetail
+            let poses = !shedBounces && (!shedPeople || warm) ? liveConfiguration.poseInterval : 0
             submitInHouse(pixelBuffer, pts: pts, streamID: streamID, restart: restartNext || resync, now: now,
-                          pending: pending, personInterval: interval, poseInterval: shedPeople || shedBounces ? 0 : liveConfiguration.poseInterval,
+                          pending: pending, personInterval: interval, poseInterval: poses, sharePoseFrames: warm,
                           updateInterval: shedBounces ? max(1, liveConfiguration.updateInterval) : liveConfiguration.updateInterval,
                           receiver: receiver)
             restartNext = false
@@ -256,7 +263,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
     /// In-house lane, capture queue: a constant-size vImage scale of every frame, plus a full-resolution
     /// pool copy on person frames (also the latest-frame source for previews and calibration).
     private func submitInHouse(_ pixelBuffer: CVPixelBuffer, pts: Double, streamID: UUID, restart: Bool, now: Double,
-                               pending: Int, personInterval: Int, poseInterval: Int, updateInterval: Double,
+                               pending: Int, personInterval: Int, poseInterval: Int, sharePoseFrames: Bool, updateInterval: Double,
                                receiver: IndependentLiveEngine.ReceiverWindow?) {
         guard pending < maximumPending else {
             lock.lock(); metrics.queueOverflows += 1; lock.unlock()
@@ -267,13 +274,19 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             lock.lock(); metrics.scaleFailures += 1; metrics.lastError = "自研分析不支持这种像素格式"; lock.unlock(); return
         }
         let scaleMilliseconds = (ProcessInfo.processInfo.systemUptime - start) * 1000
+        let frame = liveFrames
         liveFrames += 1
         // the region poses wait while the analysis is behind (v29): on a Mac fed at the source clock they pushed a
         // lane that kept up 68 % busy to 76 %, and its bursts over the queue limit seven times as often
         let readPoses = poseInterval > 0 && pending <= Self.poseBacklogFrames
-        let onPoseCadence = poseInterval > 0 && (liveFrames % poseInterval == 1 || poseInterval == 1)
+        let onPoseCadence = poseInterval > 0 && frame.isMultiple(of: poseInterval)
+        let personOffset = frame % personInterval
+        // Move each slower person read to the next scheduled pose frame. At 60 fps this gives
+        // three person reads and ten shared full-resolution frames per second, even at L1.
+        let onPersonCadence = sharePoseFrames && poseInterval > 0 && poseInterval <= personInterval
+            ? onPoseCadence && personOffset < poseInterval : personOffset == 0
         var copy: CVPixelBuffer?, poseOnly = false
-        if liveFrames % personInterval == 1 || personInterval == 1 {
+        if onPersonCadence {
             copy = makeCopy(pixelBuffer)
             if copy == nil { lock.lock(); metrics.poolExhausted += 1; lock.unlock() }   // a missed person sample is not a break
         } else if readPoses, onPoseCadence {

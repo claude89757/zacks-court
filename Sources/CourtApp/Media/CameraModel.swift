@@ -452,6 +452,11 @@ final class CameraModel {
         @unknown default: state.thermal = "unknown"
         }
         state.pressure = pressure
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["COURT_UI_MILD_HEAT"] == "1" {
+            state.thermal = "fair"; state.pressure = "nominal"; state.lowPowerMode = false
+        }
+        #endif
         state.exposureMs = exposure.map { ($0.ms * 100).rounded() / 100 }; state.iso = exposure.map { $0.iso.rounded() }
         let home = URL(fileURLWithPath: NSHomeDirectory())
         if let values = try? home.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),

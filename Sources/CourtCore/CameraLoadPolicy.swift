@@ -54,19 +54,28 @@ public struct CameraLoadPolicy: Sendable {
         pressure.flatMap { ["fair": 1, "serious": 2, "critical": 3, "shutdown": 4][pressureName($0)] } ?? 0
     }
 
+    /// At mild warmth the core serve observations can continue while preview and auxiliary people
+    /// detection shed load. Check the live inputs even when a different cause holds the same level.
+    public func allowsServeDetailAtL1(on device: CameraDeviceState) -> Bool {
+        guard level == 1, lagLevel == 0, !device.lowPowerMode,
+              device.thermal == "fair" || device.thermal == "nominal" else { return false }
+        return device.pressure.map { Self.pressureName($0) == "nominal" } ?? true
+    }
+
     public static func target(thermal: String, pressure: String?, lowPower: Bool) -> (level: Int, reason: String?) {
         let thermalLevel = Self.thermalLevel(thermal), pressureLevel = Self.pressureLevel(pressure)
         let level = max(thermalLevel, pressureLevel, lowPower ? 1 : 0)
         // Name the actual cause: heat and camera pressure need different next steps.
-        let heat = thermalLevel >= pressureLevel
+        let source = Self.cause(thermal: thermal, pressure: pressure, lowPower: lowPower)
+        let heat = source == .heat
         let cause = heat ? "机位温度偏高" : "机位相机负载高"
         let fix = heat ? "把机位移到阴凉处、避开阳光直射，取下手机壳。" : "关掉机位上其他占用相机或耗电的 App。"
         switch level {
         case 4: return (4, "相机负载达到上限，系统即将停止相机，记录将暂停：\(fix)然后点「开始采集」，再点「继续」。")
         case 3: return (3, (heat ? "机位过热" : "机位相机负载过高") + "：实时分析暂停，录像继续；这段时间的拍次保持为空，结束后可在历史记录里离线补算。" + fix)
-        case 2: return (2, cause + "：预览关闭、暂不定位落点，动作与球速照常。" + fix)
-        case 1: return (1, lowPower && thermalLevel < 1 && pressureLevel < 1 ? "低电量模式：预览降为每秒 1 张，人员检测关闭。接上电源后可关闭低电量模式。"
-                         : (heat ? "机位偏暖" : "机位相机负载偏高") + "：预览降为每秒 1 张，人员检测关闭；球速与落点照常。")
+        case 2: return (2, cause + "，预览关闭，部分击球可能缺少速度或落点。" + fix)
+        case 1: return (1, source == .lowPower ? "低电量模式下，预览降为每秒 1 张，辅助检测减少。"
+                         : (heat ? "机位偏暖" : "机位相机负载偏高") + "，预览降为每秒 1 张，辅助检测减少。")
         default: return (0, nil)
         }
     }
@@ -82,8 +91,10 @@ public struct CameraLoadPolicy: Sendable {
 
     static func cause(thermal: String, pressure: String?, lowPower: Bool) -> Cause {
         let thermalLevel = Self.thermalLevel(thermal), pressureLevel = Self.pressureLevel(pressure)
-        if pressureLevel > thermalLevel { return .pressure }
-        return lowPower && thermalLevel < 1 ? .lowPower : .heat
+        // At L1 pressure or Low Power Mode also curtails serve detail. Name the limiting signal
+        // when mild warmth is present at the same time.
+        if pressureLevel > thermalLevel || (pressureLevel == 1 && thermalLevel == 1) { return .pressure }
+        return lowPower && thermalLevel <= 1 && pressureLevel == 0 ? .lowPower : .heat
     }
 
     static func reason(level: Int, cause: Cause) -> String? {
@@ -113,10 +124,11 @@ public struct CameraLoadPolicy: Sendable {
         }
         guard target < level else {
             belowSince = nil
-            // The level now holds for the other cause only (lag cleared while heat rose to it, or the reverse).
-            let lagHolds = lagLevel >= level, deviceHolds = device.level >= level
-            guard cause == .lag ? !lagHolds : !deviceHolds else { return false }
-            cause = lagHolds ? .lag : deviceCause
+            guard level > 0 else { return false }
+            let lagHolds = lagLevel >= level && (cause == .lag || device.level < level)
+            let activeCause: Cause = lagHolds ? .lag : deviceCause
+            guard activeCause != cause else { return false }
+            cause = activeCause
             reason = cause == .lag ? Self.lagReason(level: level) : device.reason
             return true
         }

@@ -28,8 +28,8 @@ public struct IndependentLiveConfiguration: Sendable {
     /// players whose feet leave the frame are the common case). On by default.
     public var poseFill = true
     /// Region poses of the players standing where a serve is hit, every this many frames (6 = 10 Hz at
-    /// 60 fps; 0 turns them off). Person frames always count; the frames between them are dropped first
-    /// when the camera sheds load.
+    /// 60 fps; 0 turns them off). At mild warmth, person reads share these frames. The analyzer
+    /// can skip region poses and the receiver crop when the queue backs up or the device is under pressure.
     public var poseInterval = 6
     public init(loadAssets: @escaping @Sendable () throws -> IndependentBallModelAssets, computeUnits: MLComputeUnits = .all,
                 camera: IndependentPinholeCamera? = nil, automaticCourt: Bool = true, personInterval: Int = 12, updateInterval: Double = 0.25) {
@@ -529,7 +529,7 @@ public final class IndependentLiveEngine {
     private(set) var receiverWindow: ReceiverWindow?
     private let personsStage: IndependentLivePeople
     private let posesStage = IndependentLivePoses()
-    /// Off while the camera sheds load or the analysis is behind: no region pose is read, on person frames either.
+    /// False on frames whose analysis backlog or device policy precludes a region pose.
     public var readsPoses = true
     private var shots = IndependentLiveShots()
     private var ids: [Int: UUID] = [:]           // published index -> stable row id
