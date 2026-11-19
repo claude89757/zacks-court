@@ -879,6 +879,7 @@ public final class CameraSessionController {
         analysis.court = metrics.court
         analysis.pictureMoving = metrics.pictureMoving ? true : nil
         if metrics.inHouse {
+            analysis.receiverBatches = metrics.receiverBatches
             analysis.poses = CameraPoseCounts(frames: metrics.poseFramesLive, requests: metrics.poseRequestsLive,
                                               seconds: metrics.poseSecondsLive, skippedBehind: metrics.poseSkippedBehind)
         }

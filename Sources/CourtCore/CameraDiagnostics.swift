@@ -123,7 +123,10 @@ public struct CameraLogLine: Codable, Sendable {
     public var courtText: String?
     /// Region poses so far (in-house lane, `CameraPoseCounts`); nil from older versions.
     public var poses: CameraPoseCounts?
+    public var receiverBatches: Int?
     public var shots: Int?
+    /// Actual settings at this sample. Absent in logs from older versions.
+    public var hawkEye: HawkEyeSettings?
     /// An App display is connected; browsers that joined.
     public var display: Bool?
     public var browsers: Int?
@@ -144,6 +147,8 @@ public struct CameraLogLine: Codable, Sendable {
         if let latest = a.latestPTS, let analyzed = a.analyzedPTS { analysisDelay = (max(0, latest - analyzed) * 100).rounded() / 100 }
         pendingFrames = a.pendingFrames; restarts = a.restarts; analysisReason = a.reason
         court = a.court; courtText = a.calibration?.reason; poses = a.poses
+        hawkEye = status.hawkEye
+        receiverBatches = a.receiverBatches
         self.shots = shots; self.display = display; self.browsers = browsers; self.linkPath = linkPath?.rawValue
     }
 }
@@ -337,11 +342,20 @@ public enum DiagnosticBundle {
         let serves = events.filter { $0.stroke == .serve }
         let calls = events.compactMap { $0.bounce?.hawkEye }
         let near = calls.filter { !$0.farHalf }
+        let inSession = logs.flatMap(\.lines).filter { $0.kind == .status && $0.session == session.id && $0.sessionState == .active }
         func count(_ list: [HawkEyeJudgement], _ call: HawkEyeCall) -> Int { list.filter { $0.call == call }.count }
         out.append("逐拍")
         out.append("- 击球 \(events.count) 拍，有球速 \(events.filter { $0.speedKPH != nil }.count) 拍，有落点 \(events.filter { $0.bounce?.xMeters != nil }.count) 拍")
         out.append("- 发球 \(serves.count) 拍，有球速 \(serves.filter { $0.speedKPH != nil }.count) 拍")
         out.append("- 界内外：近端 \(near.count) 个（界内 \(count(near, .in))、出界 \(count(near, .out))、压线附近 \(count(near, .close))），远端 \(calls.count - near.count) 个")
+        let modes = inSession.map { line -> String in
+            guard let setting = line.hawkEye else { return "设置未知" }
+            return setting.enabled ? "\(setting.format.text)·\(setting.coverageText)" : "关闭"
+        }
+        if !modes.isEmpty {
+            let counts = Dictionary(grouping: modes, by: { $0 }).map { "\($0.key) \($0.value.count) 次" }.sorted()
+            out.append("- 记录中的界内外设置（每秒采样）：\(counts.joined(separator: "，"))")
+        }
         let challenges = events.filter { $0.challenge != nil }.count
         if challenges > 0 { out.append("- 挑战 \(challenges) 次") }
         out.append("")
@@ -370,7 +384,6 @@ public enum DiagnosticBundle {
                 .map { ($0.key, $0.value.count) }.sorted { $0.1 > $1.1 }.prefix(3)
             for (reason, seconds) in reasons { out.append("  · 「\(reason)」\(seconds) 秒") }
         }
-        let inSession = logs.flatMap(\.lines).filter { $0.kind == .status && $0.session == session.id && $0.sessionState == .active }
         if !inSession.isEmpty {
             let withCourt = inSession.filter { $0.court?.state == .found || $0.court?.state == .fixed }.count
             out.append("- 记录中 \(inSession.count) 秒，有球场 \(withCourt) 秒（\(percent(withCourt, inSession.count))）")

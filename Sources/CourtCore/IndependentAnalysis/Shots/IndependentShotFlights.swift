@@ -175,6 +175,9 @@ public struct IndependentShotResult: Sendable, Codable {
     public var rmsPx: Double?
     public var maxPx: Double?
     public var fitHit: [Double]?
+    /// Contact used for a replacement serve speed. Stroke classification still uses the original fit.
+    public var speedContact: [Double]?
+    public var speedContactTime: Double?
     public var vInstKmh: Double?
     public var fitNetZ: Double?
     public var fitNetX: Double?
@@ -305,7 +308,34 @@ public struct IndependentShotResult: Sendable, Codable {
     /// Speed shown to the user: accepted and anchored at a detected bounce (the frozen primary gate), or a
     /// serve speed anchored at the server's baseline that passed the serve checks (v16).
     public var reportedSpeedKmh: Double? {
-        slowServe != true && accepted && (bounceFound || speedAnchor == .serveBaseline || speedAnchor == .serveNet) ? speedKmh : nil
+        guard slowServe != true, accepted, let speedKmh, (20...250).contains(speedKmh),
+              bounceFound || speedAnchor == .serveBaseline || speedAnchor == .serveNet, speedGeometryIssue == nil else { return nil }
+        return speedKmh
+    }
+
+    /// A flight still provides rally timing when its depth/height trade-off makes its speed unusable.
+    /// Apply these checks to the actual endpoints chosen for display, after any serve refit.
+    var speedGeometryIssue: String? {
+        if let h = speedContact ?? fitHit, h.count >= 3 {
+            guard h[2] >= 0 else { return "拟合击球点低于地面，无法可信测速" }
+            if stroke == "发球", let side = hitterSide {
+                let baseline = side == "near" ? 0 : IndependentCourt.length
+                guard abs(h[1] - baseline) <= IndependentStrokeRules.Serve.ownDepth else { return "测速起点偏离发球者底线" }
+            }
+            if bounceFound, let b = bounceGround, b.count >= 2, let tb = tBounce {
+                let net = IndependentCourt.netY, duration = tb - (speedContactTime ?? tHit)
+                if (h[1] - net) * (b[1] - net) < 0, abs(b[1] - net) > 1, duration > 0 {
+                    let f = (net - h[1]) / (b[1] - h[1]), x = h[0] + f * (b[0] - h[0])
+                    let z = (1 - f) * h[2] + f * IndependentCourt.ballRadius + 0.5 * IndependentFlight.g * duration * duration * f * (1 - f)
+                    let underNet = speedContact == nil && (fitNetZ ?? .infinity) < 0.65
+                        && abs(fitNetX ?? .infinity) <= IndependentCourt.doublesHalfWidth
+                    if underNet || (abs(x) <= IndependentCourt.doublesHalfWidth && z < 0.65) {
+                        return "拟合轨迹穿过球网，无法可信测速"
+                    }
+                }
+            }
+        }
+        return nil
     }
     /// A serve whose speed came out under `Serve.shownFromKmh` (v27): not shown.
     public var slowServe: Bool?

@@ -18,6 +18,44 @@ final class IndependentLiveEngineTests: XCTestCase {
         return b
     }
 
+    func testWallGapNeedsMovingModelSeedsAndFreshColouredPixels() throws {
+        let w = IndependentLiveFrameScaler.width, h = IndependentLiveFrameScaler.height
+        var background = [UInt8](repeating: 150, count: 3 * w * h)
+        XCTAssertNil(IndependentBallGapRecovery(background: background))
+        for i in (w * h / 2)..<(w * h) { background[3 * i] = 50 }
+        var recovery = try XCTUnwrap(IndependentBallGapRecovery(background: background))
+        func observe(_ t: Int, x: Int?, model: Bool = false) -> [SIMD2<Double>] {
+            var frame = background
+            if let x { frame[3 * (64 * w + x) + 2] = 115 }
+            let points = model ? [SIMD2(Double(x!), 64)] : []
+            return recovery.update(model: points, frame: frame, time: Double(t))
+        }
+        XCTAssertTrue(observe(0, x: 70).isEmpty)
+        for i in 1...3 { XCTAssertTrue(observe(i, x: 70 + 3 * i, model: true).isEmpty) }
+        XCTAssertEqual(observe(4, x: 82), [SIMD2(82, 64)])
+        XCTAssertTrue(observe(5, x: 82).isEmpty, "a stationary yellow feature has no new motion")
+        XCTAssertTrue(observe(6, x: nil).isEmpty, "prediction alone supplies no ball point")
+        XCTAssertTrue(observe(10, x: 100).isEmpty, "a break requires fresh model observations")
+    }
+
+    func testReceiverCropReadsTheRequestedNV12PixelsAndAgreesWithSourceCoordinates() throws {
+        let camera = IndependentPinholeCamera.lookingAt(SIMD3(0, 16, 1.4), from: SIMD3(0, -6, 1.4), f: 1010)
+        let crop = try XCTUnwrap(IndependentLiveEngine.receiverCrop(camera, width: 1920, height: 1080))
+        let projected = IndependentProjector(camera).project(SIMD3(0, 18.3, 0))
+        XCTAssertTrue((crop.cropX..<crop.cropX + crop.cropWidth).contains(Int(projected.u)))
+        XCTAssertTrue((crop.cropY..<crop.cropY + crop.cropHeight).contains(Int(projected.v)))
+        XCTAssertEqual(crop.cropWidth * 9, crop.cropHeight * 16)
+        let pixels = try nv12(y: 16, cb: 128, cr: 128)
+        CVPixelBufferLockBaseAddress(pixels, [])
+        let luma = CVPixelBufferGetBaseAddressOfPlane(pixels, 0)!, stride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0)
+        for y in crop.cropY..<(crop.cropY + crop.cropHeight) { memset(luma + y * stride + crop.cropX, 235, crop.cropWidth) }
+        CVPixelBufferUnlockBaseAddress(pixels, [])
+        let scaler = IndependentLiveFrameScaler()
+        XCTAssertLessThan(try XCTUnwrap(scaler.scale(pixels)).first!, 5)
+        let zoom = try XCTUnwrap(scaler.scale(pixels, crop: crop))
+        XCTAssertGreaterThan(zoom.min()!, 248)
+    }
+
     /// BT.709 video range: Y 16-235, Cb/Cr 16-240 around 128.
     func testNV12ScalesToBT709RGB() throws {
         let scaler = IndependentLiveFrameScaler()

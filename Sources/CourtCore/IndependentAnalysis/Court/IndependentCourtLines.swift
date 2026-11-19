@@ -89,14 +89,16 @@ enum IndependentCourtLines {
         return clusters
     }
 
-    /// Transverse (within 15 degrees of horizontal) and longitudinal lines with support >= 30.
-    static func families(_ lines: [IndependentCourtImageLine], minSupport: Double = 30)
+    /// At a low mount the outer sidelines can be shallower than 15 degrees. When the playing surface
+    /// is isolated, allow those lines to vote for the sideline vanishing point as well.
+    static func families(_ lines: [IndependentCourtImageLine], minSupport: Double = 30, minimumSidelineAngle: Double = 15)
         -> (transverse: [IndependentCourtImageLine], longitudinal: [IndependentCourtImageLine]) {
         var t = [IndependentCourtImageLine](), l = [IndependentCourtImageLine]()
         for c in lines where c.support >= minSupport {
             var ang = atan2(c.direction.y, c.direction.x) * (180 / Double.pi)
             ang = NumPy.remainder(ang + 90, 180) - 90
-            if abs(ang) < 15 { t.append(c) } else { l.append(c) }
+            if abs(ang) < 15 { t.append(c) }
+            if abs(ang) >= minimumSidelineAngle { l.append(c) }
         }
         return (t, l)
     }

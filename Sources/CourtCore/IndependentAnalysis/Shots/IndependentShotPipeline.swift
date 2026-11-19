@@ -24,7 +24,7 @@ import simd
 /// or at the server's baseline under the serve checks).
 /// Results are model estimates, not measurements.
 public enum IndependentShotPipeline {
-    public static let rulesVersion = "independent-shots-v35"
+    public static let rulesVersion = "independent-shots-v36"
 
     /// Median image step of a run of track points, pixels per frame (0 for fewer than two points).
     static func imageSpeed(_ P: [IndependentTrackPoint]) -> Double {
@@ -137,8 +137,11 @@ public enum IndependentShotPipeline {
         var landings = [(segment: Int, t: Double, ground: SIMD3<Double>)]()
         var segmentEvents = [SegmentEvents]()     // kept for the serve rules after `classify` (v32)
         var farSwings = [[IndependentStrokeRules.ServeSwing]](repeating: [], count: segments.count)
+        var nearSwings = farSwings
+        let wide = candidates.filter { $0.fromReceiverCrop != true }
+        let detail = candidates.filter { $0.fromReceiverCrop == true }
         for (k, segment) in segments.enumerated() {
-            let ev = events(candidates: candidates, segment: segment)
+            let ev = events(candidates: wide, segment: segment)
             segmentEvents.append(ev)
             let p = try people(k, ev)
             crowd.append(p)
@@ -179,7 +182,8 @@ public enum IndependentShotPipeline {
             let cam = cameras[k]
             var events = IndependentStrokeRules.poseServes(people, camera: cam).map { (event: $0, contact: Double?.none, hand: SIMD2<Double>?.none) }
             // ... and the region poses (v29) time its contact, and see the swings a 5 Hz sample missed
-            for w in IndependentStrokeRules.serveSwings(people, camera: cam, near: true) {
+            nearSwings[k] = IndependentStrokeRules.serveSwings(people, camera: cam, near: true)
+            for w in nearSwings[k] {
                 let slack = IndependentStrokeRules.Swing.sameSwing
                 if let j = events.firstIndex(where: { w.start <= $0.event.end + slack && $0.event.start - slack <= w.end }) {
                     if events[j].contact == nil { events[j].contact = w.contact; events[j].hand = w.hand }
@@ -269,6 +273,7 @@ public enum IndependentShotPipeline {
                 shots[i].speedKmh = r.speedKmh; shots[i].vInstKmh = r.vInstKmh; shots[i].intervalS = r.intervalS
                 shots[i].endKind = r.endKind; shots[i].fitNetZ = r.fitNetZ; shots[i].fitNetX = r.fitNetX; shots[i].serveSpeedFrom = "bounce refit"
                 shots[i].landSpeedKmh = r.landSpeedKmh; shots[i].landY = r.landY
+                shots[i].speedContact = r.fitHit; shots[i].speedContactTime = r.tHit
             }
         }
         // serves without a bounce-anchored speed: refit from the server's baseline (v16)
@@ -318,10 +323,54 @@ public enum IndependentShotPipeline {
             let speed = twoPointSpeed(from: P, to: SIMD3(g[0], g[1], IndependentCourt.ballRadius), over: T)
             guard (20...250).contains(speed) else { return false }     // the gate every accepted speed passes (`analyse`)
             shots[i].speedKmh = speed; shots[i].intervalS = T; shots[i].fitHit = [P.x, P.y, P.z]
+            shots[i].speedContact = shots[i].fitHit; shots[i].speedContactTime = tc
             shots[i].accepted = true; shots[i].reason = nil; shots[i].bounceFound = true; shots[i].speedTo = "bounce"; shots[i].serveSpeedFrom = "seen contact"
             return true
         }
+        // A low near-baseline camera can see the toss and the striking wrist perfectly while losing the
+        // fast outgoing ball against the wall. Recognize that serve independently of fitting a flight.
+        let fittedCount = shots.count
+        var receiverLandings = [Double: (t: Double, ground: SIMD3<Double>, samples: Int)]()
+        for (k, swings) in nearSwings.enumerated() where IndependentStrokeRules.lowCamera(cameras[k]) {
+            guard !swings.isEmpty else { continue }
+            let local = detail.filter { segments[k].start <= $0.time / 60 && $0.time / 60 < segments[k].end }
+            let receiver = local.isEmpty ? nil : events(candidates: local, segment: segments[k])
+            for swing in swings where swing.swung {
+                guard let tc = swing.contact, let hand = swing.hand, tc >= segments[k].start, tc < segments[k].end else { continue }
+                if let receiver {
+                    receiverLandings[tc] = receiverLanding(receiver, camera: cameras[k], contact: tc)
+                        ?? IndependentReceiverBounce.find(in: local, contact: tc, camera: cameras[k])
+                }
+                let nearby = shots.indices.filter { shots[$0].segment == k && abs((shots[$0].contactT ?? shots[$0].tHit) - tc) < 0.35 }
+                guard !nearby.contains(where: { shots[$0].stroke == "发球" && shots[$0].poseContact != nil }),
+                      receiverLandings[tc] != nil || IndependentStrokeRules.sawToss(before: tc, hand: hand, candidates: wide,
+                                                                                  camera: cameras[k], segmentStart: segments[k].start) else { continue }
+                if let i = nearby.min(by: { abs(shots[$0].tHit - tc) < abs(shots[$1].tHit - tc) }) {
+                    // A failed 3D fit also appears in this list; letting it claim the swing silently
+                    // loses the row when the fit is filtered. Use its identity for the observed serve.
+                    guard shots[i].reportedSpeedKmh == nil || shots[i].stroke == "发球" else { continue }
+                    shots[i].stroke = "发球"; shots[i].poseServe = true; shots[i].hitterSide = "near"
+                    shots[i].poseContact = tc; shots[i].contactT = tc; shots[i].poseHand = [hand.x, hand.y]
+                    continue
+                }
+                let frame = Int((tc * 60).rounded())
+                var s = IndependentShotResult(hitKind: "observed serve swing", hitterFound: true, bounceFound: false,
+                                              contactUV: [hand.x, hand.y], hitterSide: "near", tHit: tc, nObs: 0,
+                                              firstFrame: frame, lastFrame: frame)
+                s.segment = k; s.stroke = "发球"; s.poseServe = true; s.poseContact = tc; s.poseHand = [hand.x, hand.y]
+                shots.append(s)
+            }
+        }
         for i in shots.indices where shots[i].stroke == "发球" {
+            if shots[i].reportedSpeedKmh == nil, shots[i].hitterSide == "near",
+               let tc = shots[i].poseContact, let l = receiverLandings[tc] {
+                let g = [l.ground.x, l.ground.y, l.ground.z]
+                if seenContactSpeed(i, tc: tc, g: g, tb: l.t) {
+                    shots[i].bounceGround = g; shots[i].tBounce = l.t; shots[i].serveSpeedFrom = "seen contact, receiver crop"
+                    shots[i].nObs = max(shots[i].nObs, l.samples)
+                    continue
+                }
+            }
             guard let tc = shots[i].poseContact, let g = shots[i].bounceGround, let tb = shots[i].tBounce else { continue }
             _ = seenContactSpeed(i, tc: tc, g: g, tb: tb)
         }
@@ -349,6 +398,7 @@ public enum IndependentShotPipeline {
             let T = stop.t - tc, speed = twoPointSpeed(from: P, to: stop.Q, over: T)
             guard (IndependentStrokeRules.Serve.shownFromKmh...250).contains(speed) else { continue }
             shots[i].speedKmh = speed; shots[i].intervalS = T; shots[i].serveSpeedFrom = "net junction (\(from))"
+            shots[i].speedContact = [P.x, P.y, P.z]; shots[i].speedContactTime = tc
         }
         // ... and one whose own flight has no bounce (v30): the first bounce of any track piece past the net, within
         // the court and 2 m around it. At night a serve is often lost for a third of a second past the net; the piece
@@ -398,7 +448,7 @@ public enum IndependentShotPipeline {
         for i in shots.indices where shots[i].bounceGround == nil {
             shots[i].landEstimate = incomingLanding(i, shots: shots, camera: cameras[shots[i].segment])
         }
-        return shots
+        return shots.count == fittedCount ? shots : IndependentBallEvents.stableSorted(shots) { $0.tHit < $1.tHit }
     }
 
     /// The near landing of shot `i`, hit on the far half, that has no bounce (v33): the bounce inside its last steps
@@ -470,6 +520,26 @@ public enum IndependentShotPipeline {
             return (l.t, Q)
         }
         return stops.min { $0.t < $1.t }
+    }
+
+    /// A first bounce seen in the magnified receiver view, with the actual pre-bounce sample count. Both
+    /// ways of finding it require evidence on the rising side of the bounce.
+    static func receiverLanding(_ ev: SegmentEvents, camera: IndependentProjector, contact: Double) -> (t: Double, ground: SIMD3<Double>, samples: Int)? {
+        let junctions = ev.junctions.filter { j in
+            guard j.bounce, let g = j.ground else { return false }
+            return IndependentStrokeRules.Swing.flight.contains(j.t - contact) && g.y > IndependentCourt.netY + 1
+                && g.y < IndependentCourt.length + 2 && abs(g.x) <= IndependentCourt.doublesHalfWidth + 2
+        }
+        let t: Double, ground: SIMD3<Double>
+        if let j = junctions.min(by: { $0.t < $1.t }), let g = j.ground { t = j.t; ground = g }
+        else if let l = farHalfLanding(ev, camera: camera, contact: contact) { t = l.t; ground = l.ground }
+        else { return nil }
+        let q = camera.project(ground), image = SIMD2(q.u, q.v)
+        let pieces = ev.pieces.filter { piece in
+            piece.contains { abs($0.t / 60 - t) < 0.08 && simd_distance($0.uv, image) < 12 }
+        }
+        let samples = Set(pieces.flatMap { $0.filter { contact <= $0.t / 60 && $0.t / 60 <= t }.map(\.t) }).count
+        return samples >= 4 ? (t, ground, samples) : nil
     }
 
     /// The first landing in the far half of a near serve contacted at `tc` (seconds), found from the ball where the
@@ -551,6 +621,7 @@ public enum IndependentShotPipeline {
         s.speedKmh = r.speedKmh; s.vInstKmh = r.vInstKmh; s.intervalS = r.intervalS; s.endKind = r.endKind
         s.fitNetZ = r.fitNetZ; s.fitNetX = r.fitNetX; s.accepted = r.accepted; s.reason = r.reason; s.speedAnchor = r.speedAnchor
         s.landSpeedKmh = r.landSpeedKmh; s.landY = r.landY
+        s.speedContact = r.fitHit; s.speedContactTime = r.tHit
         if r.speedAnchor == .serveBounce {
             s.bounceFound = true; s.bounceGround = r.bounceGround; s.tBounce = r.tBounce
         }
@@ -581,7 +652,9 @@ public enum IndependentShotPipeline {
                 row.bounce?.reasonCode = .estimate
                 row.bounce?.sigmaXMeters = l.sigma[0]; row.bounce?.sigmaYMeters = l.sigma[1]
             }
-            if let h = finite(s.fitHit, count: 3) { row.hit = TennisCourtPoint(x: IndependentCourt.courtX(fromCentred: h[0]), y: h[1], z: h[2]) }
+            if let h = finite(speed != nil ? s.speedContact ?? s.fitHit : s.fitHit, count: 3) {
+                row.hit = TennisCourtPoint(x: IndependentCourt.courtX(fromCentred: h[0]), y: h[1], z: h[2])
+            }
             row.origin = "independent"
             return row
         }
@@ -602,11 +675,13 @@ public enum IndependentShotPipeline {
     }
 
     static func reasonCode(_ s: IndependentShotResult) -> TennisReason {
+        if s.accepted, s.speedGeometryIssue != nil { return .speedUnreliable }
         if s.reason == "fewer than 8 ball observations between hit and bounce" || s.reason == "no initial flight hypothesis" { return .ballNotSeen }
         // a row showing an estimated landing (v33) does not say the ball was not seen landing
         return s.bounceFound || s.landEstimate != nil ? .speedUnreliable : .noBounceSeen
     }
     static func reasonText(_ s: IndependentShotResult) -> String {
+        if s.accepted, let issue = s.speedGeometryIssue { return issue }
         if let r = s.reason { return "自研：\(r)" }
         return s.bounceFound ? "自研：球速未通过检查" : "自研：没有触地锚点，不给球速"
     }

@@ -35,6 +35,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         public var lastError: String?
         /// In-house live lane (zero for the S家 lane).
         public var inHouse = false, scaledFrames = 0, scaleFailures = 0, ballBatches = 0, ballResets = 0
+        public var receiverBatches: Int?
         public var ballInferenceSeconds = 0.0, personSamplesLive = 0, personSecondsLive = 0.0, ballCandidates = 0, publishedShots = 0
         /// In-house lane region poses: frames read, Vision requests and their seconds; and the full-resolution
         /// copies made for them alone, between person frames (not counted in `copies`).
@@ -64,6 +65,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
     private struct Work: @unchecked Sendable {
         let pts: Double, streamID: UUID, pixels: CVPixelBuffer?, slot: Int?, restart: Bool, submitted: Double
         var small: [UInt8]? = nil, sourceWidth = 0, sourceHeight = 0
+        var receiver: (window: IndependentLiveEngine.ReceiverWindow, rgb: [UInt8])?
         var updateInterval: Double? = nil
         /// A full-resolution copy only the region poses read (in-house lane, between two person frames).
         var poseOnly = false
@@ -101,6 +103,8 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
     private var poolFormat: OSType = 0, poolWidth = 0, poolHeight = 0
     private let liveConfiguration: IndependentLiveConfiguration?
     private let scaler = IndependentLiveFrameScaler()
+    /// Written by the analysis worker and read by the capture queue under `lock`.
+    private var receiverWindow: IndependentLiveEngine.ReceiverWindow?
     private var liveFrames = 0
     // Worker confined.
     private var engine: ReferenceLaneEngine?
@@ -203,6 +207,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         metrics.submittedFrames += 1; metrics.latestSubmittedPTS = pts
         let ready = metrics.ready && !closed, admitting = admissionEnabled
         let resync = resyncRequested, pending = metrics.pendingFrames, shedPeople = !personEnabled, shedBounces = !bounceEnabled
+        let receiver = receiverWindow
         if ready && admitting { resyncRequested = false }
         if !ready { metrics.warmupFrames += 1 } else if !admitting { metrics.pausedFrames += 1 }
         if ready && admitting && resync { metrics.resyncs += 1 }
@@ -217,7 +222,8 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
             // are read on person frames alone
             submitInHouse(pixelBuffer, pts: pts, streamID: streamID, restart: restartNext || resync, now: now,
                           pending: pending, personInterval: interval, poseInterval: shedPeople || shedBounces ? 0 : liveConfiguration.poseInterval,
-                          updateInterval: shedBounces ? max(1, liveConfiguration.updateInterval) : liveConfiguration.updateInterval)
+                          updateInterval: shedBounces ? max(1, liveConfiguration.updateInterval) : liveConfiguration.updateInterval,
+                          receiver: receiver)
             restartNext = false
             return
         }
@@ -250,7 +256,8 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
     /// In-house lane, capture queue: a constant-size vImage scale of every frame, plus a full-resolution
     /// pool copy on person frames (also the latest-frame source for previews and calibration).
     private func submitInHouse(_ pixelBuffer: CVPixelBuffer, pts: Double, streamID: UUID, restart: Bool, now: Double,
-                               pending: Int, personInterval: Int, poseInterval: Int, updateInterval: Double) {
+                               pending: Int, personInterval: Int, poseInterval: Int, updateInterval: Double,
+                               receiver: IndependentLiveEngine.ReceiverWindow?) {
         guard pending < maximumPending else {
             lock.lock(); metrics.queueOverflows += 1; lock.unlock()
             restartNext = true; return
@@ -275,6 +282,10 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         var work = Work(pts: pts, streamID: streamID, pixels: copy, slot: copy == nil || poseOnly ? nil : 0, restart: restart, submitted: now,
                         small: small, sourceWidth: CVPixelBufferGetWidth(pixelBuffer), sourceHeight: CVPixelBufferGetHeight(pixelBuffer))
         work.updateInterval = updateInterval; work.poseOnly = poseOnly; work.readPoses = readPoses
+        if readPoses, !restart, let receiver, receiver.stream == streamID, (receiver.start...receiver.end).contains(pts),
+           let rgb = scaler.scale(pixelBuffer, crop: receiver.crop) {
+            work.receiver = (receiver, rgb)
+        }
         lock.lock()
         metrics.pendingFrames += 1; metrics.maximumPendingFrames = max(metrics.maximumPendingFrames, metrics.pendingFrames)
         metrics.scaledFrames += 1; timings.scale.append(scaleMilliseconds)
@@ -394,6 +405,7 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
                                                                     pose: work.poseOnly ? work.pixels : nil, pts: work.pts, streamID: work.streamID,
                                                                     sourceWidth: work.sourceWidth, sourceHeight: work.sourceHeight) } }
             catch { live.restart(); failure = error.localizedDescription }
+            if let r = work.receiver { live.processReceiver(r.rgb, window: r.window, pts: work.pts, streamID: work.streamID) }
         } else if let engine {
             do { snapshot = try autoreleasepool { try engine.process(work.pixels, pts: work.pts, streamID: work.streamID) } }
             catch { engine.reset(); failure = error.localizedDescription }
@@ -422,8 +434,10 @@ public final class CameraSideAnalyzer: @unchecked Sendable {
         if let failure { metrics.engineErrors += 1; metrics.lastError = failure; resyncRequested = true }
         if missed { metrics.pixelMisses += 1; resyncRequested = true }
         metrics.shots = ledger.count
+        receiverWindow = live?.receiverWindow
         if let stats = live?.stats {
             metrics.ballBatches = stats.batches; metrics.ballResets = stats.ballResets; metrics.ballInferenceSeconds = stats.inferenceSeconds
+            metrics.receiverBatches = stats.receiverBatches
             metrics.personSamplesLive = stats.personSamples; metrics.personSecondsLive = stats.personSeconds
             metrics.poseFramesLive = stats.poseFrames; metrics.poseRequestsLive = stats.poseRequests; metrics.poseSecondsLive = stats.poseSeconds
             metrics.ballCandidates = stats.candidates; metrics.publishedShots = stats.published
