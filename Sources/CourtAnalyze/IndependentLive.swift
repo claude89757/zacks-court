@@ -115,8 +115,10 @@ enum IndependentLiveCommand {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.nonConformingFloatEncodingStrategy = .convertToString(positiveInfinity: "inf", negativeInfinity: "-inf", nan: "nan")
         try encoder.encode(report).write(to: out, options: .withoutOverwriting)
-        // ball candidates next to the report: [[time (1/60 s), u, v, peak], ...]
-        try JSONSerialization.data(withJSONObject: candidateLog.all.map { [$0.time, $0.u, $0.v, $0.peak] })
+        // Full-frame model peaks, aligned to the research model-input dump. The trace below also
+        // preserves colour-motion observations and the separately timed receiver crops with their sources.
+        let modelPeaks = candidateLog.all.filter { $0.fromReceiverCrop != true && $0.fromColourMotion != true }
+        try JSONSerialization.data(withJSONObject: modelPeaks.map { [$0.time, $0.u, $0.v, $0.peak] })
             .write(to: out.deletingPathExtension().appendingPathExtension("candidates.json"), options: .withoutOverwriting)
         // every input of the shot rules, for `court-analyze independent-replay` with changed rules
         let compact = JSONEncoder()

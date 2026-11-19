@@ -15,6 +15,7 @@ final class WorkspaceUITests: XCTestCase {
         // Simulators have no camera: the demo shows a triple camera's zoom presets so their layout
         // and gestures can be checked. Nothing is captured.
         if name.contains("testCameraZoomPresets") || name.contains("testScreenTourForReview") { app.launchEnvironment["COURT_UI_ZOOM_DEMO"] = "1" }
+        if name.contains("testMildHeat") { app.launchEnvironment["COURT_UI_MILD_HEAT"] = "1" }
         // The display shows the seeded demo record (titled 演示数据) as just finished.
         if name.contains("testChallengeReplayDemo") || name.contains("testStorePreviewFlow") { app.launchEnvironment["COURT_UI_REPLAY_DEMO"] = "1" }
         app.launch()
@@ -100,6 +101,14 @@ final class WorkspaceUITests: XCTestCase {
         tapReachable(app.buttons["切换模式"].firstMatch)
         XCTAssertTrue(app.buttons["历史记录"].firstMatch.waitForExistence(timeout: 5))
         attach("08-home-after-cleanup")
+    }
+
+    func testMildHeatLeavesCameraAtNormalLoad() throws {
+        tapReachable(app.buttons["court.role.camera"].firstMatch)
+        assertLandscape()
+        XCTAssertTrue(app.otherElements["court.camera.preview"].firstMatch.waitForExistence(timeout: 5))
+        let reducedPreview = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "每秒 1 张")).firstMatch
+        XCTAssertFalse(reducedPreview.waitForExistence(timeout: 3))
     }
 
     func testCameraAutoLandscapePinsPreviewAndRestoresPortrait() throws {

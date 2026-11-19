@@ -28,8 +28,8 @@ public struct IndependentLiveConfiguration: Sendable {
     /// players whose feet leave the frame are the common case). On by default.
     public var poseFill = true
     /// Region poses of the players standing where a serve is hit, every this many frames (6 = 10 Hz at
-    /// 60 fps; 0 turns them off). Person frames always count; the frames between them are dropped first
-    /// when the camera sheds load.
+    /// 60 fps; 0 turns them off). At L0, person reads share these frames every 12 frames. The analyzer
+    /// can skip region poses and the receiver crop when the queue backs up or the device is under pressure.
     public var poseInterval = 6
     public init(loadAssets: @escaping @Sendable () throws -> IndependentBallModelAssets, computeUnits: MLComputeUnits = .all,
                 camera: IndependentPinholeCamera? = nil, automaticCourt: Bool = true, personInterval: Int = 12, updateInterval: Double = 0.25) {
@@ -72,7 +72,11 @@ public final class IndependentLiveFrameScaler {
     public init() {}
 
     /// Packed RGB8 (row stride 512×3), or nil for an unsupported format.
-    public func scale(_ pixels: CVPixelBuffer) -> [UInt8]? {
+    public func scale(_ pixels: CVPixelBuffer, crop: IndependentBallImageTransform? = nil) -> [UInt8]? {
+        let width = CVPixelBufferGetWidth(pixels), height = CVPixelBufferGetHeight(pixels)
+        let x = crop?.cropX ?? 0, y0 = crop?.cropY ?? 0, w = crop?.cropWidth ?? width, h = crop?.cropHeight ?? height
+        guard crop == nil || (crop?.originalWidth == width && crop?.originalHeight == height &&
+              x >= 0 && y0 >= 0 && w > 0 && h > 0 && w <= width && h <= height && x <= width - w && y0 <= height - h) else { return nil }
         let format = CVPixelBufferGetPixelFormatType(pixels)
         CVPixelBufferLockBaseAddress(pixels, .readOnly); defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
         let W = Self.width, H = Self.height
@@ -82,10 +86,12 @@ public final class IndependentLiveFrameScaler {
         case kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange:
             guard CVPixelBufferGetPlaneCount(pixels) == 2, let yBase = CVPixelBufferGetBaseAddressOfPlane(pixels, 0),
                   let cBase = CVPixelBufferGetBaseAddressOfPlane(pixels, 1), prepareConversion(format) else { return nil }
-            var srcY = vImage_Buffer(data: yBase, height: vImagePixelCount(CVPixelBufferGetHeightOfPlane(pixels, 0)),
-                                     width: vImagePixelCount(CVPixelBufferGetWidthOfPlane(pixels, 0)), rowBytes: CVPixelBufferGetBytesPerRowOfPlane(pixels, 0))
-            var srcC = vImage_Buffer(data: cBase, height: vImagePixelCount(CVPixelBufferGetHeightOfPlane(pixels, 1)),
-                                     width: vImagePixelCount(CVPixelBufferGetWidthOfPlane(pixels, 1)), rowBytes: CVPixelBufferGetBytesPerRowOfPlane(pixels, 1))
+            guard crop == nil || [x, y0, w, h].allSatisfy({ $0.isMultiple(of: 2) }) else { return nil }
+            let strideY = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0), strideC = CVPixelBufferGetBytesPerRowOfPlane(pixels, 1)
+            var srcY = vImage_Buffer(data: yBase + y0 * strideY + x, height: vImagePixelCount(h), width: vImagePixelCount(w), rowBytes: strideY)
+            let cw = crop == nil ? CVPixelBufferGetWidthOfPlane(pixels, 1) : w / 2
+            let ch = crop == nil ? CVPixelBufferGetHeightOfPlane(pixels, 1) : h / 2
+            var srcC = vImage_Buffer(data: cBase + (y0 / 2) * strideC + x, height: vImagePixelCount(ch), width: vImagePixelCount(cw), rowBytes: strideC)
             let ok = y.withUnsafeMutableBytes { yp in cbcr.withUnsafeMutableBytes { cp in argb.withUnsafeMutableBytes { ap in rgb.withUnsafeMutableBytes { rp -> Bool in
                 var dstY = vImage_Buffer(data: yp.baseAddress, height: vImagePixelCount(H), width: vImagePixelCount(W), rowBytes: W)
                 var dstC = vImage_Buffer(data: cp.baseAddress, height: vImagePixelCount(H / 2), width: vImagePixelCount(W / 2), rowBytes: W)
@@ -100,8 +106,8 @@ public final class IndependentLiveFrameScaler {
             return ok ? rgb : nil
         case kCVPixelFormatType_32BGRA:
             guard let base = CVPixelBufferGetBaseAddress(pixels) else { return nil }
-            var src = vImage_Buffer(data: base, height: vImagePixelCount(CVPixelBufferGetHeight(pixels)),
-                                    width: vImagePixelCount(CVPixelBufferGetWidth(pixels)), rowBytes: CVPixelBufferGetBytesPerRow(pixels))
+            let stride = CVPixelBufferGetBytesPerRow(pixels)
+            var src = vImage_Buffer(data: base + y0 * stride + 4 * x, height: vImagePixelCount(h), width: vImagePixelCount(w), rowBytes: stride)
             let ok = argb.withUnsafeMutableBytes { ap in rgb.withUnsafeMutableBytes { rp -> Bool in
                 var small = vImage_Buffer(data: ap.baseAddress, height: vImagePixelCount(H), width: vImagePixelCount(W), rowBytes: W * 4)
                 var dstR = vImage_Buffer(data: rp.baseAddress, height: vImagePixelCount(H), width: vImagePixelCount(W), rowBytes: W * 3)
@@ -151,9 +157,11 @@ public struct IndependentBallInputBatch {
 final class IndependentLiveBallStage {
     static let warmup = IndependentBallWindowAssembler.warmupFrameCount, batch = IndependentBallWindowAssembler.windowFrameCount
     private let model: IndependentBallModel
+    private let detail: Bool
     private let maximumInterval: Double
     private var warmupFrames: [[UInt8]] = []
     private var background: [UInt8]?
+    private var gapRecovery: IndependentBallGapRecovery?
     private var pending: [[UInt8]] = [], pendingTimes: [Double] = [], pendingIndices: [Int] = []
     private var lastPTS: Double?, streamID: UUID?
     private var frameIndex = 0
@@ -164,9 +172,11 @@ final class IndependentLiveBallStage {
 
     /// Up to two frames may be missing without a reset (2026-11-06): the night video drops one frame every
     /// 16.9 s, and treating that as a break cleared the in-flight state 96 times in 27 minutes.
-    init(model: IndependentBallModel, nominalFPS: Double = 60) { self.model = model; maximumInterval = 3.5 / nominalFPS }
+    init(model: IndependentBallModel, nominalFPS: Double = 60, detail: Bool = false) {
+        self.model = model; self.detail = detail; maximumInterval = 3.5 / nominalFPS
+    }
 
-    func reset() { warmupFrames.removeAll(); background = nil; pending.removeAll(); pendingTimes.removeAll(); pendingIndices.removeAll(); lastPTS = nil; resets += 1 }
+    func reset() { warmupFrames.removeAll(); background = nil; gapRecovery = nil; pending.removeAll(); pendingTimes.removeAll(); pendingIndices.removeAll(); lastPTS = nil; resets += 1 }
 
     /// Returns true when the frame broke continuity (the caller resets the shot chain too).
     @discardableResult
@@ -180,7 +190,11 @@ final class IndependentLiveBallStage {
         lastPTS = pts; frameIndex += 1
         guard let background else {
             warmupFrames.append(rgb)
-            if warmupFrames.count == Self.warmup { self.background = Self.median(warmupFrames); warmupFrames.removeAll() }
+            if warmupFrames.count == (detail ? 3 : Self.warmup) {
+                let median = detail ? IndependentCourtMedian.median(warmupFrames) : Self.median(warmupFrames)
+                self.background = median; gapRecovery = detail ? nil : IndependentBallGapRecovery(background: median)
+                warmupFrames.removeAll()
+            }
             return broke
         }
         pending.append(rgb); pendingTimes.append(pts); pendingIndices.append(frameIndex)
@@ -192,8 +206,17 @@ final class IndependentLiveBallStage {
         inferenceSeconds += ProcessInfo.processInfo.systemUptime - start; batches += 1
         let transform = try IndependentBallImageTransform(originalWidth: sourceWidth, originalHeight: sourceHeight)
         let plane = IndependentLiveFrameScaler.width * IndependentLiveFrameScaler.height
+        let scale = SIMD2(Double(sourceWidth) / Double(IndependentLiveFrameScaler.width),
+                          Double(sourceHeight) / Double(IndependentLiveFrameScaler.height))
+        // A player may cover much of the court during the model's warm-up. Refresh the wall cue on
+        // the present view without resetting the model or discarding a continuing ball track.
+        if !detail && batches.isMultiple(of: 8) {
+            let current = IndependentBallGapRecovery(background: pending[0])
+            if abs((current?.floorRow ?? 0) - (gapRecovery?.floorRow ?? 0)) > 8 { gapRecovery = current }
+        }
         var out = [IndependentShotCandidate]()
         for k in 0..<Self.batch {
+            let start = out.endIndex
             let bank = try IndependentBallCandidateBank.extract(Array(prediction.heatmaps[(k * plane)..<((k + 1) * plane)]), transform: transform)
             for c in bank.candidates where c.originalXY.count == 2 {
                 // the heat-weighted centre, not the box centre on the model's 3.75 px grid (2026-11-11): the grid
@@ -201,6 +224,15 @@ final class IndependentLiveBallStage {
                 let xy = c.centroidXY ?? c.originalXY.map(Double.init)
                 out.append(IndependentShotCandidate(decodeIndex: pendingIndices[k], time: pendingTimes[k] * 60,
                                                     u: xy[0], v: xy[1], peak: Double(c.peak)))
+            }
+            if gapRecovery != nil {
+                let grid = out[start...].map { SIMD2($0.u, $0.v) / scale }
+                let extra = gapRecovery!.update(model: grid, frame: pending[k], time: pendingTimes[k] * 60)
+                for p in extra {
+                    let xy = p * scale
+                    out.append(IndependentShotCandidate(decodeIndex: pendingIndices[k], time: pendingTimes[k] * 60,
+                                                        u: xy.x, v: xy.y, peak: 0, fromColourMotion: true))
+                }
             }
         }
         pending.removeAll(); pendingTimes.removeAll(); pendingIndices.removeAll()
@@ -489,9 +521,15 @@ final class IndependentLivePoses {
 public final class IndependentLiveEngine {
     public private(set) var configuration: IndependentLiveConfiguration
     private let ball: IndependentLiveBallStage
+    private let receiverBall: IndependentLiveBallStage
+    struct ReceiverWindow: Equatable, Sendable {
+        let stream: UUID, start: Double, crop: IndependentBallImageTransform
+        var end: Double { start + 2.5 }
+    }
+    private(set) var receiverWindow: ReceiverWindow?
     private let personsStage: IndependentLivePeople
     private let posesStage = IndependentLivePoses()
-    /// Off while the camera sheds load or the analysis is behind: no region pose is read, on person frames either.
+    /// False on frames whose analysis backlog or device policy precludes a region pose.
     public var readsPoses = true
     private var shots = IndependentLiveShots()
     private var ids: [Int: UUID] = [:]           // published index -> stable row id
@@ -541,7 +579,9 @@ public final class IndependentLiveEngine {
         self.configuration = configuration
         court = configuration.automaticCourt ? IndependentLiveCourt(camera: configuration.camera) : nil
         personsStage = IndependentLivePeople(poseFill: configuration.poseFill)
-        ball = IndependentLiveBallStage(model: try IndependentBallModel(modelURL: try configuration.loadAssets().modelURL, computeUnits: configuration.computeUnits))
+        let model = try IndependentBallModel(modelURL: try configuration.loadAssets().modelURL, computeUnits: configuration.computeUnits)
+        ball = IndependentLiveBallStage(model: model)
+        receiverBall = IndependentLiveBallStage(model: model, detail: true)
     }
 
     /// Seconds between rule updates (L2 load shedding slows them to once a second).
@@ -558,6 +598,7 @@ public final class IndependentLiveEngine {
 
     private func use(_ camera: IndependentPinholeCamera?) {
         let wasKnown = configuration.camera != nil
+        if camera == nil { receiverWindow = nil; receiverBall.reset() }
         configuration.camera = camera
         traceObserver?(.camera(camera))
         if camera == nil { shots.freeze(); traceObserver?(.freeze) } else if !wasKnown { catchUpPending = true }
@@ -575,6 +616,7 @@ public final class IndependentLiveEngine {
 
     /// Stream change, pause or a dropped frame: new warm-up, nothing stitched across.
     public func restart() {
+        receiverWindow = nil; receiverBall.reset()
         ball.reset(); shots.reset(); personsStage.reset(); posesStage.reset(); lastUpdate = -.infinity
         traceObserver?(.reset); traceObserver?(.peopleReset)
     }
@@ -587,6 +629,7 @@ public final class IndependentLiveEngine {
                         sourceWidth: Int, sourceHeight: Int) throws -> TennisAnalysisSnapshot? {
         processed += 1; lastPTS = pts
         if self.streamID != streamID {
+            receiverWindow = nil; receiverBall.reset()
             self.streamID = streamID; ids.removeAll(); shots = IndependentLiveShots(); movedUntil = -.infinity
             pictureMovedAt = -.infinity
             traceObserver?(.newStream)
@@ -612,6 +655,12 @@ public final class IndependentLiveEngine {
         if configuration.poseInterval > 0, readsPoses, let frame = full ?? pose, let camera = configuration.camera, let latest = personsStage.latest {
             let found = posesStage.detect(frame, pts: pts, camera: camera, latest: latest)
             traceObserver?(.poses(frame: found.frame, samples: found.samples))
+            if receiverWindow.map({ pts > $0.end + 2 }) ?? true,
+               found.samples.contains(where: { ($0.armUp ?? 0) >= IndependentStrokeRules.PoseServe.raised }),
+               let crop = Self.receiverCrop(camera, width: sourceWidth, height: sourceHeight) {
+                receiverBall.reset()
+                receiverWindow = ReceiverWindow(stream: streamID, start: pts, crop: crop)
+            }
         }
         let broke = try ball.append(rgb: small, pts: pts, streamID: streamID, sourceWidth: sourceWidth, sourceHeight: sourceHeight) { batch in
             candidates += batch.count
@@ -622,7 +671,10 @@ public final class IndependentLiveEngine {
                 shots.trim(keeping: 0, now: movedUntil); traceObserver?(.discard(before: movedUntil))
             }
         }
-        if broke { shots.reset(); personsStage.reset(); posesStage.reset(); traceObserver?(.reset); traceObserver?(.peopleReset) }
+        if broke {
+            receiverWindow = nil; receiverBall.reset()
+            shots.reset(); personsStage.reset(); posesStage.reset(); traceObserver?(.reset); traceObserver?(.peopleReset)
+        }
         guard pts - lastUpdate >= configuration.updateInterval else { return nil }
         lastUpdate = pts
         return update(now: pts)
@@ -636,8 +688,38 @@ public final class IndependentLiveEngine {
         guard ball.backgroundReady else { backgroundView = nil; return }
         guard let reference = backgroundView else { backgroundView = view; return }
         guard IndependentLiveCourt.motion(reference, view) > Self.backgroundMovedPixels else { return }
-        ball.reset(); shots.reset(); backgroundView = nil; backgroundRebuilds += 1; pictureMovedAt = lastPTS
+        ball.reset(); receiverBall.reset(); receiverWindow = nil
+        shots.reset(); backgroundView = nil; backgroundRebuilds += 1; pictureMovedAt = lastPTS
         traceObserver?(.reset)
+    }
+
+    /// Keep the far service box and the air above it in a chroma-aligned 16:9 crop for one serve.
+    static func receiverCrop(_ camera: IndependentPinholeCamera, width: Int, height: Int) -> IndependentBallImageTransform? {
+        let cam = IndependentProjector(camera)
+        guard width == 1920, height == 1080, IndependentStrokeRules.lowCamera(cam) else { return nil }
+        let left = cam.project(SIMD3(-IndependentCourt.doublesHalfWidth, IndependentCourt.netY, 0))
+        let right = cam.project(SIMD3(IndependentCourt.doublesHalfWidth, IndependentCourt.netY, 0))
+        let centre = cam.project(SIMD3(0, 18.3, 0)), span = abs(right.u - left.u)
+        guard left.depth > 0, right.depth > 0, centre.depth > 0, (240...800).contains(span),
+              (0..<Double(width)).contains(centre.u), (0..<Double(height)).contains(centre.v) else { return nil }
+        let w = min(960, max(640, Int(ceil(1.2 * span / 32)) * 32)), h = w * 9 / 16
+        let x = max(0, min(width - w, Int(centre.u - Double(w) / 2) / 2 * 2))
+        let y = max(0, min(height - h, Int(centre.v - 0.6 * Double(h)) / 2 * 2))
+        return try? IndependentBallImageTransform(originalWidth: width, originalHeight: height, cropX: x, cropY: y, cropWidth: w, cropHeight: h)
+    }
+
+    func processReceiver(_ rgb: [UInt8], window: ReceiverWindow, pts: Double, streamID: UUID) {
+        guard window == receiverWindow, window.stream == streamID, pts <= window.end, configuration.camera != nil else { return }
+        let crop = window.crop
+        do {
+            try receiverBall.append(rgb: rgb, pts: pts, streamID: streamID, sourceWidth: crop.cropWidth, sourceHeight: crop.cropHeight) { local in
+                let batch = local.map { p in
+                    IndependentShotCandidate(decodeIndex: Int(p.time.rounded()), time: p.time, u: p.u + Double(crop.cropX),
+                                             v: p.v + Double(crop.cropY), peak: p.peak, fromReceiverCrop: true)
+                }
+                candidateObserver?(batch); traceObserver?(.candidates(batch)); shots.append(batch)
+            }
+        } catch { receiverBall.reset() }
     }
 
     /// End of a segment: settle every remaining shot.
@@ -703,6 +785,7 @@ public final class IndependentLiveEngine {
     }
 
     public struct Stats: Sendable {
+        public var receiverBatches = 0
         public var batches: Int, inferenceSeconds: Double, personSamples: Int, personSeconds: Double, ballResets: Int, published: Int, candidates: Int
         /// Region poses (v29): frames read, Vision requests made and the seconds they took.
         public var poseFrames = 0, poseRequests = 0, poseSeconds = 0.0
@@ -719,6 +802,7 @@ public final class IndependentLiveEngine {
                       ballResets: ball.resets, published: shots.published.count, candidates: candidates)
         s.backgroundRebuilds = backgroundRebuilds; s.pictureMoving = pictureMoving
         s.poseFrames = posesStage.frames; s.poseRequests = posesStage.requests; s.poseSeconds = posesStage.seconds
+        s.receiverBatches = receiverBall.batches
         if let c = court?.stats {
             s.courtSolves = c.solves; s.courtSolveSeconds = c.solveSeconds; s.courtSamples = c.samples
             s.courtFound = c.found; s.courtMoved = c.moved; s.courtLost = c.lost

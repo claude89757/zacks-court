@@ -57,7 +57,92 @@ final class CameraPhase2Tests: XCTestCase {
         heat.update(thermal: "nominal", pressure: nil, lowPower: false, now: 1)
         heat.update(thermal: "nominal", pressure: nil, lowPower: false, now: 61)
         XCTAssertEqual(heat.level, 1)
-        XCTAssertEqual(heat.reason?.hasPrefix("机位偏暖"), true, heat.reason ?? "nil")
+        XCTAssertEqual(heat.reason?.hasPrefix("机位温度回落"), true, heat.reason ?? "nil")
+        var pressure = CameraLoadPolicy()
+        pressure.update(thermal: "serious", pressure: "fair", lowPower: false, now: 0)
+        pressure.update(thermal: "fair", pressure: "fair", lowPower: false, now: 1)
+        pressure.update(thermal: "fair", pressure: "fair", lowPower: false, now: 61)
+        XCTAssertEqual(pressure.level, 1)
+        XCTAssertEqual(pressure.cause, .pressure)
+    }
+
+    func testMildTemperatureAloneKeepsNormalCadence() {
+        var policy = CameraLoadPolicy()
+        for second in 0..<180 {
+            let thermal = (10..<172).contains(second) ? "fair" : "nominal"
+            XCTAssertFalse(policy.update(thermal: thermal, pressure: "AVCaptureSystemPressureLevelNominal",
+                                         lowPower: false, analysisLag: 0.37, now: Double(second)))
+            XCTAssertEqual(policy.level, 0)
+            XCTAssertNil(policy.reason)
+            XCTAssertNil(policy.cause)
+        }
+        XCTAssertFalse(policy.update(thermal: "fair", pressure: "nominal", lowPower: false, analysisLag: 1.4, now: 180))
+        XCTAssertTrue(policy.update(thermal: "fair", pressure: "nominal", lowPower: false, analysisLag: 1.4, now: 185))
+        XCTAssertEqual(policy.level, 1)
+        XCTAssertEqual(policy.cause, .lag)
+    }
+
+    @MainActor func testMildTemperatureKeepsRequestedPreviewAndPeopleDetection() async throws {
+        let root = makeRoot("court-mild-preview")
+        let rig = CameraRig(root: root.appendingPathComponent("camera"))
+        let display = WorkspaceModel(storageDirectory: root.appendingPathComponent("display"))
+        var device = CameraDeviceState()
+        device.thermal = "fair"; device.pressure = "AVCaptureSystemPressureLevelNominal"
+        rig.camera.deviceState = { device }
+        do {
+            display.selectRole(.server)
+            try await waitFor("pairing ticket", timeout: 10) { !display.pairingURL.isEmpty }
+            var ticket = try PairingTicket.parse(display.pairingURL)
+            ticket.host = "127.0.0.1"
+            rig.camera.pair(ticket)
+            try await waitFor("connected", timeout: 10) { display.connected }
+            display.previewVisible(true)
+            rig.source.start()
+            try await waitFor("preview with reported fair temperature", timeout: 10) {
+                display.cameraStatus?.device.thermal == "fair" && rig.pipeline.currentCounters.previewSent > 0
+            }
+            let start = rig.pipeline.currentCounters
+            try await waitFor("one second of source frames", timeout: 10) {
+                rig.pipeline.currentCounters.delivered >= start.delivered + 60
+            }
+            let end = rig.pipeline.currentCounters
+            XCTAssertEqual(display.cameraStatus?.shed, 0)
+            XCTAssertTrue(rig.camera.analyzer.isDetectingPeople)
+            XCTAssertGreaterThan(end.previewSent - start.previewSent, (end.delivered - start.delivered) / 60 + 1)
+            device.lowPowerMode = true
+            try await waitFor("Low Power Mode limits auxiliary work", timeout: 5) {
+                rig.camera.shedCause == .lowPower && !rig.camera.analyzer.isDetectingPeople
+            }
+        } catch {
+            await rig.close(); await display.shutdown()
+            throw error
+        }
+        await rig.close(); await display.shutdown()
+    }
+
+    func testServeDetailResumesDuringRecoveryWhenOtherLimitsClear() {
+        var policy = CameraLoadPolicy(), device = CameraDeviceState()
+        device.thermal = "fair"; device.pressure = "AVCaptureSystemPressureLevelNominal"
+        func detail(at time: Double, lag: Double = 0.02) -> Bool {
+            policy.update(thermal: device.thermal, pressure: device.pressure, lowPower: device.lowPowerMode,
+                          analysisLag: lag, now: time)
+            return policy.allowsServeDetailAtL1(on: device)
+        }
+        device.lowPowerMode = true
+        XCTAssertFalse(detail(at: 1)); XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .lowPower)
+        device.lowPowerMode = false; device.pressure = "AVCaptureSystemPressureLevelFair"
+        XCTAssertFalse(detail(at: 2)); XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .pressure)
+        device.pressure = "nominal"
+        XCTAssertTrue(detail(at: 3, lag: 1.4)); XCTAssertEqual(policy.level, 1)
+        XCTAssertFalse(detail(at: 8, lag: 1.4)); XCTAssertEqual(policy.lagLevel, 2)
+        XCTAssertFalse(detail(at: 9))
+        XCTAssertTrue(detail(at: 69))
+        device.thermal = "serious"
+        XCTAssertFalse(detail(at: 70)); XCTAssertEqual(policy.level, 2)
+        device.thermal = "nominal"
+        XCTAssertFalse(detail(at: 71)); XCTAssertEqual(policy.level, 2)
+        XCTAssertTrue(detail(at: 131)); XCTAssertEqual(policy.level, 1)
+        XCTAssertFalse(detail(at: 191)); XCTAssertEqual(policy.level, 0)
     }
 
     /// Analysis lag on a cool phone (2026-11-05: about 1.3 s behind on iPhone18,2, level never moved).
@@ -117,14 +202,13 @@ final class CameraPhase2Tests: XCTestCase {
         XCTAssertEqual(policy.level, 0)
     }
 
-    /// Lag stacks on heat: warm (L1) and behind sheds L2 for lag. When lag clears while heat holds the
-    /// level, the reason switches to heat; lag never adds a level to serious heat.
-    func testAnalysisLagStacksOnHeatAndHandsTheReasonBack() {
+    /// Lag can raise L1 camera pressure to L2. Once lag clears, serious heat explains L2.
+    func testAnalysisLagStacksOnCameraPressureAndHandsTheReasonToHeat() {
         var policy = CameraLoadPolicy()
-        XCTAssertTrue(policy.update(thermal: "fair", pressure: nil, lowPower: false, analysisLag: 1.5, now: 0))
-        XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .heat)
-        for now in 1...4 { policy.update(thermal: "fair", pressure: nil, lowPower: false, analysisLag: 1.5, now: Double(now)) }
-        XCTAssertTrue(policy.update(thermal: "fair", pressure: nil, lowPower: false, analysisLag: 1.5, now: 5))
+        XCTAssertTrue(policy.update(thermal: "fair", pressure: "fair", lowPower: false, analysisLag: 1.5, now: 0))
+        XCTAssertEqual(policy.level, 1); XCTAssertEqual(policy.cause, .pressure)
+        for now in 1...4 { policy.update(thermal: "fair", pressure: "fair", lowPower: false, analysisLag: 1.5, now: Double(now)) }
+        XCTAssertTrue(policy.update(thermal: "fair", pressure: "fair", lowPower: false, analysisLag: 1.5, now: 5))
         XCTAssertEqual(policy.level, 2); XCTAssertEqual(policy.cause, .lag)
         XCTAssertFalse(policy.update(thermal: "serious", pressure: nil, lowPower: false, analysisLag: 1.5, now: 6))
         XCTAssertEqual(policy.cause, .lag)

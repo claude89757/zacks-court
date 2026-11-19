@@ -191,7 +191,7 @@ public enum IndependentCourtCalibrator {
 
         let segs = IndependentCourtHough.segments(evidence.binary, width: evidence.halfWidth, height: evidence.halfHeight)
         let lines = IndependentCourtLines.merge(segs, maxSegments: options.maxSegments)
-        var (trans, longi) = IndependentCourtLines.families(lines)
+        var (trans, longi) = IndependentCourtLines.families(lines, minimumSidelineAngle: evidence.searchTop > 0 ? 9 : 15)
         let (vp, longiVP) = IndependentCourtLines.vanishingPoint(longi, cap: options.vanishingPointLines)
         var longiIn = longiVP
         out.counts.segments = segs.count; out.counts.mergedLines = lines.count

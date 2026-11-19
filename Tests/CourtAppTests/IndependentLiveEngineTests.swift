@@ -18,6 +18,44 @@ final class IndependentLiveEngineTests: XCTestCase {
         return b
     }
 
+    func testWallGapNeedsMovingModelSeedsAndFreshColouredPixels() throws {
+        let w = IndependentLiveFrameScaler.width, h = IndependentLiveFrameScaler.height
+        var background = [UInt8](repeating: 150, count: 3 * w * h)
+        XCTAssertNil(IndependentBallGapRecovery(background: background))
+        for i in (w * h / 2)..<(w * h) { background[3 * i] = 50 }
+        var recovery = try XCTUnwrap(IndependentBallGapRecovery(background: background))
+        func observe(_ t: Int, x: Int?, model: Bool = false) -> [SIMD2<Double>] {
+            var frame = background
+            if let x { frame[3 * (64 * w + x) + 2] = 115 }
+            let points = model ? [SIMD2(Double(x!), 64)] : []
+            return recovery.update(model: points, frame: frame, time: Double(t))
+        }
+        XCTAssertTrue(observe(0, x: 70).isEmpty)
+        for i in 1...3 { XCTAssertTrue(observe(i, x: 70 + 3 * i, model: true).isEmpty) }
+        XCTAssertEqual(observe(4, x: 82), [SIMD2(82, 64)])
+        XCTAssertTrue(observe(5, x: 82).isEmpty, "a stationary yellow feature has no new motion")
+        XCTAssertTrue(observe(6, x: nil).isEmpty, "prediction alone supplies no ball point")
+        XCTAssertTrue(observe(10, x: 100).isEmpty, "a break requires fresh model observations")
+    }
+
+    func testReceiverCropReadsTheRequestedNV12PixelsAndAgreesWithSourceCoordinates() throws {
+        let camera = IndependentPinholeCamera.lookingAt(SIMD3(0, 16, 1.4), from: SIMD3(0, -6, 1.4), f: 1010)
+        let crop = try XCTUnwrap(IndependentLiveEngine.receiverCrop(camera, width: 1920, height: 1080))
+        let projected = IndependentProjector(camera).project(SIMD3(0, 18.3, 0))
+        XCTAssertTrue((crop.cropX..<crop.cropX + crop.cropWidth).contains(Int(projected.u)))
+        XCTAssertTrue((crop.cropY..<crop.cropY + crop.cropHeight).contains(Int(projected.v)))
+        XCTAssertEqual(crop.cropWidth * 9, crop.cropHeight * 16)
+        let pixels = try nv12(y: 16, cb: 128, cr: 128)
+        CVPixelBufferLockBaseAddress(pixels, [])
+        let luma = CVPixelBufferGetBaseAddressOfPlane(pixels, 0)!, stride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0)
+        for y in crop.cropY..<(crop.cropY + crop.cropHeight) { memset(luma + y * stride + crop.cropX, 235, crop.cropWidth) }
+        CVPixelBufferUnlockBaseAddress(pixels, [])
+        let scaler = IndependentLiveFrameScaler()
+        XCTAssertLessThan(try XCTUnwrap(scaler.scale(pixels)).first!, 5)
+        let zoom = try XCTUnwrap(scaler.scale(pixels, crop: crop))
+        XCTAssertGreaterThan(zoom.min()!, 248)
+    }
+
     /// BT.709 video range: Y 16-235, Cb/Cr 16-240 around 128.
     func testNV12ScalesToBT709RGB() throws {
         let scaler = IndependentLiveFrameScaler()
@@ -143,10 +181,8 @@ final class IndependentLiveEngineTests: XCTestCase {
         XCTAssertFalse(engine.stats.pictureMoving, "still again for longer than the hold")
     }
 
-    /// The in-house rules need person boxes, so load shedding slows person frames instead of stopping
-    /// them: 5 Hz normally, 3 Hz at L1 (people off), 2 Hz at L2 (bounces off too). The frames copied
-    /// between them for the region poses alone (v29: one more per person frame, 10 Hz together) are
-    /// the first thing shed.
+    /// During L1 recovery the 3 Hz person reads share the 10 Hz serve frames. L1 for power, pressure
+    /// or lag and all L2 cases shed the extra reads. A source that outruns the worker does too.
     func testLoadSheddingSlowsPersonFramesInsteadOfStoppingThem() throws {
         let repository = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let staged = repository.appendingPathComponent(".local/IndependentModels/tracknetv3-base-fp16-v1")
@@ -156,25 +192,41 @@ final class IndependentLiveEngineTests: XCTestCase {
         let assets = try IndependentBallModelAssets.load(directory: staged, variant: .fp16)
         let camera = IndependentPinholeCamera.lookingAt(SIMD3(0, 11, 0), from: SIMD3(0.3, -6.4, 3.1), f: 1300)
         let frame = try nv12(y: 90, cb: 128, cr: 128)
-        func personFrames(people: Bool, bounces: Bool) throws -> [Int] {
+        func samples(people: Bool, bounces: Bool, recovering: Bool = false, backlog: Bool = false) throws -> CameraSideAnalyzer.Metrics {
             let analyzer = CameraSideAnalyzer(configuration: nil, independent: .init(assets: assets, camera: camera, automaticCourt: false))
             let deadline = Date().addingTimeInterval(60)
             while !analyzer.currentMetrics.ready && Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
             XCTAssertTrue(analyzer.currentMetrics.ready)
+            analyzer.preservesServeDetailAtL1 = recovering
             analyzer.isDetectingPeople = people; analyzer.isLocalizingBounces = bounces
             let stream = UUID()
-            for k in 0..<120 { analyzer.submit(frame, pts: 10 + Double(k) / 60, streamID: stream) }
+            let resume = DispatchSemaphore(value: 0)
+            if backlog {
+                analyzer.observeIndependentTrace { event in
+                    if case .newStream = event { _ = resume.wait(timeout: .now() + 10) }
+                }
+            }
+            for k in 0..<120 {
+                while !backlog && analyzer.currentMetrics.pendingFrames > 4 && Date() < deadline { Thread.sleep(forTimeInterval: 0.002) }
+                analyzer.submit(frame, pts: 10 + Double(k) / 60, streamID: stream)
+            }
+            resume.signal()
             let done = expectation(description: "finish")
             analyzer.finish { _, _ in done.fulfill() }
             wait(for: [done], timeout: 120)
-            let m = analyzer.currentMetrics
-            return [m.copies + m.poolExhausted, m.poseCopies]          // person frames attempted, pose-only copies
+            return analyzer.currentMetrics
         }
-        XCTAssertEqual(try personFrames(people: true, bounces: true)[0], 10)
-        XCTAssertEqual(try personFrames(people: false, bounces: true), [6, 0])
-        XCTAssertEqual(try personFrames(people: false, bounces: false), [4, 0])
-        // 120 frames: person frames at 1, 13, ..., 109 and pose-only frames at 7, 19, ..., 115 (a copy the
-        // pool could not give is not counted)
-        XCTAssertLessThanOrEqual(try personFrames(people: true, bounces: true)[1], 10)
+        let normal = try samples(people: true, bounces: true)
+        XCTAssertEqual([normal.copies, normal.poseCopies, normal.poseFramesLive], [10, 10, 20])
+        let recovery = try samples(people: false, bounces: true, recovering: true)
+        XCTAssertEqual([recovery.copies, recovery.poseCopies, recovery.poseFramesLive], [6, 14, 20])
+        let limited = try samples(people: false, bounces: true)
+        XCTAssertEqual([limited.copies, limited.poseCopies, limited.poseFramesLive], [6, 0, 0])
+        let serious = try samples(people: false, bounces: false, recovering: true)
+        XCTAssertEqual([serious.copies, serious.poseCopies, serious.poseFramesLive], [4, 0, 0])
+        let behind = try samples(people: false, bounces: true, recovering: true, backlog: true)
+        XCTAssertGreaterThan(behind.poseSkippedBehind, 0)
+        XCTAssertLessThan(behind.poseFramesLive, recovery.poseFramesLive)
+        XCTAssertEqual(behind.copies, recovery.copies)
     }
 }

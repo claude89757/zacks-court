@@ -27,6 +27,58 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertLessThan(ahead.p.y, 25 * 30.5 / 60, "drag slows the ball")
     }
 
+    func testSpeedAndPublishedServeContactUseTheSamePhysicalEndpoint() throws {
+        var shot = IndependentShotResult(hitKind: "hit junction", hitterFound: true, bounceFound: true, contactUV: [930, 600],
+                                         hitterSide: "far", tHit: 1, nObs: 18, firstFrame: 60, lastFrame: 80)
+        shot.accepted = true; shot.speedKmh = 104; shot.fitHit = [0, 15, -0.24]
+        XCTAssertNil(shot.reportedSpeedKmh)
+        shot.fitHit = [1, 2, 1.2]; shot.bounceGround = [-1, 13.2]; shot.tBounce = 1.2; shot.speedKmh = 231
+        XCTAssertNil(shot.reportedSpeedKmh, "the recorded endpoints would put this fast shot through the mesh")
+        shot.bounceGround = nil; shot.tBounce = nil
+        shot.stroke = "发球"; shot.fitHit = [0, 15, 2]
+        XCTAssertNil(shot.reportedSpeedKmh, "midcourt is not the start of a serve speed")
+        var refit = shot; refit.fitHit = [0.4, 23.4, 2.6]; refit.speedKmh = 90
+        IndependentShotPipeline.applyServeSpeed(refit, to: &shot)
+        let row = try XCTUnwrap(IndependentShotPipeline.rows(from: [shot], streamID: UUID()).first)
+        XCTAssertEqual(row.speedKPH, 90)
+        XCTAssertEqual(row.hit?.y, 23.4)
+        XCTAssertEqual(shot.fitHit, [0, 15, 2], "stroke rules retain the original fit")
+    }
+
+    func testOverheadSwingNeedsSeparateMovingTossFromSameServer() {
+        let cam = IndependentProjector(camera), hand = SIMD2(640.0, 420.0)
+        func saw(_ uv: [SIMD2<Double>], start: Double = 565, segmentStart: Double = 0) -> Bool {
+            let points = uv.enumerated().map { i, p in
+                IndependentShotCandidate(decodeIndex: i, time: start + Double(i), u: p.x, v: p.y, peak: 0.8)
+            }
+            return IndependentStrokeRules.sawToss(before: 10, hand: hand, candidates: points, camera: cam, segmentStart: segmentStart)
+        }
+        let rising = (0..<7).map { hand - SIMD2(0, 12.0 * Double($0)) }
+        XCTAssertTrue(saw(rising))
+        XCTAssertFalse(saw(Array(repeating: hand, count: 7)))
+        XCTAssertFalse(saw(rising.map { $0 + SIMD2(350, 0) }))
+        XCTAssertFalse(saw(rising, start: 602))
+        XCTAssertFalse(saw(rising, segmentStart: 9.7))
+    }
+
+    func testMagnifiedLandingNeedsObservedReboundAndAnUnambiguousFirstBounce() throws {
+        let cam = IndependentProjector(camera), world = SIMD3(2.0, 17.0, IndependentCourt.ballRadius)
+        let q = cam.project(world)
+        func arc(at frame: Int, steps: ClosedRange<Int>) -> [IndependentShotCandidate] {
+            steps.map { d in
+                IndependentShotCandidate(decodeIndex: frame + d, time: Double(frame + d),
+                                         u: q.u + Double(d) * 1.5, v: q.v - Double(abs(d)) * 3.5, peak: 0.8, fromReceiverCrop: true)
+            }
+        }
+        let falling = arc(at: 642, steps: -6...0)
+        XCTAssertNil(IndependentReceiverBounce.find(in: falling, contact: 10, camera: cam))
+        let observed = arc(at: 642, steps: -6...2)
+        let bounce = try XCTUnwrap(IndependentReceiverBounce.find(in: observed, contact: 10, camera: cam))
+        XCTAssertEqual(bounce.t, 10.7, accuracy: 0.001)
+        XCTAssertLessThan(simd_distance(bounce.ground, world), 0.01)
+        XCTAssertNil(IndependentReceiverBounce.find(in: observed + arc(at: 670, steps: -6...5), contact: 10, camera: cam))
+    }
+
     /// A near-baseline hit to a far bounce, seen from the first frames after contact.
     func testSyntheticShotGetsABounceAnchoredSpeed() throws {
         let cam = IndependentProjector(camera)

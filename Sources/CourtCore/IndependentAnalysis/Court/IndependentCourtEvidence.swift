@@ -21,23 +21,77 @@ public struct IndependentCourtEvidence: Sendable {
     /// 0/1: `binary` dilated by 5x5 (+-2 px at half resolution, +-4 px at full resolution).
     public let hit: [UInt8]
     public let threshold: Float
+    /// First row to search when a bright, neutral upper background gives way to a painted playing surface.
+    /// Zero keeps the full-frame search on courts without this cue.
+    let searchTop: Int
     /// Full-resolution, blurred top-hat used for sub-pixel line profiles.
     public let fullTopHat: [Float]
 
     public init(_ image: IndependentCourtImage) {
         width = image.width; height = image.height
         let hw = width / 2, hh = height / 2
+        searchTop = Self.floorSearchTop(image)
         let small = IndependentCourtImage.minimum(Self.halve(image.blue, width, height), Self.halve(image.green, width, height),
                                                   Self.halve(image.red, width, height))
-        halfTopHat = Self.topHat(small, hw, hh, kernel: 11)
-        let p = Self.percentile995(halfTopHat)
+        var half = Self.topHat(small, hw, hh, kernel: 11)
+        let halfStart = (searchTop / 2) * hw
+        let p = Self.percentile995(half, startingAt: halfStart)
+        half.withUnsafeMutableBufferPointer { $0.baseAddress?.update(repeating: 0, count: halfStart) }
+        halfTopHat = half
         let scaled = Float(0.3) * p
         threshold = scaled > 10 ? scaled : 10
         let thr = threshold
         binary = halfTopHat.map { Float($0) > thr ? 1 : 0 }
         hit = Self.morphology(binary, hw, hh, kernel: 5, dilate: true)
-        let full = Self.topHat(image.minimumPlane, width, height, kernel: 21)
+        var full = Self.topHat(image.minimumPlane, width, height, kernel: 21)
+        let fullStart = searchTop * width
+        full.withUnsafeMutableBufferPointer { $0.baseAddress?.update(repeating: 0, count: fullStart) }
         fullTopHat = Self.blur3(full, width, height)
+    }
+
+    /// A low, wide-angle indoor view can contain a second, very convincing grid of white roof beams.
+    /// Sample independent colour evidence before fitting lines. Require broad neutral walls/roof above
+    /// and a sustained coloured floor below, keeping a margin above its far edge for the actual lines.
+    static func floorSearchTop(_ image: IndependentCourtImage) -> Int {
+        let floor = paintedFloorRow(width: image.width, height: image.height) { i in
+            (image.red[i], image.green[i], image.blue[i])
+        }
+        return max(0, (floor ?? 0) - 4 * max(1, image.height / 66))
+    }
+
+    static func paintedFloorRow(width w: Int, height h: Int, rgb: (Int) -> (UInt8, UInt8, UInt8)) -> Int? {
+        guard w >= 320, h >= 180 else { return nil }
+        let dy = max(1, h / 66), dx = max(1, w / 48)
+        let xs = stride(from: w / 8, to: w - w / 8, by: dx)
+        var neutral = 0, upperSamples = 0, floorRows = [Bool]()
+        for y in stride(from: dy / 2, to: h, by: dy) {
+            var coloured = 0, count = 0
+            for x in xs {
+                let (red, green, blue) = rgb(y * w + x)
+                let r = Int(red), g = Int(green), b = Int(blue)
+                let hi = max(r, g, b), lo = min(r, g, b), spread = hi - lo
+                if y < h / 3 {
+                    upperSamples += 1
+                    if lo > 95 && spread * 5 < hi { neutral += 1 }
+                }
+                if spread >= 24 && spread * 5 > hi { coloured += 1 }
+                count += 1
+            }
+            floorRows.append(coloured * 100 >= 68 * count)
+        }
+        let bottom = floorRows.suffix(floorRows.count / 3)
+        guard 2 * neutral >= upperSamples, bottom.filter({ $0 }).count * 4 >= bottom.count * 3 else { return nil }
+        var run = 0
+        for (row, coloured) in floorRows.enumerated() {
+            run = coloured ? run + 1 : 0
+            if run == 4 {
+                let start = dy / 2 + (row - 3) * dy
+                // With an elevated mount much of the picture is already ground. Keep that full-frame
+                // geometry, including the distant sidelines used to resolve an off-centre principal point.
+                return start * 100 >= 48 * h ? start : nil
+            }
+        }
+        return nil
     }
 
     /// 2x2 box average with OpenCV's rounding (`ResizeAreaFastVec`, scale 2): (a + b + c + d + 2) >> 2.
@@ -79,17 +133,18 @@ public struct IndependentCourtEvidence: Sendable {
     }
 
     /// `np.percentile(x, 99.5)` (linear interpolation) of uint8 values held as float32, via a histogram.
-    static func percentile995(_ v: [UInt8]) -> Float {
+    static func percentile995(_ v: [UInt8], startingAt start: Int = 0) -> Float {
         var hist = [Int](repeating: 0, count: 256)
-        for x in v { hist[Int(x)] += 1 }
-        let index = 0.995 * Double(v.count - 1)
+        for x in v[start...] { hist[Int(x)] += 1 }
+        let last = v.count - start - 1
+        let index = 0.995 * Double(last)
         let below = Int(index.rounded(.down))
         func value(at rank: Int) -> Float {
             var c = 0
             for (k, n) in hist.enumerated() { c += n; if c > rank { return Float(k) } }
             return 255
         }
-        let a = value(at: below), b = value(at: Swift.min(below + 1, v.count - 1))
+        let a = value(at: below), b = value(at: Swift.min(below + 1, last))
         let gamma = Float(index - Double(below))
         let diff = b - a
         return gamma >= 0.5 ? b - diff * (1 - gamma) : a + diff * gamma

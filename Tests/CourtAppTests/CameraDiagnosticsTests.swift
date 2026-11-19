@@ -46,6 +46,7 @@ final class CameraDiagnosticsTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(status.count, 2)
         XCTAssertEqual(status.first?.sessionState, .active)
         XCTAssertEqual(status.first?.display, false)
+        XCTAssertEqual(status.first?.hawkEye, .off)
 
         let session = try XCTUnwrap(try SessionStore(directory: rig.root).loadAll(recoverUnfinished: false).first)
         let out = makeRoot("court-package")
@@ -77,6 +78,7 @@ final class CameraDiagnosticsTests: XCTestCase {
                 court.focalPixels = 1400; court.rmsPixels = 0.8; line.court = court }
             line.courtText = text; line.thermal = "fair"; line.captureDrops = 0
             if inSession { line.session = session.id; line.sessionState = .active }
+            if inSession && t > t0 + 5 { line.hawkEye = t < t0 + 8 ? .off : HawkEyeSettings(enabled: true, format: .doubles) }
             if t - t0 >= 6 { line.shed = 1; line.shedCause = "lag" }     // analysis fell behind for the last 4 s
             return line
         }
@@ -97,6 +99,7 @@ final class CameraDiagnosticsTests: XCTestCase {
         XCTAssertTrue(text.contains("开始后约 4 秒认出球场"), text)
         XCTAssertTrue(text.contains("「正在识别球场 · 近端底线和发球线都要在画面里」3 秒"), text)
         XCTAssertTrue(text.contains("记录中 5 秒，有球场 5 秒（100%）"), text)
+        for mode in ["设置未知 1 次", "关闭 2 次", "双打·仅近端半场 2 次"] { XCTAssertTrue(text.contains(mode), text) }
         XCTAssertTrue(text.contains("机高约 3.1 米"), text)
         XCTAssertTrue(text.contains("App：1.1 (7)"), text)
         XCTAssertTrue(text.contains("最高温度状态：fair"), text)

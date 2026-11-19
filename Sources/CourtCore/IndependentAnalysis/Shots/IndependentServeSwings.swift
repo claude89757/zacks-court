@@ -7,6 +7,39 @@ import simd
 /// wrist's path is the contact, within a frame or two: the time a serve's speed needs and a 5 Hz sample
 /// cannot give.
 extension IndependentStrokeRules {
+    /// Ball evidence independent of the wrist: at least four model observations of a nearly vertical
+    /// toss by this server, before the overhead swing. A static light, a racket follow-through, or an
+    /// isolated raised hand supplies no toss. Distances are scaled at the player's baseline.
+    static func sawToss(before contact: Double, hand: SIMD2<Double>, candidates: [IndependentShotCandidate],
+                        camera: IndependentProjector, segmentStart: Double = 0) -> Bool {
+        let impact = seenContact(hand: [hand.x, hand.y], near: true, camera: camera, fallbackX: nil)
+        let top = camera.project(impact), below = camera.project(impact - SIMD3(0, 0, 1))
+        let metre = abs(below.v - top.v)
+        guard metre > 0 else { return false }
+        let start = max(segmentStart, contact - 1.35) * 60, end = (contact - 0.12) * 60
+        let ball = candidates.filter { p in
+            p.time >= start && p.time <= end && p.peak >= 0.3 && abs(p.u - hand.x) <= 0.65 * metre
+                && p.v >= hand.y - 2.6 * metre && p.v <= hand.y + 0.25 * metre
+        }.sorted { $0.time < $1.time }
+        struct Run { var count = 1; var firstV: Double }
+        for sign in [-1.0, 1.0] {
+            var runs = [Run]()
+            for (i, p) in ball.enumerated() {
+                var best = Run(firstV: p.v)
+                for j in (0..<i).reversed() {
+                    let q = ball[j], dt = p.time - q.time
+                    if dt > 2.5 { break }
+                    let dy = sign * (p.v - q.v)
+                    guard dt > 0.5, dy > 1, dy < 0.22 * metre * dt, abs(p.u - q.u) <= 2 + 0.5 * dy else { continue }
+                    if runs[j].count >= best.count { best = Run(count: runs[j].count + 1, firstV: runs[j].firstV) }
+                }
+                if best.count >= 4, sign * (p.v - best.firstV) >= 0.12 * metre { return true }
+                runs.append(best)
+            }
+        }
+        return false
+    }
+
     enum Swing {
         static let high = 0.6          // the hitting wrist is looked for among samples this far above the shoulders, torso lengths
         static let topWithin = 0.15    // its top: the highest of those this close before the last one, seconds

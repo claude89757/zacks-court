@@ -33,6 +33,8 @@ public struct IndependentLiveShots: Sendable {
     public private(set) var published: [Published] = []
     private var buffer: [IndependentShotCandidate] = []
     private var streamStart: Double?
+    /// Candidates can arrive late from the other view after a trim or a camera movement.
+    private var retainedFrom = -Double.infinity
     /// Index into `published` of the first shot after the last `reset()`: earlier shots are not history
     /// for the serve rules (no stitching across a break).
     private var historyStart = 0
@@ -40,16 +42,21 @@ public struct IndependentLiveShots: Sendable {
 
     public init(options: Options = Options()) { self.options = options }
 
-    /// New candidates, in presentation order (time in 1/60 s units, like the batch chain).
+    /// Full-frame and receiver batches can overlap in source time (in 1/60 s units).
     public mutating func append(_ candidates: [IndependentShotCandidate]) {
-        if streamStart == nil, let first = candidates.first { streamStart = first.time / 60 }
-        buffer += candidates
+        for p in candidates {
+            let t = p.time / 60
+            guard t >= retainedFrom else { continue }
+            streamStart = min(streamStart ?? t, t)
+            buffer.append(p)
+        }
     }
 
     /// A temporal break (stream change, dropped frames, camera moved): forget the candidates, keep what
     /// was published, and freeze it.
     public mutating func reset() {
-        buffer.removeAll(); streamStart = nil; historyStart = published.count; serveCache = IndependentShotPipeline.ServeRefitCache()
+        buffer.removeAll(); streamStart = nil; retainedFrom = -.infinity
+        historyStart = published.count; serveCache = IndependentShotPipeline.ServeRefitCache()
         for i in published.indices { published[i].frozen = true }
     }
 
@@ -62,17 +69,16 @@ public struct IndependentLiveShots: Sendable {
     /// While the court is not known: keep at most `seconds` of candidates before `now`. Flights cut by
     /// the trim are not treated as starting the stream.
     public mutating func trim(keeping seconds: Double, now: Double) {
-        let start = now - seconds
-        guard let first = buffer.first, first.time / 60 < start else { return }
-        buffer.removeAll { $0.time / 60 < start }
-        if let s = streamStart, s < start { streamStart = nil }
+        retainedFrom = max(retainedFrom, now - seconds)
+        buffer.removeAll { $0.time / 60 < retainedFrom }
+        if buffer.isEmpty { streamStart = nil }
     }
 
     /// The court was just found: one pass over every kept candidate (longer than the window), as the
     /// offline chain would, then normal updates continue.
     @discardableResult
     public mutating func catchUp(now: Double, camera: IndependentPinholeCamera, people: IndependentPeople) -> [Int] {
-        let first = min(buffer.first.map { $0.time / 60 } ?? now, streamStart ?? .infinity)
+        let first = streamStart ?? now
         return run(now: now, start: min(first, now - options.window), camera: camera, people: people)
     }
 
@@ -84,6 +90,7 @@ public struct IndependentLiveShots: Sendable {
     }
 
     private mutating func run(now: Double, start: Double, camera: IndependentPinholeCamera, people: IndependentPeople) -> [Int] {
+        let start = max(start, retainedFrom)
         buffer.removeAll { $0.time / 60 < start }
         let begin = max(start, streamStart ?? start)
         let segment = IndependentShotPipeline.Segment(camera: camera, start: begin, end: now)

@@ -119,6 +119,26 @@ final class IndependentCourtCalibratorTests: XCTestCase {
 
     // MARK: stages
 
+    func testRoofGridIsExcludedFromSearchAndRefinementOnlyWithFloorEvidence() throws {
+        let w = 640, h = 360
+        var r = [UInt8](repeating: 150, count: w * h), b = r, g = r
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = y * w + x
+                if y < 180 && (x % 42 < 4 || y % 34 < 4) { r[i] = 230; g[i] = 230; b[i] = 230 }
+                if y >= 180 { r[i] = 45; g[i] = 90; b[i] = 150 }
+            }
+        }
+        let image = try IndependentCourtImage(width: w, height: h, blue: b, green: g, red: r)
+        let evidence = IndependentCourtEvidence(image)
+        XCTAssertGreaterThan(evidence.searchTop, 140)
+        XCTAssertLessThan(evidence.searchTop, 180)
+        XCTAssertEqual(evidence.binary.prefix(60 * w / 2).max(), 0)
+        XCTAssertEqual(evidence.fullTopHat.prefix(120 * w).max(), 0)
+        let grey = try IndependentCourtImage(width: w, height: h, blue: b, green: b, red: b)
+        XCTAssertEqual(IndependentCourtEvidence.floorSearchTop(grey), 0)
+    }
+
     func testClosedFormCameraFromHomography() {
         let cam = Self.camera
         let H = IndependentCourtSearch.homography(f: cam.f, R: cam.rotation, t: cam.translation, cx: 960, cy: 540)

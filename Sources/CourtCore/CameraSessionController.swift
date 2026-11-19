@@ -879,6 +879,7 @@ public final class CameraSessionController {
         analysis.court = metrics.court
         analysis.pictureMoving = metrics.pictureMoving ? true : nil
         if metrics.inHouse {
+            analysis.receiverBatches = metrics.receiverBatches
             analysis.poses = CameraPoseCounts(frames: metrics.poseFramesLive, requests: metrics.poseRequestsLive,
                                               seconds: metrics.poseSecondsLive, skippedBehind: metrics.poseSkippedBehind)
         }
@@ -1133,8 +1134,10 @@ public final class CameraSessionController {
         if uptime - lastSnapshotAt > 4 { tennisAnalysis = nil }
         if appliesLoadPolicy {
             let device = deviceState()
-            if loadPolicy.update(thermal: device.thermal, pressure: device.pressure, lowPower: device.lowPowerMode,
-                                 analysisLag: analysisLag, now: uptime) {
+            let changed = loadPolicy.update(thermal: device.thermal, pressure: device.pressure, lowPower: device.lowPowerMode,
+                                            analysisLag: analysisLag, now: uptime)
+            analyzer.preservesServeDetailAtL1 = loadPolicy.allowsServeDetailAtL1(on: device)
+            if changed {
                 shedCause = loadPolicy.cause
                 shed = (loadPolicy.level, loadPolicy.reason)
                 if loadPolicy.level >= 4, session?.state == .active {

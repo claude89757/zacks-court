@@ -1,14 +1,18 @@
 import Foundation
 import simd
 
-/// One TrackNetV3 candidate: decode index of its frame, real presentation time in 1/60 s units,
-/// original-image pixel and heatmap peak.
+/// One observed ball candidate, in source pixels and 1/60 s units. A colour-motion observation
+/// has no model heatmap peak. Older traces contain model candidates only.
 public struct IndependentShotCandidate: Sendable, Equatable, Codable {
     public let decodeIndex: Int
     public let time: Double
     public let u: Double, v: Double, peak: Double
-    public init(decodeIndex: Int, time: Double, u: Double, v: Double, peak: Double) {
+    public let fromColourMotion: Bool?
+    public let fromReceiverCrop: Bool?
+    public init(decodeIndex: Int, time: Double, u: Double, v: Double, peak: Double, fromColourMotion: Bool? = nil, fromReceiverCrop: Bool? = nil) {
         self.decodeIndex = decodeIndex; self.time = time; self.u = u; self.v = v; self.peak = peak
+        self.fromColourMotion = fromColourMotion
+        self.fromReceiverCrop = fromReceiverCrop
     }
 }
 
@@ -47,7 +51,7 @@ public enum IndependentBallEvents {
         var timeOf = [Int: Double]()
         for c in candidates {
             timeOf[c.decodeIndex] = c.time
-            if c.peak >= minPeak { byFrame[c.decodeIndex, default: []].append(c) }
+            if c.peak >= minPeak || c.fromColourMotion == true { byFrame[c.decodeIndex, default: []].append(c) }
         }
         // track points use the decode index while linking; times are swapped in at the end
         var active = [[(f: Int, u: Double, v: Double)]](), done = [[(f: Int, u: Double, v: Double)]]()
