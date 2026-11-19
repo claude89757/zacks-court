@@ -436,7 +436,11 @@ public enum IndependentShotPipeline {
         // bounce, 14 of 16 pass; of those still in the air there (fit 0.63-1.01 m high), none.
         // `endsAtHit` is required here too: live descents always carry `last`, and a low ball struck (not
         // bounced) can sit inside `lastLandZ` while the near hit is still missing from `receiverHits`.
-        guard d.accepted, let rms = d.rms, rms <= L.maxRms, !d.endsAtHit, let hitY = d.hitY, hitY > netY,
+        // `ahead >= 0` keeps post-bounce tails out: when the fit already came down before the last obs
+        // (`ahead < 0`) but `px` is past `maxImagePx`, the fit path refuses and a bare last-obs landing
+        // would sit after the bounce (~0.3 m HawkEye margin can flip a line call).
+        guard d.accepted, let rms = d.rms, rms <= L.maxRms, !d.endsAtHit, d.ahead >= 0,
+              let hitY = d.hitY, hitY > netY,
               L.lastLandZ.contains(d.zLast), let last = d.last, last.count >= 2 else { return nil }
         let g = camera.onPlaneZ(last[0], last[1], z: IndependentCourt.ballRadius)
         guard g.x.isFinite, g.y.isFinite, onNearHalf(g.x, g.y),
