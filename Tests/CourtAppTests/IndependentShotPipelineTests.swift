@@ -810,6 +810,49 @@ final class IndependentShotPipelineTests: XCTestCase {
         // v24: the speed reported for a net serve runs to the measured net contact (the refit's anchor):
         // `landSpeedKmh` when the fitted flight crosses the net line first, else the anchor is the end already
         XCTAssertEqual(try XCTUnwrap(r.landSpeedKmh ?? r.speedKmh), truth, accuracy: truth * 0.08)
+        XCTAssertNil(r.bounceGround)
+        XCTAssertFalse(r.bounceFound)
+    }
+
+    /// v18 net path used to leave the tracker's net-foot bounce on the shot after `serveNetRefit`.
+    /// `rows()` keys off `bounceGround` (not `bounceFound`); a drop just past the net is on the far half,
+    /// so Hawk-Eye would judge a service box on a net fault. `applyServeSpeed` must clear it like v24.
+    func testNetServeSpeedClearsTrackerBounceSoHawkEyeSeesNoLanding() throws {
+        let cam = IndependentProjector(camera)
+        let depth = IndependentShotFlights.ServeSpeed.inside
+        var s = IndependentFlight.State(p: SIMD3(1.0, depth - 0.05, 2.6), v: SIMD3(-1.0, 30, -3.4))
+        var serve = [(Double, SIMD3<Double>)](), k = 600.0
+        while s.p.y < IndependentCourt.netY { serve.append((k, s.p)); s = IndependentFlight.rk4(s, 1 / 60); k += 1 }
+        let netZ = serve[serve.count - 1].1.z
+        var drop = IndependentFlight.State(p: SIMD3(s.p.x, IndependentCourt.netY - 0.05, netZ), v: SIMD3(0, -0.5, 0))
+        var all = serve
+        while drop.p.z > IndependentCourt.ballRadius { all.append((k, drop.p)); drop = IndependentFlight.rk4(drop, 1 / 60); k += 1 }
+        // tracker bounce just past the net (receiver's half), still within netBounceY
+        let tBounce = k / 60, ground = SIMD3(drop.p.x, IndependentCourt.netY + 0.3, IndependentCourt.ballRadius)
+        let track = all.map { (p: (Double, SIMD3<Double>)) -> IndependentTrackPoint in
+            let q = cam.project(p.1); return IndependentTrackPoint(t: p.0, u: q.u, v: q.v)
+        }
+        let (_, _, server) = serveWithToss(at: 600)
+        let job = IndependentShotFlight(points: track, tHit: 600, hitter: server, bounce: (tBounce, ground), kind: .junction,
+                                        contact: track[0].uv, incoming: nil, hitterSide: "near")
+        let r = try XCTUnwrap(IndependentShotFlights.serveNetRefit(job, near: true, camera: cam))
+        var shot = IndependentShotResult(hitKind: "hit junction", hitterFound: true, bounceFound: true,
+                                         contactUV: [track[0].u, track[0].v], hitterBox: server, incoming: nil,
+                                         hitterSide: "near", tHit: 10, nObs: track.count, firstFrame: 0,
+                                         lastFrame: track.count - 1)
+        shot.stroke = "发球"
+        shot.bounceGround = [ground.x, ground.y, ground.z]
+        shot.tBounce = tBounce
+        shot.fitHit = [1.0, depth, 2.6]
+        IndependentShotPipeline.applyServeSpeed(r, to: &shot)
+        XCTAssertEqual(shot.speedAnchor, .serveNet)
+        XCTAssertFalse(shot.bounceFound)
+        XCTAssertNil(shot.bounceGround)
+        XCTAssertNil(shot.tBounce)
+        let row = try XCTUnwrap(IndependentShotPipeline.rows(from: [shot], streamID: UUID(), all: true).first)
+        XCTAssertNil(row.bounce, "a net serve must not publish a landing for Hawk-Eye")
+        let judged = HawkEye.annotate(row, settings: HawkEyeSettings(enabled: true, format: .singles, farHalf: true))
+        XCTAssertNil(judged.bounce?.hawkEye)
     }
 
     /// v24: a serve into the net that the tracker did not split: no "bounce" at all, the track runs from
