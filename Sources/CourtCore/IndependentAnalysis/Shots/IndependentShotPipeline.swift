@@ -342,9 +342,11 @@ public enum IndependentShotPipeline {
                         ?? IndependentReceiverBounce.find(in: local, contact: tc, camera: cameras[k])
                 }
                 let nearby = shots.indices.filter { shots[$0].segment == k && abs((shots[$0].contactT ?? shots[$0].tHit) - tc) < 0.35 }
+                // Toss is the serve discriminator: a magnified far bounce alone also follows an overhead
+                // smash or practice swing, and would put Hawk-Eye on the service box for that landing.
                 guard !nearby.contains(where: { shots[$0].stroke == "发球" && shots[$0].poseContact != nil }),
-                      receiverLandings[tc] != nil || IndependentStrokeRules.sawToss(before: tc, hand: hand, candidates: wide,
-                                                                                  camera: cameras[k], segmentStart: segments[k].start) else { continue }
+                      IndependentStrokeRules.sawToss(before: tc, hand: hand, candidates: wide,
+                                                     camera: cameras[k], segmentStart: segments[k].start) else { continue }
                 if let i = nearby.min(by: { abs(shots[$0].tHit - tc) < abs(shots[$1].tHit - tc) }) {
                     // A failed 3D fit also appears in this list; letting it claim the swing silently
                     // loses the row when the fit is filtered. Use its identity for the observed serve.

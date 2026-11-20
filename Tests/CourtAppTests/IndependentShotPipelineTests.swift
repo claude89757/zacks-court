@@ -79,6 +79,57 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertNil(IndependentReceiverBounce.find(in: observed + arc(at: 670, steps: -6...5), contact: 10, camera: cam))
     }
 
+    /// PR #66 observed-serve path: a low-camera overhead with a magnified far bounce but no toss must not
+    /// become a serve. Without the toss gate, Hawk-Eye would judge that deep landing on the service box.
+    func testObservedServeNeedsTossEvenWhenReceiverCropSeesABounce() throws {
+        let lowCam = IndependentPinholeCamera.lookingAt(SIMD3(0, 11, 0.5), from: SIMD3(0.26, -6.1, 1.53), f: 1158)
+        let cam = IndependentProjector(lowCam)
+        XCTAssertTrue(IndependentStrokeRules.lowCamera(cam))
+        func pose(wrist z: Double, other: Double = 0.9) -> IndependentPoseSample {
+            func at(_ x: Double, _ z: Double) -> [Double] {
+                let q = cam.project(SIMD3(x, -0.2, z)); return [q.u, q.v, 0.8]
+            }
+            let joints = at(-0.2, 1.45) + at(0.2, 1.45) + at(-0.3, 1.2) + at(0.3, 1.2) + at(-0.25, other) + at(0.25, z)
+                + at(-0.15, 0.95) + at(0.15, 0.95) + at(-0.15, 0.05) + at(0.15, 0.05)
+            return IndependentPoseSample(near: true, region: [400, 400, 400, 400], joints: joints)
+        }
+        var poses = [Int: [IndependentPoseSample]]()
+        for (k, f) in stride(from: 540, through: 660, by: 6).enumerated() {
+            let t = Double(k - 10) / 10
+            poses[f] = [pose(wrist: abs(t) <= 0.3 ? 2.45 - 15 * t * t : 0.9, other: t < -0.4 && t > -0.9 ? 2.1 : 0.9)]
+        }
+        let people = IndependentPeople([:], poses: poses)
+        let swings = IndependentStrokeRules.serveSwings(people, camera: cam, near: true)
+        let swing = try XCTUnwrap(swings.first)
+        XCTAssertTrue(swing.swung)
+        let tc = try XCTUnwrap(swing.contact)
+        let hand = try XCTUnwrap(swing.hand)
+        let deep = SIMD3(1.0, HawkEye.netY + HawkEye.serviceFromNet + 1.2, IndependentCourt.ballRadius)
+        let q = cam.project(deep)
+        let bounceFrame = Int((tc * 60).rounded()) + 42
+        let receiver = (-6...2).map { d in
+            IndependentShotCandidate(decodeIndex: bounceFrame + d, time: Double(bounceFrame + d),
+                                     u: q.u + Double(d) * 1.5, v: q.v - Double(abs(d)) * 3.5, peak: 0.8, fromReceiverCrop: true)
+        }
+        XCTAssertNotNil(IndependentReceiverBounce.find(in: receiver, contact: tc, camera: cam))
+        XCTAssertFalse(IndependentStrokeRules.sawToss(before: tc, hand: hand, candidates: [], camera: cam))
+        let withoutToss = IndependentShotPipeline.run(candidates: receiver, segments: [.init(camera: lowCam)]) { _, _ in people }
+        XCTAssertFalse(withoutToss.contains { $0.stroke == "发球" }, "a smash bounce alone must not open the service box")
+        let rising = (0..<7).map { i -> IndependentShotCandidate in
+            let p = hand - SIMD2(0, 12.0 * Double(i))
+            return IndependentShotCandidate(decodeIndex: 500 + i, time: (tc - 1.0) * 60 + Double(i), u: p.x, v: p.y, peak: 0.8)
+        }
+        XCTAssertTrue(IndependentStrokeRules.sawToss(before: tc, hand: hand, candidates: rising, camera: cam))
+        let withToss = IndependentShotPipeline.run(candidates: rising + receiver, segments: [.init(camera: lowCam)]) { _, _ in people }
+        let serve = try XCTUnwrap(withToss.first { $0.stroke == "发球" && $0.poseContact != nil })
+        XCTAssertEqual(serve.serveSpeedFrom, "seen contact, receiver crop")
+        XCTAssertNotNil(serve.bounceGround)
+        let row = try XCTUnwrap(IndependentShotPipeline.rows(from: [serve], streamID: UUID(), all: true).first)
+        let judged = HawkEye.annotate(row, settings: HawkEyeSettings(enabled: true, format: .singles, farHalf: true))
+        XCTAssertEqual(judged.bounce?.hawkEye?.serve, true)
+        XCTAssertGreaterThan(judged.bounce?.hawkEye?.distanceM ?? -1, 0.5, "past the service line on the service-box geometry")
+    }
+
     /// A near-baseline hit to a far bounce, seen from the first frames after contact.
     func testSyntheticShotGetsABounceAnchoredSpeed() throws {
         let cam = IndependentProjector(camera)
