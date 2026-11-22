@@ -1293,6 +1293,45 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertNil(IndependentBallEvents.tossCut(points(.init(p: SIMD3<Double>(-1, 24, 1.6), v: SIMD3<Double>(0, 0.2, 5)), frames: 60)[...]))
     }
 
+    /// Indoor observed-serve recovery: a reacquired far fragment with bounce speed must not block the pose
+    /// serve. Leaving only that rally stroke makes Hawk-Eye judge the baseline; a deep service-box miss
+    /// past the service line but inside the baseline then reads IN instead of OUT.
+    func testObservedServeClaimSkipsSpedNonServeAndServeStrokeFlipsHawkEye() throws {
+        func row(t: Double, stroke: String?, speed: Double?, bounceY: Double?) -> IndependentShotResult {
+            var s = IndependentShotResult(hitKind: "hit junction", hitterFound: true, bounceFound: bounceY != nil,
+                                          contactUV: [640, 400], hitterSide: "near", tHit: t, nObs: 12,
+                                          firstFrame: Int(t * 60), lastFrame: Int(t * 60) + 24)
+            s.stroke = stroke; s.accepted = true; s.speedKmh = speed
+            if let bounceY {
+                s.bounceGround = [1.0, bounceY]; s.tBounce = t + 0.55; s.fitHit = [1.0, 0.3, 2.6]
+            }
+            return s
+        }
+        // Far service line ≈ 18.285 m; 19.5 is past it (serve OUT) but inside the baseline (rally IN).
+        let deep = 19.5
+        let fragment = row(t: 10.05, stroke: "正手", speed: 98, bounceY: deep)
+        XCTAssertNotNil(fragment.reportedSpeedKmh)
+        let failed = row(t: 10.18, stroke: nil, speed: nil, bounceY: nil)
+        XCTAssertNil(failed.reportedSpeedKmh)
+        let shots = [fragment, failed]
+        XCTAssertEqual(IndependentShotPipeline.observedServeClaimable([0, 1], in: shots), [1])
+        XCTAssertEqual(IndependentShotPipeline.observedServeClaimable([0], in: [fragment]), [],
+                       "only a sped non-serve: append a pose serve instead of continuing past recovery")
+
+        let settings = HawkEyeSettings(enabled: true, format: .singles, farHalf: true)
+        let stream = UUID()
+        var rally = TennisShotEvent(streamID: stream, sourcePTS: 10.05, stroke: .forehand, confidence: 0, speedKPH: 98)
+        rally.bounce = TennisBounceEstimate(sourcePTS: 10.6, xMeters: HawkEye.centreX + 1, yMeters: deep, confidence: 0)
+        rally.hit = TennisCourtPoint(x: HawkEye.centreX + 1, y: 0.3, z: 2.6)
+        var serve = rally; serve.stroke = .serve
+        let rallyCall = try XCTUnwrap(HawkEye.judge(rally, settings: settings))
+        let serveCall = try XCTUnwrap(HawkEye.judge(serve, settings: settings))
+        XCTAssertEqual(rallyCall.call, .in)
+        XCTAssertEqual(rallyCall.line, .baseline)
+        XCTAssertEqual(serveCall.call, .out)
+        XCTAssertEqual(serveCall.line, .serviceLine)
+    }
+
     /// A rally flight published before a reset is not history for the serve rules after it.
     func testServeAfterAResetIgnoresTheEarlierRally() throws {
         let cam = IndependentProjector(camera)

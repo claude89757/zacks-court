@@ -345,10 +345,11 @@ public enum IndependentShotPipeline {
                 guard !nearby.contains(where: { shots[$0].stroke == "发球" && shots[$0].poseContact != nil }),
                       receiverLandings[tc] != nil || IndependentStrokeRules.sawToss(before: tc, hand: hand, candidates: wide,
                                                                                   camera: cameras[k], segmentStart: segments[k].start) else { continue }
-                if let i = nearby.min(by: { abs(shots[$0].tHit - tc) < abs(shots[$1].tHit - tc) }) {
-                    // A failed 3D fit also appears in this list; letting it claim the swing silently
-                    // loses the row when the fit is filtered. Use its identity for the observed serve.
-                    guard shots[i].reportedSpeedKmh == nil || shots[i].stroke == "发球" else { continue }
+                // Claim a failed-fit neighbour when one exists. A sped non-serve in the 0.35 s window must not
+                // `continue` the swing: that skipped the append below and lost the observed serve (indoor wall
+                // gap → reacquired far fragment with bounce speed, Hawk-Eye then judged the baseline).
+                if let i = observedServeClaimable(nearby, in: shots)
+                    .min(by: { abs(shots[$0].tHit - tc) < abs(shots[$1].tHit - tc) }) {
                     shots[i].stroke = "发球"; shots[i].poseServe = true; shots[i].hitterSide = "near"
                     shots[i].poseContact = tc; shots[i].contactT = tc; shots[i].poseHand = [hand.x, hand.y]
                     continue
@@ -625,6 +626,12 @@ public enum IndependentShotPipeline {
         if r.speedAnchor == .serveBounce {
             s.bounceFound = true; s.bounceGround = r.bounceGround; s.tBounce = r.tBounce
         }
+    }
+
+    /// Nearby rows that may take an observed-serve identity. A sped non-serve stays put so recovery can
+    /// still append a pose serve when every neighbour already carries a non-serve speed.
+    static func observedServeClaimable(_ nearby: [Int], in shots: [IndependentShotResult]) -> [Int] {
+        nearby.filter { shots[$0].reportedSpeedKmh == nil || shots[$0].stroke == "发球" }
     }
 
     /// App rows: every detected hit, with a speed only when it passed the bounce-anchored gate.
