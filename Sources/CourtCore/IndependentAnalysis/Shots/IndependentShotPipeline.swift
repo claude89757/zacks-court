@@ -363,6 +363,7 @@ public enum IndependentShotPipeline {
         }
         for i in shots.indices where shots[i].stroke == "发球" {
             if shots[i].reportedSpeedKmh == nil, shots[i].hitterSide == "near",
+               shots[i].bounceGround == nil, shots[i].serveSpeedFrom != "net",
                let tc = shots[i].poseContact, let l = receiverLandings[tc] {
                 let g = [l.ground.x, l.ground.y, l.ground.z]
                 if seenContactSpeed(i, tc: tc, g: g, tb: l.t) {
