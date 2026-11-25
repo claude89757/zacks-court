@@ -162,12 +162,21 @@ public enum HawkEye {
                                 serve: serve, farHalf: far)
     }
 
+    /// Contact used for the diagonal box and the same-half gate. Diverged fits (tens–hundreds of
+    /// metres away) are treated as absent — same bar as `HawkEyeReplay` / v34 `plausibleHit` — so they
+    /// cannot flip a service-box call or clear a real cross-net bounce.
+    public static func usableHit(_ hit: TennisCourtPoint?) -> TennisCourtPoint? {
+        guard let hit, hit.x.isFinite, hit.y.isFinite, hit.z.isFinite,
+              plausibleHit(xCentred: hit.x - centreX, y: hit.y, z: hit.z) else { return nil }
+        return hit
+    }
+
     /// The call for one shot row. Serves read the contact's x for the box; other shots are judged
     /// against the half the ball bounced in.
     public static func judge(_ event: TennisShotEvent, settings: HawkEyeSettings) -> HawkEyeJudgement? {
         guard let b = event.bounce else { return nil }
         return judge(x: b.xMeters, y: b.yMeters, sigmaX: b.sigmaXMeters, sigmaY: b.sigmaYMeters,
-                     serve: event.stroke == .serve, serverX: event.hit?.x, settings: settings)
+                     serve: event.stroke == .serve, serverX: usableHit(event.hit)?.x, settings: settings)
     }
 
     /// Rows with their bounce's call set (or cleared) for `settings`. A bounce on the hitter's own half
@@ -180,7 +189,7 @@ public enum HawkEye {
         guard event.bounce != nil else { return event }
         var row = event
         var call = judge(event, settings: settings)
-        if let hitY = event.hit?.y, let y = event.bounce?.yMeters, (hitY > netY) == (y > netY) { call = nil }
+        if let hitY = usableHit(event.hit)?.y, let y = event.bounce?.yMeters, (hitY > netY) == (y > netY) { call = nil }
         row.bounce?.hawkEye = call
         return row
     }
@@ -257,10 +266,10 @@ extension HawkEye {
             else { c.reason = HawkEyeChallenge.noBounceReason }
             return c
         }
-        if let hitY = event.hit?.y, (hitY > netY) == (y > netY) { c.reason = HawkEyeChallenge.sameHalfReason; return c }
+        if let hitY = usableHit(event.hit)?.y, (hitY > netY) == (y > netY) { c.reason = HawkEyeChallenge.sameHalfReason; return c }
         let settings = HawkEyeSettings(enabled: true, format: challenge.format, farHalf: true)
         c.judgement = judge(x: x, y: y, sigmaX: b.sigmaXMeters, sigmaY: b.sigmaYMeters, serve: event.stroke == .serve,
-                            serverX: event.hit?.x, settings: settings)
+                            serverX: usableHit(event.hit)?.x, settings: settings)
         if c.judgement == nil { c.reason = HawkEyeChallenge.noBounceReason }
         return c
     }

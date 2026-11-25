@@ -83,6 +83,32 @@ final class HawkEyeTests: XCTestCase {
         XCTAssertEqual(decoded, annotated)
     }
 
+    /// Diverged fits must not pick the service box or clear a cross-net bounce (parity with HawkEyeReplay).
+    func testImplausibleHitDoesNotSteerServeBoxOrSameHalfGate() throws {
+        var far = on; far.farHalf = true
+        var row = TennisShotEvent(streamID: UUID(), sourcePTS: 1, stroke: .serve, confidence: 0)
+        // Bounce deep in the left (ad) box: IN when the server is right of centre, OUT if serverX is left.
+        let deep = HawkEye.netY + 3
+        row.bounce = TennisBounceEstimate(sourcePTS: 1.5, xMeters: c - 1, yMeters: deep, confidence: 0)
+        row.bounce?.sigmaXMeters = 0.01; row.bounce?.sigmaYMeters = 0.01
+        row.hit = TennisCourtPoint(x: c + 2, y: 23, z: 2.5)
+        XCTAssertEqual(HawkEye.annotate(row, settings: far).bounce?.hawkEye?.call, .in)
+        // Tens of metres past the sideline: treat as no serverX → both boxes count → still IN.
+        row.hit = TennisCourtPoint(x: c - 80, y: 57, z: -3.5)
+        XCTAssertNil(HawkEye.usableHit(row.hit))
+        XCTAssertEqual(HawkEye.annotate(row, settings: far).bounce?.hawkEye?.call, .in,
+                       "Implausible hit must not flip the diagonal box")
+        // Wild hit.y on the bounce's half must not clear a real cross-net call.
+        var rally = TennisShotEvent(streamID: UUID(), sourcePTS: 2, stroke: .forehand, confidence: 0)
+        rally.bounce = TennisBounceEstimate(sourcePTS: 2.5, xMeters: c, yMeters: -0.5, confidence: 0)
+        rally.bounce?.sigmaXMeters = 0.01; rally.bounce?.sigmaYMeters = 0.01
+        rally.hit = TennisCourtPoint(x: c, y: -50, z: 1)
+        XCTAssertEqual(HawkEye.annotate(rally, settings: on).bounce?.hawkEye?.call, .out)
+        let challenge = HawkEye.judgeChallenge(HawkEyeChallenge(format: .singles), for: row, waiting: false)
+        XCTAssertEqual(challenge.judgement?.call, .in)
+        XCTAssertNil(challenge.reason)
+    }
+
     @MainActor func testAlertsOncePerShotAndNotForOldRows() {
         let alerts = HawkEyeAlerts()
         func row(_ t: Double, _ call: HawkEyeCall) -> TennisShotEvent {
