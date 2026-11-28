@@ -119,6 +119,7 @@ final class IndependentShotPipelineTests: XCTestCase {
 
     /// 2026-11-06: a shot with no bounce, no speed and a contact off the court has nothing to show and makes no
     /// row; anything with one of the three keeps one. Callers that pair rows with shots filter by `keeps`.
+    /// An estimated incoming landing is also a bounce worth keeping (v33/v35), even when fitHit is off-court.
     func testAShotWithNothingToShowMakesNoRow() {
         var empty = IndependentShotResult(hitKind: "hit junction", hitterFound: true, bounceFound: false, contactUV: [960, 540],
                                           hitterBox: nil, incoming: nil, hitterSide: nil, tHit: 10, nObs: 3, firstFrame: 0, lastFrame: 0)
@@ -133,6 +134,15 @@ final class IndependentShotPipelineTests: XCTestCase {
         empty.bounceGround = [1, 5, 0]
         XCTAssertTrue(IndependentShotPipeline.keeps(empty), "a bounce is always worth a row")
         empty.bounceGround = nil
+        empty.landEstimate = .init(t: 11.5, x: 1, y: 3.5, sigma: [0.2, 0.2], knee: true)
+        XCTAssertTrue(IndependentShotPipeline.keeps(empty), "an estimated incoming landing is a bounce worth a row")
+        XCTAssertEqual(IndependentShotPipeline.rows(from: [empty], streamID: UUID()).count, 1)
+        empty.landEstimate = nil
+        empty.fitHit = [1e73, 5e73, 1]
+        empty.landEstimate = .init(t: 11.5, x: 1, y: 3.5, sigma: [0.2, 0.2], knee: false)
+        XCTAssertTrue(IndependentShotPipeline.keeps(empty), "landEstimate keeps the row even when fitHit is off-court")
+        empty.landEstimate = nil
+        empty.fitHit = nil
         empty.accepted = true; empty.speedKmh = 120; empty.speedAnchor = .serveBaseline
         XCTAssertTrue(IndependentShotPipeline.keeps(empty), "so is a speed")
     }
@@ -1132,7 +1142,10 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertNil(landing([incoming(knee: nil, y: 11)]), "at the net")
 
         var shot = incoming(knee: nil); shot.landEstimate = fit
-        let row = try XCTUnwrap(IndependentShotPipeline.rows(from: [shot], streamID: UUID(), all: true).first)
+        // Live first publish uses all:false; landEstimate must pass keeps even if fitHit later diverges.
+        shot.fitHit = [1e73, 5e73, 1]
+        XCTAssertTrue(IndependentShotPipeline.keeps(shot), "landEstimate alone is enough for the first live row")
+        let row = try XCTUnwrap(IndependentShotPipeline.rows(from: [shot], streamID: UUID()).first)
         XCTAssertEqual(row.bounce?.reasonCode, .estimate)
         XCTAssertEqual(row.bounce?.sigmaYMeters, fit.sigma[1])
         XCTAssertEqual(row.speedReasonCode, .speedUnreliable, "the row shows a landing")

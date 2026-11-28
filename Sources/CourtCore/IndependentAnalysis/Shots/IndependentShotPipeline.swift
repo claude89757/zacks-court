@@ -663,8 +663,11 @@ public enum IndependentShotPipeline {
     /// Whether a shot becomes a row (2026-11-06). A shot with no bounce, no speed and a contact that is not
     /// even on the court has nothing to show: the night video writes 1264 of those for 325 real shots, 87 of
     /// them with a contact hundreds of metres away. Callers that pair rows with shots must filter by this.
+    /// An estimated incoming landing (`landEstimate`, v33/v35) is a bounce worth showing even when the 3D
+    /// contact fit is off-court: live first publish uses `all: false`, so omitting it here drops the HawkEye call.
     public static func keeps(_ s: IndependentShotResult) -> Bool {
         if s.bounceGround != nil { return true }
+        if s.landEstimate != nil { return true }
         // a serve seen in the server's pose is a row whatever its flight's fit says (v28): the pose named it
         // because the ball's first metres were not tracked, and a fit of the few points left has no usable contact
         if s.poseServe == true, s.stroke == "发球" { return true }
