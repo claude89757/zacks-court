@@ -749,6 +749,26 @@ final class IndependentShotPipelineTests: XCTestCase {
         XCTAssertNil(IndependentLiveShots.match(shot(253.0, 15200), in: published, from: 0))
     }
 
+    /// After court-lost freeze, a distinct new shot whose tHit is within 0.25 s of a frozen neighbour must
+    /// not match that frozen row (run would `continue` and never append). Same firstFrame still matches so
+    /// catch-up does not duplicate the frozen flight.
+    func testLiveMatchIgnoresFrozenNeighboursOnHitTime() {
+        func shot(_ t: Double, _ first: Int) -> IndependentShotResult {
+            IndependentShotResult(hitKind: "hit junction", hitterFound: true, bounceFound: false, contactUV: [0, 0], hitterBox: nil,
+                                  incoming: nil, hitterSide: "near", tHit: t, nObs: 20, firstFrame: first, lastFrame: first + 40)
+        }
+        var frozen = IndependentLiveShots.Published(shot: shot(10.00, 600), firstPublished: 11)
+        frozen.frozen = true
+        let live = IndependentLiveShots.Published(shot: shot(12.00, 720), firstPublished: 13)
+        let published = [frozen, live]
+        XCTAssertNil(IndependentLiveShots.match(shot(10.10, 660), in: published, from: 0),
+                     "a new flight near a frozen tHit is not the frozen shot")
+        XCTAssertEqual(IndependentLiveShots.match(shot(10.05, 600), in: published, from: 0), 0,
+                       "same firstFrame still finds the frozen row so catch-up does not duplicate it")
+        XCTAssertEqual(IndependentLiveShots.match(shot(12.05, 721), in: published, from: 0), 1,
+                       "unfrozen nearest hit still matches")
+    }
+
     /// 2026-11-06: of two serve-like flights from opposite ends, the one with a fitted landing wins, even when
     /// the other one fits faster (double-test-003 462.27: the receiver's false serve beat the real one).
     func testTheServeLikeFlightWithALandingWinsOverAFasterOne() {

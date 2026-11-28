@@ -125,12 +125,15 @@ public struct IndependentLiveShots: Sendable {
     }
 
     /// The published shot a recomputed one revises (v19): the one since the last `reset()` whose flight
-    /// starts at the same frame, else the nearest hit within 0.25 s. (The first hit within 0.25 s let a
-    /// re-timed serve take over the shot before it, and the serve was then published twice.)
+    /// starts at the same frame, else the nearest **unfrozen** hit within 0.25 s. (The first hit within
+    /// 0.25 s let a re-timed serve take over the shot before it, and the serve was then published twice.)
+    /// Frozen rows stay revisable only via the same `firstFrame` (court-lost freeze must not duplicate
+    /// them); a tHit-only hit on a frozen neighbour used to `continue` in `run` and drop a distinct live shot.
     static func match(_ shot: IndependentShotResult, in published: [Published], from start: Int) -> Int? {
         if let i = published[start...].lastIndex(where: { $0.shot.firstFrame == shot.firstFrame }) { return i }
         var best: (i: Int, d: Double)?
-        for i in published.indices {
+        for i in start..<published.count {
+            guard !published[i].frozen else { continue }
             let d = abs(published[i].shot.tHit - shot.tHit)
             if d < 0.25, best == nil || d < best!.d { best = (i, d) }
         }
